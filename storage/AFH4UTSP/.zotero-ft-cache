@@ -1,0 +1,88 @@
+
+Skip to main content
+Cornell University
+We gratefully acknowledge support from
+the Simons Foundation and member institutions.
+arXiv.org > cs > arXiv:2004.01888
+
+Help | Advanced Search
+Search
+Computer Science > Computer Vision and Pattern Recognition
+(cs)
+[Submitted on 4 Apr 2020 ( v1 ), last revised 19 Oct 2021 (this version, v6)]
+Title: FairMOT: On the Fairness of Detection and Re-Identification in Multiple Object Tracking
+Authors: Yifu Zhang , Chunyu Wang , Xinggang Wang , Wenjun Zeng , Wenyu Liu
+Download PDF
+
+    Abstract: Multi-object tracking (MOT) is an important problem in computer vision which has a wide range of applications. Formulating MOT as multi-task learning of object detection and re-ID in a single network is appealing since it allows joint optimization of the two tasks and enjoys high computation efficiency. However, we find that the two tasks tend to compete with each other which need to be carefully addressed. In particular, previous works usually treat re-ID as a secondary task whose accuracy is heavily affected by the primary detection task. As a result, the network is biased to the primary detection task which is not fair to the re-ID task. To solve the problem, we present a simple yet effective approach termed as FairMOT based on the anchor-free object detection architecture CenterNet. Note that it is not a naive combination of CenterNet and re-ID. Instead, we present a bunch of detailed designs which are critical to achieve good tracking results by thorough empirical studies. The resulting approach achieves high accuracy for both detection and tracking. The approach outperforms the state-of-the-art methods by a large margin on several public datasets. The source code and pre-trained models are released at this https URL . 
+
+Comments: 	IJCV 2021
+Subjects: 	Computer Vision and Pattern Recognition (cs.CV)
+Journal reference: 	International Journal of Computer Vision, 129(11), 2021, 3069-3087
+DOI : 	10.1007/s11263-021-01513-4
+Cite as: 	arXiv:2004.01888 [cs.CV]
+  	(or arXiv:2004.01888v6 [cs.CV] for this version)
+Submission history
+From: Xinggang Wang [ view email ]
+[v1] Sat, 4 Apr 2020 08:18:00 UTC (2,433 KB)
+[v2] Tue, 7 Apr 2020 03:19:16 UTC (2,433 KB)
+[v3] Fri, 17 Apr 2020 01:15:16 UTC (2,433 KB)
+[v4] Wed, 27 May 2020 09:25:09 UTC (2,433 KB)
+[v5] Wed, 9 Sep 2020 09:00:13 UTC (12,607 KB)
+[v6] Tue, 19 Oct 2021 05:37:18 UTC (7,427 KB)
+Full-text links:
+Download:
+
+    PDF
+    Other formats 
+
+( license )
+Current browse context:
+cs.CV
+< prev   |   next >
+new | recent | 2004
+Change to browse by:
+cs
+References & Citations
+
+    NASA ADS
+    Google Scholar
+    Semantic Scholar
+
+DBLP - CS Bibliography
+listing | bibtex
+Yifu Zhang
+Chunyu Wang
+Xinggang Wang
+Wenjun Zeng
+Wenyu Liu
+a export bibtex citation Loading...
+Bookmark
+BibSonomy logo Mendeley logo Reddit logo ScienceWISE logo
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer ( What is the Explorer? )
+Litmaps Toggle
+Litmaps ( What is Litmaps? )
+scite.ai Toggle
+scite Smart Citations ( What are Smart Citations? )
+Code & Data
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax ( What is MathJax? )
+
+    About
+    Help
+
+    contact arXiv Click here to contact arXiv Contact
+    subscribe to arXiv mailings Click here to subscribe Subscribe
+
+    Copyright
+    Privacy Policy
+
+    Web Accessibility Assistance
+
+    arXiv Operational Status
+    Get status notifications via email or slack
+

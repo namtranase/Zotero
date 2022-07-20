@@ -1,0 +1,471 @@
+DanceTrack: Multi-Object Tracking in Uniform Appearance and Diverse Motion
+Peize Sun1∗, Jinkun Cao2∗, Yi Jiang3, Zehuan Yuan3, Song Bai3, Kris Kitani2, Ping Luo1 1The University of Hong Kong 2Carnegie Mellon University 3ByteDance Inc.
+
+arXiv:2111.14690v1 [cs.CV] 29 Nov 2021
+
+1 23 4 5
+
+6
+
+3 12 5 7 8 4
+
+9
+
+3 2 1 758 4
+
+9
+
+23 1 7 58 49
+
+Figure 1 – Sample images from a video in DanceTrack. The shown images are 1, 66, 307 and 327 frames in DanceTrack0027 video. The emphasized properties of this dataset are (1) uniform appearance: humans are in highly similar and almost undistinguished appearance. (2) diverse motion: they are in complicated motion pattern and interaction. The numbers below show their identiﬁcation which experiences frequent relative position switches and occlusion as well. We expect the combination of uniform appearance and complicated motion pattern makes DanceTrack a platform to encourage more comprehensive and intelligent multi-object tracking algorithms.
+
+Abstract
+A typical pipeline for multi-object tracking (MOT) is to use a detector for object localization, and following reidentiﬁcation (re-ID) for object association. This pipeline is partially motivated by recent progress in both object detection and re-ID, and partially motivated by biases in existing tracking datasets, where most objects tend to have distinguishing appearance and re-ID models are sufﬁcient for establishing associations. In response to such bias, we would like to re-emphasize that methods for multi-object tracking should also work when object appearance is not sufﬁciently discriminative. To this end, we propose a large-scale dataset for multi-human tracking, where humans have similar appearance, diverse motion and extreme articulation. As the dataset contains mostly group dancing videos, we name it “DanceTrack”. We expect DanceTrack to provide a better platform to develop more MOT algorithms that rely less on visual discrimination and depend more on motion analysis. We benchmark several state-of-the-art trackers on our dataset and observe a signiﬁcant performance drop on DanceTrack when compared against existing benchmarks. The dataset, project code and competition server are released at: https://github.com/DanceTrack.
+* equal contribution.
+
+1. Introduction
+Object tracking has been long studied and can be beneﬁcial to applications such as autonomous driving, video analysis, and robot planning [6, 30, 43]. Multi-object tracking aims to localize and associate objects of interest over time. Interestingly, we observe recent developments in multi-object tracking heavily rely on a paradigm of detection followed by re-ID, where mostly appearance cues are used to associate objects. This trend in algorithmic development makes existing solutions fail catastrophically in situations where objects share very similar appearance and inspires us to propose a platform to encourage more comprehensive solutions by taking other cues into modeling, such as object motion patterns and temporal dynamics.
+As with many other areas of computer vision, the development of multi-object tracking is inﬂuenced by benchmark datasets. Based on speciﬁed datasets [11, 16, 27, 44], datadriven methods are sometimes argued to be biased to certain data distributions. In this work, we recognize the limitation of existing multi-object tracking datasets and observe that many objects have distinct appearance and the motion patterns of objects are very regular or even linear. Motivated by these dataset properties, most recently developed multiobject tracking algorithms [2,4,28,40,41,47,48] highly rely on appearance matching to associate detected objects while considering little other cues. The dominant paradigm will fail in situations out of the biased distribution. This phe-
+
+nomenon is not what we expect if we aim to build more general and intelligent tracking algorithms.
+We also observe that appearance matching is not reliable when objects have similar appearances or heavy occlusion. These properties cause catastrophic degradation of current state-of-the-art multi-object tracking algorithms. To provide a new platform for more comprehensive multi-object tracking studies, we propose a new dataset in this paper. Because it mostly contains group dancing videos, we name it “DanceTrack”. The dataset contains over 100K image frames (almost 10× the MOT17 dataset). As shown in Figure 1, the emphasized properties of this dataset are (1) uniform appearance: people in videos wear very similar or even the same clothes, making their visual features hard to be distinguished by the re-ID model and (2) diverse motion: people usually have very large-range motion and complex body gesture variation, proposing higher requirements for motion modeling. The second property also brings occlusion and crossover as a side-effect that the human body has a large ratio of overlap with each other and their relative position exchanges frequently.
+With the proposed dataset, we build a new benchmark including existing popular multi-object tracking methods. The results prove that current state-of-the-art algorithms fail to make satisfactory performance when they simply use appearance matching or linear motion models to associate objects across frames. Considering the cases focused on in this dataset happen frequently in our real life, we believe it shows the limitations of existing multi-object tracking algorithms on practical applications. To provide potential guidelines for further research, we analyze a range of choices in associating objects and achieve some beneﬁcial conclusions: (1) ﬁne-grained representations of objects, e.g., segmentation and pose, exhibit better ability than coarse bounding box; (2) depth information shows positive inﬂuence on associating objects, though we are solving a 2D tracking task; (3) motion modeling of temporal dynamics is important.
+To conclude, the key contributions of our work to the object tracking community are as follows:
+1. We build a new large-scale multi-object tracking dataset, DanceTrack, covering the scenarios where tracking suffers from low distinguishability of object appearance and diverse non-linear motion patterns.
+2. We benchmark baseline methods on this newly built dataset with various evaluation metrics, showing the limitation of existing multi-object tracking algorithms.
+3. We provide a comprehensive analysis to discover more cues for developing multi-object trackers that are more robust in complicated real-life situations.
+
+2. Related Works
+Multi-object tracking datasets. Many multi-object tracking datasets have been proposed focusing on different scenarios. Similar to our proposed dataset, many existing datasets focus on human tracking. PETS [14] dataset is one of the earliest in this area. And the more recent MOT15 [21] dataset and the following MOT17 [27] and MOT20 [11] datasets are all popular in this community. These datasets are limited in some aspects we care about. For example, MOT contains only handful of videos and scenarios. Even MOT20 increases the density of objects and emphasis the occlusion among them, the movements of objects are very regular and they still have very distinguishable appearance. Association by pure appearance matching [28] also makes success and we will show that given the perfect detector, the tracking problem can be solved by a very naive association strategy on these datasets.
+Besides, many other datasets are proposed for diverse objectives, e.g., WILDTRACK [8] for multi-camera tracking and association, Youtube-VIS [42] and MOTS [37] for pixel-wise tracking (Video Instance Segmentation). With the increasing attraction of autonomous driving, some datasets are built focusing on it speciﬁcally. KITTI [16] is one of the earliest large-scale multi-object tracking datasets for driving scenarios where the objects of interest are vehicles and pedestrians. More recently, BDD100K [44], Waymo [33] and KITTI360 [23] are made available to the public, still focusing on autonomous driving problem but providing much larger scale data than KITTI. The motion patterns of objects in these datasets are even more regular than those focusing on only moving people with the limitation of lanes and trafﬁc rules. There are many datasets focusing on more diverse object categories than person and vehicles. The ImageNet-Vid [12] benchmark provides trajectory annotations for 30 object categories in over 1000 videos and TAO [10] annotates even 833 object categories to study object tracking on long-tailed distribution.
+Tracking by matching appearance. Compared to tracking-by-detection, recent developments in multi-object tracking focus more on the joint-detection-and-tracking genre where object localization and association are conducted at the same time. And appearance similarity serves as the dominant cue in many popular multi-object tracking methods. For example, QuasiDense (QDTrack) [28] designs a pairwise training paradigm and dense localization for object detection and uses highly sensitive appearance comparison to match objects across frames. JDE [39] and FairMOT [48] learn object localization and appearance embedding using a shared backbone which is for better appearance representation. More recently, with the new focus of applying transformers [36] in vision tasks,
+
+2
+
+TransTrack [32], TrackFormer [26] and MOTR [46] made attempts to leverage the attention mechanism in tracking objects in videos. In these works, the features of previous tracklets are passed to the following frames as the query to associate the same objects across frames. The appearance information contained in the query is also critical to keep tracklet consistency. Although the rise of deep-learning model brings much powerful visual representations than ever before making appearance matching more robust, we still witness the failure of matching appearance in many real-world situations which are expected to be improved by taking other cues into account.
+Motion analysis in object tracking. The displacement of objects-of-interest provides important cues for object tracking. Tracking objects by estimating their motion is thus a natural and intuitive idea and has inspired a line of researches. These tracking algorithms mainly follow the tracking-by-detection paradigm. Sequential analysis tools such as Particle ﬁlter [17, 19] and Kalman ﬁlter [20] are found efﬁcient in such applications. SORT [4] is developed on the Kalman motion model and marks a milestone in using motion models for object tracking. Furthermore, as deep networks bring the revolutionary ability to extract high-quality visual features, DeepSORT [40] tries to combine deep visual features and motion models and gains great success. Since then, motion-based object tracker has shown weak competitiveness and many focuses are towards appearance cues. Even though motion analysis has been used in object tracking for long [39, 47, 48], all these mentioned methods can only handle simple linear motion pattern and provide limited help to multi-object tracking in more complicated situations we focus on in this work. These factors induce appearance-based tracking dominance in multiobject tracking. However, we argue that a more comprehensive and intelligent tracking algorithm should pay more attention to motion analysis since appearance is not always reliable.
+3. DanceTrack
+DanceTrack is a benchmark for multi-object tracking for estimating the locations and identities of objects in videos. The objective of proposing this dataset is to provide the scenes where objects have a uniform appearance and diverse motion.
+3.1. Dataset Construction
+Dataset design. We focus on the scenarios where objects have similar or even the same appearance and diverse motion patterns, including frequent crossover, occlusion, and body deformation. The ﬁrst property makes tracking by purely comparing object appearance invalid because the ex-
+
+Dataset
+
+MOT17 [27] MOT20 [11] DanceTrack
+
+Videos Avg. tracks Total tracks Avg. len. (s) Total len. (s) FPS Total images
+
+14 96 1342 35.4 463 30 11,235
+
+8 432 3456 66.8 535 25 13,410
+
+100 9 990 52.9 5292 20 105,855
+
+Table 1 – The comparison of dataset meta-information between DanceTrack and its closest benchmark for multi-human tracking, MOT17 and MOT20. DanceTrack contains much more videos and images than MOT datasets.
+
+tracted visual features are no longer distinguishable for different objects. The second property further requires clues rather than appearance in tracking, such as motion analysis and temporal dynamics.
+We argue that focusing on “crowd” by simply increasing the density of objects of interest is not what we expect. For example, MOT20 [11] contains videos where the groups of pedestrians are very crowded. But as the pedestrians’ movement is very regular and the relative position and occlusion area keep consistent, such “crowd” is not building an obstacle for appearance matching. Therefore, we focus on situations where multiple objects are moving in a “relatively” large range. The dynamically changing occluded area and even crossover are what we are interested in. Such cases are common in the real world but naive linear motion models can not handle them anymore.
+Video collection. To achieve the design goals described above, we collected videos including mostly group dancing from the Internet. As shown in Figure 2, the dancers usually wear very similar or even the same clothes. They make a large-range motion in the target situations. And their poses and relative positions change very frequently. All these properties greatly satisfy our motivation to propose a new multi-object tracking dataset. We collect the videos from different search engines with query keywords like “street dance”, “hip-pop dance”, “cheerleading dance”, “rhythmic gymnastics” and so on. The collection is only for publicly available videos and under the permit of fair use of video resources.
+Annotation. We use a commercial tool to annotate the collected videos. The annotated labels include bounding boxes and identiﬁers of each object. For a partly-occluded object, a full-body box is annotated. For a fully-occluded object, we do not annotate it; when it re-appears in the future frame, its identiﬁer is kept as the same as in the previous frame when it is visible.
+To facilitate the annotation process, our tool can automatically propagate the annotated boxes from the previous
+
+3
+
+classical
+(a) pop
+
+large group
+(c)
+street dance
+
+(b)
+
+sports
+
+(d)
+
+Figure 2 – Some sampled scenes from the proposed DanceTrack dataset. (a) outdoor scenes; (b) low-lighting and distant camera scenes; (c) large group of dancing people; (d) gymnastics scene where the motion is usually even more diverse and people have more aggressive deformation.
+
+frame to the current frame, and the annotator only needs to reﬁne the boxes in the current frame. To build a highquality dataset, the annotations have been checked by another group of people and errors are reported back to the annotators for re-annotation.
+3.2. Dataset Statistic
+We provide some analytical information of DanceTrack dataset and compare it with existing multi-object tracking datasets. The statistical information helps to understand the uniqueness of the proposed dataset and how we built it to make a platform as we describe in the previous parts.
+Dataset split. We collected in total 100 videos in DanceTrack dataset, by default using 40 videos as the training set, 25 as the validation set, and 35 as the test set. During splitting, we keep the distribution of subsets close in terms of average length, average bounding box number, included scenes and motion diversity. We make the annotation of the training set and validation set public while keeping the testing set annotation private for competition use. Some basic information of DanceTrack is shown in Table 1. Compared with MOT datasets, DanceTrack has a much larger volume (10x more images and 10x more videos). MOT20 focuses on very crowded scenes, so it has more tracks but as the appearance of objects inside is very distinguishable and their motion is regular, as a consequence, the association on MOT20 still requires little motion estimation when reliable detection results are given.
+Scene diversity. DanceTrack contains very diverse scenes. Some samples are provided in Figure 2. One main common point for all videos is that the instances of people in a video usually have very similar appearances. This is designed on purpose to avoid the shortcut of tracking by pure appearance matching. DanceTrack contains multiple genres of dance, such as street dance, pop dance, classical dance
+
+(ballet, tango, etc.), and large groups of people’ dancing. It also contains some sports scenarios such as gymnastics, Chinese Kung Fu and cheerleader dancing. Figure 2(a) shows outdoor scenes though most included videos are indoor. Figure 2(b) shows some especially hard cases, such as low lighting and distant camera. Figure 2(c) and (d) show a large group of people dancing, including at most 40 people, and gymnastics where people show extremely diverse body gestures, frequent pose variation and complicated motion pattern.
+Appearance similarity. We make a quantitative analysis about how appearance-only matching is not reliable anymore on DanceTrack. We will prove this by measuring the appearance similarity among objects. To be precise, we use a pre-trained re-ID model [29] to extract the appearance features F (Bit) of the object Bi on a frame t, then we compute the sum of cosine distance of the re-ID features among objects in the video as
+
+V
+
+1 =
+T
+
+T1 t=1 Nt2
+
+Nt i
+
+Nt
+(1 − cos < F (Bit), F (Bjt) >),
+j=i
+
+(1)
+
+where T is the number of frames in the video sequence, Nt
+
+is the number of objects on the frame t and <·> is the angle
+
+between two vectors.
+
+We compare the object appearance similarity in Dance-
+
+Track to that in MOT17 dataset, as shown in Figure 3(a),
+
+each bin represents one video sequence. It is obvious that
+
+the cosine distance of re-ID features of DanceTrack is lower
+
+than that of MOT17, in other words, the appearance simi-
+
+larity among co-existing objects is higher. This quantitative
+
+analysis shows the challenge of DanceTrack to current pop-
+
+ular trackers using appearance matching for association.
+
+Motion pattern. We introduce two metrics to analyze the motion pattern in DanceTrack dataset and compare that to
+
+4
+
+appearance similarity adjacent_IoU switch
+
+1.00
+
+0.3
+
+MOT17
+
+0.020
+
+DanceTrack
+
+0.75
+
+0.2
+
+0.015
+
+0.50
+
+0.010
+
+0.1
+
+0.25
+
+0.005
+
+0.0
+
+video sequences
+
+0.00 MOT17 MOT20 KITTI DanceTrack 0.000 MOT17 MOT20 KITTI DanceTrack
+
+(a) Cosine distance of re-ID feature
+
+(b) IoU on adjacent frames
+
+(c) Frequency of relative position switch
+
+Figure 3 – (a) Cosine distance of re-ID features. The cosine distance of re-ID features of DanceTrack is lower than that of MOT17, in other words, the appearance similarity between different objects is higher. The dashed lines are for the average cosine distance similarity for the two datasets. (b) IoU on adjacent frames. Compared to MOT17 and MOT20, DanceTrack has a similar score. It means that the frame rate and object motion speed are still reasonable in DanceTrack. (c) Frequency of relative position switch. This metric measures the frequency of crossover and is highly related to the occlusion between objects. DanceTrack has much more frequent relative position switches than other pedestrian tracking datasets, such as MOT17 and MOT20. Even compared to the driving dataset KITTI, where the moving camera naturally causes many relative position switches, DanceTrack still has a higher frequency.
+
+other multi-object tracking datasets.
+IoU on adjacent frames: a natural measurement of object movement range is its bounding-box-IoU (Intersectionover-Union) on two adjacent frames. A low IoU indicates fast-moving objects or the low frame rate of videos. Given a video with N objects and T frames, we denote the i-th object’s box on the t-th frame as Bit, then the averaged IoU on adjacent frames for this video is
+
+1 U=
+N (T − 1)
+
+N
+
+T −1
+IoU (Bit, Bit+1).
+
+(2)
+
+i t=1
+
+Frequency of Relative Position Switch: a metric to measure the diversity of objects’ motion in a global view is the frequency for two objects to switch their relative position. This could happen between leftward and rightward or between upward and downward. On the contrary, movement with consistent velocity tends to cause a lower chance of relative position switch. Given a video, the average frequency of relative position switch is deﬁned as
+
+S=
+
+N i
+
+N j=i
+
+T −1 t=1
+
+sw(Bit,
+
+Bjt ,
+
+Bit+1,
+
+Bjt+1)
+
+,
+
+(3)
+
+2N (T − 1)(N − 1)
+
+where sw is an indicator function, where sw(·)=1 if the two objects swap their left-right relative position or top-down relative position on the adjacent frames, sw(·)=0 if there is no swap. To be precise, we measure their relative position by comparing their bounding box center locations. And considering that such crossover causes potential trouble only when the objects have overlap, we only take the objects whose bounding boxes have overlap into the calculation.
+From the results shown in Figure 3(b), we could ﬁnd that DanceTrack and MOT datasets have close average IoU on adjacent frames. This indicates that DanceTrack is considered harder than MOT datasets not because of lower frame rate or unreasonably fast object movement.
+
+On the other hand, from Figure 3(c) we could ﬁnd that DanceTrack has much more frequent relative position switches than other datasets such as KITTI, MOT17 and MOT20. The frequent relative position switches are caused by highly non-linear motion pattern and result in frequent crossover and inter-object occlusion. This result shows that the challenge of DanceTrack comes from the diversity of motion.
+3.3. Evaluation Metrics
+For a long time, the multi-object tracking community used MOTA as the main metric for evaluation. However, recently, the community realized that MOTA focuses too much on detection quality instead of association quality. Thus, Higher Order Tracking Accuracy (HOTA) [25] is proposed to correct this historical bias since then. HOTA has been used for the main metrics to evaluate tracking quality on multiple popular benchmarks such as BDD100K [44] and KITTI [16]. We follow this setting for evaluation metrics of DanceTrack.
+In our protocol, the main metric is HOTA. We also use AssA and IDF1 score to measure association performance and DetA and MOTA for detection quality.
+For the detailed deﬁnitions of these metrics, we refer to [3, 25, 31]. To make it convenient to run for ﬁnegrained analysis, the evaluation tools also provide previously widely-used statistics, such as False Positive (FP), False Negative (FN) and ID switch (IDs).
+3.4. Limitation
+In this part, we discuss some recognized limitations of this proposed DanceTrack dataset. We emphasize again that we propose this dataset to provide a platform for more comprehensive multi-object tracking studies beyond the currently popular genre of combining detector and re-ID. However, the proposed dataset still has some limitations. First, given the mentioned motivation and the proposed dataset, we do not provide an algorithm that highly outperforms pre-
+
+5
+
+Appearance
+
+IoU
+
+Motion
+
+HOTA
+
+MOT17 DetA AssA MOTA
+
+IDF1
+
+DanceTrack (Proposed Dataset) HOTA DetA AssA MOTA IDF1
+
+98.1 98.9 97.3 98.0 97.8 72.8 98.9 53.6 98.7 63.5
+
+96.4 97.1 95.8 99.7 98.1 69.4 87.9 54.8 99.4 71.3
+
+95.0 94.7 95.4 99.3 98.8 59.7 82.5 43.2 97.2 60.5
+
+93.3 99.0 87.9 98.9 90.9 68.0 97.7 47.4 97.9 58.7
+
+Table 2 – Oracle analysis of different association models on MOT17 and DanceTrack validation set, respectively. The detection boxes are ground-truth boxes. The result comparison shows the evident increased difﬁculty of performing multi-object tracking on DanceTrack than MOT17 dataset.
+
+vious multi-object tracking algorithms but keep this as an open question for future study. Besides, we believe, for the cases, we emphasize in this work, the annotation of human pose or segmentation mask should be important for more ﬁne-grained study. But limited by time and resources, we only provide the annotation of bounding boxes in this version.
+4. Experiments
+4.1. Experiment Setup
+Dataset conﬁgurations We compare DanceTrack with its closest dataset, MOT17. For MOT17, because the test server is not available easily, we follow the train-val splitting provided in CenterTrack [51] to evaluate on the validation subset. For DanceTrack, we follow the default splitting described in the previous section to train on the training subset and evaluate on the test subset.
+Model conﬁguration Unless speciﬁed otherwise, we inherit the default training settings of the investigated algorithms provided in the original papers or the ofﬁcially released codebases. For MOT17 and DanceTrack, algorithms use shared conﬁgurations and hyperparameter settings.
+4.2. Oracle Analysis
+To decompose the analysis over object localization and association, we perform oracle analysis here. We use the ground truth bounding boxes with different association algorithms to achieve expected upper-bound performance.
+This analysis can help us to understand what is the true bottleneck of tracking on different datasets. To be precise, we try to use IoU matching or motion modeling and appearance similarity for the association. We have experiments on MOT17 and DanceTrack respectively. The results are shown in Table 2. We use a pre-trained Re-ID model [29] for appearance matching and a Kalman Filter [20] for motion modeling under linear motion assumption. IoU matching is simply performed by calculating the IoU of objects’ bounding boxes in adjacent frames. From the results, the tracking output is close to perfect in terms of all metrics on MOT17. And, interestingly, using only IoU matching
+
+MOT17-05
+
+…
+DanceTrack0019
+
+Figure 4 – Visualization of re-ID feature from sampled video in MOT17 and DanceTrack dataset using t-SNE [35]. The same object is coded by the same color. For better visualization, we only select ﬁrst 200 frames in each video sequence. The results show that object appearance is much distinguishable on MOT17 than that on DanceTrack. It brings a shortcut for tracking on MOT17 by even only appearance matching.
+achieves the best performance, which proves that MOT17 contains objects with simple and regular motion patterns and the bottleneck does not lie in association in most cases.
+On the other hand, using only IoU matching on DanceTrack gives a much lower performance than on MOT17. Given DetA and MOTA scores are already close to 100, the bottleneck is obviously in the association part. All association metric scores in all cases experience a dramatic drop compared with that on MOT17. Besides, the best performance lies in only IoU matching, even combining a linear motion model or additional appearance information does not help. When using appearance similarity, all metrics are worse than not using any appearance cue. This is because the objects in DanceTrack videos usually have indistinguishable appearance so simply using appearance match-
+
+6
+
+Methods
+CenterTrack [50] FairMOT [48] QDTrack [28] TransTrack [32] TraDes [41] MOTR [46] ByteTrack [47]
+
+HOTA 52.2 59.3 53.9 54.1 52.7 55.1 63.1
+
+DetA 53.8 60.9 55.6 61.6 55.2 56.2 64.5
+
+MOT17 AssA 51.0 58.0 52.7 47.9 50.8 54.2 62.0
+
+MOTA 67.8 73.7 68.7 75.2 69.1 67.4 80.3
+
+IDF1 64.7 72.3 66.3 63.5 63.9 67.0 77.3
+
+DanceTrack (Proposed Dataset) HOTA DetA AssA MOTA IDF1 41.8 78.1 22.6 86.8 35.7 39.7 66.7 23.8 82.2 40.8 45.7 72.1 29.2 83.0 44.8 45.5 75.9 27.5 88.4 45.2 43.3 74.5 25.4 86.2 41.2 48.4 71.8 32.7 79.2 46.1 47.7 71.0 32.1 89.6 53.9
+
+Table 3 – Tracking performance of investigated algorithms on MOT17 and DanceTrack test set respectively. The result comparison shows the evident increased difﬁculty of performing multi-object tracking on DanceTrack than MOT17 dataset. To be precise, DanceTrack makes detection easier (higher MOTA and DetA scoers) but still brings signiﬁcant tracking performance drop compared to MOT17 (lower HOTA, AssA and IDF1 scores). This phenomenon reveals the bottleneck of multi-object tracking on DanceTrack is on the association part.
+
+ing makes negative effects in some cases. In Figure 4, we visualize the appearance feature of objects extracted from DanceTrack and MOT17 videos respectively. We can observe that the appearance features of different objects are very distinguishable in the feature space on MOT17 while highly entangled on DanceTrack. This qualitatively provides evidence for the high similar appearance of objects in the proposed DanceTrack dataset.
+Given the results shown in the analysis with oracle object localization, we can reach a clear conclusion that existing datasets have a heavy bias that focuses more on the detection quality only and the involved simple trajectory patterns limit the study in this area. On the contrary, DanceTrack is proposing a much higher requirement to develop multi-object trackers with improvement in association ability. Considering the scenarios included in DanceTrack are what we experience in real life, we believe it is meaningful to provide such a platform.
+4.3. Benchmark Results
+We benchmark the current state-of-the-art multi-object tracking algorithms on MOT17 and DanceTrack. The evaluation is performed in the “private setting” that the algorithm should do both detection and association. The benchmark results are reported in Table 3. In terms of the tracking quality measured by HOTA, IDF1 and AssA, all algorithms show a signiﬁcant performance gap from MOT17 to DanceTrack. For all investigated methods, their performance on DanceTrack is far from satisfactory. On the other hand, the detection quality metrics, MOTA and DetA, of all algorithms are in fact higher on DanceTrack than on MOT17. This suggests that detection is not the bottleneck to have good tracking performance on DanceTrack and continues to highlight the drop of association. The challenge on the proposed dataset is to make robust associations against the uniform appearance and the diverse motion of objects.
+
+Association
+
+HOTA DetA AssA MOTA IDF1
+
+IoU
+
+44.7 79.6 25.3 87.3 36.8
+
+SORT [4]
+
+47.8 74.0 31.0 88.2 48.3
+
+DeepSORT [40] 45.8 70.9 29.7 87.1 46.8
+
+MOTDT [9]
+
+39.2 68.8 22.5 84.3 39.6
+
+BYTE [47]
+
+47.1 70.5 31.5 88.2 51.9
+
+Table 4 – Comparison of different association algorithms on DanceTrack validation set. The detection results are output by YOLOX [15], trained on the DanceTrack training set.
+
+4.4. Association Strategy
+In the previous section, most methods entangle the detection and tracking modules. To have an independent study on association algorithms, we use the most recently developed YOLOX [15] detector for object detection on DanceTrack and conduct different object association algorithms following that. The results are shown in Table 4.
+SORT [4] uses Kalman Filter to model the object trajectory and DeepSORT [40] adds appearance matching. Compared to SORT, DeepSORT shows no performance boost but worse performance instead, suggesting the negative gain due to appearance matching. On the other hand, MOTDT [9] uses the tracking result to help detect bounding boxes. But in fact, detection performance can be really good on the DanceTrack dataset and the exact bottleneck is the association part, so MOTDT shows even worse performance on both detection quality and association quality with its design. Lastly, BYTE [47] uses a high-tolerance strategy to select detection results into the association stage. The design aims to decrease tracklet fragmentation in tracking. With such a strategy, BYTE shows the best association performance in terms of IDF1 and AssA metrics. This also reveals that DanceTrack is not a strict challenge for modern deep object detectors, the true challenge is in the object association part instead.
+
+7
+
+GT
+
+mask
+
+pose
+
+depth
+
+Figure 5 – Visualization of adding more information beyond bounding box on DanceTrack. Tracks are coded by color. The 1st, 2nd and 3rd column are frame20, 120 and 200 of DanceTrack0007 video sequence, respectively. The 1st row is ground-truth boxes and identiﬁes.
+
+Data
+DanceTrack + COCOmask [24] + COCOmask
+DanceTrack + COCOpose [24] + COCOpose
+DanceTrack + KITTI [16] + KITTI
+
+Ass.
+box box + mask
+box box + pose
+box box + depth
+
+HOTA
+36.9 38.1 (+1.2) 39.2 (+1.1)
+36.9 40.6 (+3.7) 41.0 (+0.4)
+36.9 34.4 (- 2.5) 35.1 (+0.7)
+
+DetA
+63.6 64.5 (+0.9) 64.9 (+0.4)
+63.6 65.5 (+1.9) 65.9 (+0.4)
+63.6 57.8 (- 5.8) 57.3 (- 0.5)
+
+AssA
+21.6 22.6 (+1.0) 23.9 (+1.3)
+21.6 25.3 (+3.7) 25.6 (+0.3)
+21.6 20.7 (- 0.9) 21.6 (+0.9)
+
+MOTA
+78.8 80.6 (+1.8) 80.7 (+0.1)
+78.8 82.9 (+4.1) 83.1 (+0.3)
+78.8 72.9 (- 5.9) 72.8 (- 0.1)
+
+IDF1
+39.2 40.3 (+1.1) 41.6 (+0.3)
+39.2 42.9 (+3.7) 43.9 (+1.0)
+39.2 38.5 (- 0.7) 40.2 (+1.7)
+
+Table 5 – Ablation study on adding more information beyond bounding box on DanceTrack validation set. All experiments are based on CenterNet [51] model and BYTE [47] association. (a) Segmentation mask improves the tracking performance on DanceTrack. (b) Pose information boosts the tracking performance with an even larger gap than the segmentation mask. (c) Though adding depth information into association shows a slightly positive inﬂuence, the results still blame the domain shift between KITTI and DanceTrack.
+
+4.5. Analysis of More Modalities
+Considering high scores of MOTA and DetA on DanceTrack, the limited performance on DanceTrack is an exact failure of trackers instead of detectors. To boost performance, a straightforward strategy is to add more cues other than bounding box. Since DanceTrack contains bounding boxes and identities annotations, we propose to use joint-
+
+training technology with other datasets, e.g., COCO [24] and KITTI [16], to enable the model output more modalities including segmentation mask, pose and depth, All models are based on CenterNet [51]. If additional modal is used other than bounding box, we add a corresponding head following the backbone network.
+
+8
+
+Does ﬁne-grained representation help ? We investigate the inﬂuence of adding the segmentation mask into the model. The training data is a combination of the DanceTrack training set and COCO mask [24]. If the input image is from DanceTrack, we set its mask loss as 0. During inference, the matching metric is the weighted sum of bounding box IoU and mask IoU. From the results in Table 5, we ﬁnd a performance boost by using the segmentation mask. We believe this can be explained by two reasons. First, the introduction of more ﬁne-grained annotation makes the training more robust just as what is observed in multi-task learning. On the other hand, for crowded and occluded situations, the segmentation mask is a more reliable information form than bounding boxes. From the segmentation mask, we can surely expect to extract more accurate object identiﬁcation information for the association task.
+Besides the mask, another modality is human pose information. The training data is a combination of DanceTrack training set and COCO human pose [24]. If the input image is from DanceTrack, we set its pose loss as 0. During inference, the matching metric is the weighted sum of bounding box IoU and Object Keypoint Similarity(OKS) [24]. The results are shown in Table 5. Adding additional pose information in training better boosts the model performance on DanceTrack, and using the output pose in association further helps to achieve better tracking results. A potential reason is when most of the area of a human body is occluded already, segmentation model usually can not provide reliable output while the pose estimation model focusing on certain human body key-points usually shows higher robustness.
+Does depth information help ? We try to use additional depth information to help tracking on DanceTrack. The training data is a combination of DanceTrack training set and KITTI [16] 3D box. If the input image is from DanceTrack, we set all losses related to the 3D box as 0. During inference, we directly use the camera parameters in KITTI dataset, and the matching metric is the weighted sum of bounding box IoU and depth similarity. The results are shown in Table 5. In contrast to the COCO segmentation mask and human pose, depth information learned from KITTI dataset does not increase the performance on DanceTrack. We explain that COCO segmentation and pose estimation datasets contain humans as the main category, while KITTI mainly contains vehicle instances. Thus, the object and scene prior in DanceTrack and KITTI change, and this domain shift degenerates the model. Nevertheless, depth information indeed helps association performance if we regard the baseline as the model trained on joint-dataset of DanceTrack and KITTI. However, limited by the available resources of depth-annotated data, this is the best we could try for now. We expect more study on the inﬂuence of depth information to associate objects with uniform appearance and diverse motion.
+
+Motion
+
+HOTA DetA AssA MOTA IDF1
+
+None(IoU)
+
+34.9 68.2 18.0 77.0 31.7
+
+Kalman ﬁlter [4] 37.2 62.4 22.3 77.4 39.9
+
+LSTM [7]
+
+38.8 67.8 22.4 78.7 38.1
+
+Table 6 – Comparison of different motion models on DanceTrack validation set. The detection results are output by CenterNet [51], trained on the DanceTrack training set.
+
+Does temporal dynamics help ? As shown in Table 6, we use different motion models to introduce temporal dynamics in the tracking process to facilitate better association. Both Kalman ﬁlter [4] and LSTM [7] outperform naive IoU association (without temporal dynamics) by a large margin, indicating the great potential of motion models in tracking objects, especially when appearance cues are not reliable. With the relatively slow progress of object model motion, we expect to see more advanced motion models in the ﬁeld of multi-object tracking.
+From the study above, we know that more modalities could help boost the performance of tracking on DanceTrack, especially those from similar data distributions [13, 18, 45]. Given the limitation discussed in section 3.4 that DanceTrack only provides bounding box annotation, for now, there would be several interesting future works: (1) extending its annotation modalities, (2) using weaklysupervised learning [34,38,49] to estimate other modalities, (3) using transfer learning and domain adaptation [1, 5, 22] to transfer knowledge of other modalities from other data domain to our benchmark.
+5. Conclusion
+In this paper, we propose a new multi-object tracking dataset called DanceTrack. The objects have uniform appearance and diverse motion pattern in DanceTrack, preventing being hacked by Re-ID algorithms. The motivation behind it is to reveal the bias in existing datasets that tend to emphasize detection quality and matching appearance only. This makes other cues to associate objects underrepresented. We believe that the ability to analyze the complex motion pattern is necessary for building a more comprehensive and intelligent tracker. DanceTrack provides such a platform to encourage future works on this line.
+6. Acknowledgement
+We would like to thank the annotator teams and coordinators. We also like to thank Xinshuo Weng, Yifu Zhang for valuable discussion and suggestions, Vivek Roy, Pedro Morgado, Shuyang Sun for proof reading.
+
+9
+
+References
+[1] Amir Atapour-Abarghouei and Toby P Breckon. Real-time monocular depth estimation using synthetic data with domain adaptation via image style transfer. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pages 2800–2810, 2018. 9
+[2] Philipp Bergmann, Tim Meinhardt, and Laura Leal-Taixe. Tracking without bells and whistles. In ICCV, pages 941– 951, 2019. 1
+[3] Keni Bernardin and Rainer Stiefelhagen. Evaluating multiple object tracking performance: the clear mot metrics. EURASIP Journal on Image and Video Processing, 2008:1– 10, 2008. 5
+[4] Alex Bewley, Zongyuan Ge, Lionel Ott, Fabio Ramos, and Ben Upcroft. Simple online and realtime tracking. In 2016 IEEE international conference on image processing (ICIP), pages 3464–3468. IEEE, 2016. 1, 3, 7, 9
+[5] Jinkun Cao, Hongyang Tang, Hao-Shu Fang, Xiaoyong Shen, Cewu Lu, and Yu-Wing Tai. Cross-domain adaptation for animal pose estimation. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 9498– 9507, 2019. 9
+[6] Jinkun Cao, Xin Wang, Trevor Darrell, and Fisher Yu. Instance-aware predictive navigation in multi-agent environments. arXiv preprint arXiv:2101.05893, 2021. 1
+[7] Mohamed Chaabane, Peter Zhang, Ross Beveridge, and Stephen O’Hara. Deft: Detection embeddings for tracking. arXiv preprint arXiv:2102.02267, 2021. 9
+[8] Tatjana Chavdarova, Pierre Baque´, Ste´phane Bouquet, Andrii Maksai, Cijo Jose, Timur Bagautdinov, Louis Lettry, Pascal Fua, Luc Van Gool, and Franc¸ois Fleuret. Wildtrack: A multi-camera hd dataset for dense unscripted pedestrian detection. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pages 5030– 5039, 2018. 2
+[9] Long Chen, Haizhou Ai, Zijie Zhuang, and Chong Shang. Real-time multiple people tracking with deeply learned candidate selection and person re-identiﬁcation. In 2018 IEEE international conference on multimedia and expo (ICME), pages 1–6. IEEE, 2018. 7
+[10] Achal Dave, Tarasha Khurana, Pavel Tokmakov, Cordelia Schmid, and Deva Ramanan. Tao: A large-scale benchmark for tracking any object. In European conference on computer vision, pages 436–454. Springer, 2020. 2
+[11] P. Dendorfer, H. Rezatoﬁghi, A. Milan, J. Shi, D. Cremers, I. Reid, S. Roth, K. Schindler, and L. Leal-Taixe´. Mot20: A benchmark for multi object tracking in crowded scenes. arXiv:2003.09003[cs], Mar. 2020. arXiv: 2003.09003. 1, 2, 3
+[12] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. ImageNet: A large-scale hierarchical image database. In CVPR, 2009. 2
+[13] Hao-Shu Fang, Jinkun Cao, Yu-Wing Tai, and Cewu Lu. Pairwise body-part attention for recognizing human-object interactions. In Proceedings of the European Conference on Computer Vision (ECCV), pages 51–67, 2018. 9
+
+[14] James Ferryman and Ali Shahrokni. Pets2009: Dataset and challenge. In 2009 Twelfth IEEE international workshop on performance evaluation of tracking and surveillance, pages 1–6. IEEE, 2009. 2
+[15] Zheng Ge, Songtao Liu, Feng Wang, Zeming Li, and Jian Sun. Yolox: Exceeding yolo series in 2021. arXiv preprint arXiv:2107.08430, 2021. 7
+[16] Andreas Geiger, Philip Lenz, and Raquel Urtasun. Are we ready for autonomous driving? the kitti vision benchmark suite. In 2012 IEEE conference on computer vision and pattern recognition, pages 3354–3361. IEEE, 2012. 1, 2, 5, 8, 9
+[17] Fredrik Gustafsson. Particle ﬁlter theory and practice with positioning applications. IEEE Aerospace and Electronic Systems Magazine, 25(7):53–82, 2010. 3
+[18] Alejandro Jaimes and Nicu Sebe. Multimodal human– computer interaction: A survey. Computer vision and image understanding, 108(1-2):116–134, 2007. 9
+[19] Rooji Jinan and Tara Raveendran. Particle ﬁlters for multiple target tracking. Procedia Technology, 24:980–987, 2016. 3
+[20] Rudolph Emil Kalman. A new approach to linear ﬁltering and prediction problems. 1960. 3, 6
+[21] L. Leal-Taixe´, A. Milan, I. Reid, S. Roth, and K. Schindler. MOTChallenge 2015: Towards a benchmark for multitarget tracking. arXiv:1504.01942 [cs], Apr. 2015. arXiv: 1504.01942. 2
+[22] Yunsheng Li, Lu Yuan, and Nuno Vasconcelos. Bidirectional learning for domain adaptation of semantic segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 6936–6945, 2019. 9
+[23] Yiyi Liao, Jun Xie, and Andreas Geiger. KITTI-360: A novel dataset and benchmarks for urban scene understanding in 2d and 3d. arXiv.org, 2109.13410, 2021. 2
+[24] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dolla´r, and C. Lawrence Zitnick. Microsoft COCO: Common objects in context. In ECCV, 2014. 8, 9
+[25] Jonathon Luiten, Aljosa Osep, Patrick Dendorfer, Philip Torr, Andreas Geiger, Laura Leal-Taixe´, and Bastian Leibe. Hota: A higher order metric for evaluating multiobject tracking. International journal of computer vision, 129(2):548–578, 2021. 5
+[26] Tim Meinhardt, Alexander Kirillov, Laura Leal-Taixe, and Christoph Feichtenhofer. Trackformer: Multi-object tracking with transformers. arXiv preprint arXiv:2101.02702, 2021. 3
+[27] A. Milan, L. Leal-Taixe´, I. Reid, S. Roth, and K. Schindler. MOT16: A benchmark for multi-object tracking. arXiv:1603.00831 [cs], Mar. 2016. arXiv: 1603.00831. 1, 2, 3
+[28] Jiangmiao Pang, Linlu Qiu, Xia Li, Haofeng Chen, Qi Li, Trevor Darrell, and Fisher Yu. Quasi-dense similarity learning for multiple object tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 164–173, 2021. 1, 2, 7
+[29] Ziqiang Pei. Deepsort pytorch. https://github.com/ ZQPei/deep_sort_pytorch, 2019. 4, 6
+
+10
+
+[30] Akshay Rangesh and Mohan Manubhai Trivedi. No blind spots: Full-surround multi-object tracking for autonomous vehicles using cameras and lidars. IEEE Transactions on Intelligent Vehicles, 4(4):588–599, 2019. 1
+[31] Ergys Ristani, Francesco Solera, Roger Zou, Rita Cucchiara, and Carlo Tomasi. Performance measures and a data set for multi-target, multi-camera tracking. In European conference on computer vision, pages 17–35. Springer, 2016. 5
+[32] Peize Sun, Jinkun Cao, Yi Jiang, Rufeng Zhang, Enze Xie, Zehuan Yuan, Changhu Wang, and Ping Luo. Transtrack: Multiple-object tracking with transformer. arXiv preprint arXiv: 2012.15460, 2020. 3, 7
+[33] Pei Sun, Henrik Kretzschmar, Xerxes Dotiwalla, Aurelien Chouard, Vijaysai Patnaik, Paul Tsui, James Guo, Yin Zhou, Yuning Chai, Benjamin Caine, et al. Scalability in perception for autonomous driving: Waymo open dataset. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 2446–2454, 2020. 2
+[34] Zhi Tian, Chunhua Shen, Xinlong Wang, and Hao Chen. Boxinst: High-performance instance segmentation with box annotations. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 5443– 5452, 2021. 9
+[35] Laurens Van der Maaten and Geoffrey Hinton. Visualizing data using t-sne. Journal of machine learning research, 9(11), 2008. 6
+[36] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. In Advances in neural information processing systems, pages 5998–6008, 2017. 2
+[37] Paul Voigtlaender, Michael Krause, Aljosa Osep, Jonathon Luiten, Berin Balachandar Gnana Sekar, Andreas Geiger, and Bastian Leibe. Mots: Multi-object tracking and segmentation. arXiv:1902.03604[cs], 2019. arXiv: 1902.03604. 2
+[38] Chaoyang Wang, Chen Kong, and Simon Lucey. Distill knowledge from nrsfm for weakly supervised 3d pose learning. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 743–752, 2019. 9
+[39] Zhongdao Wang, Liang Zheng, Yixuan Liu, Yali Li, and Shengjin Wang. Towards real-time multi-object tracking. In Computer Vision–ECCV 2020: 16th European Conference, Glasgow, UK, August 23–28, 2020, Proceedings, Part XI 16, pages 107–122. Springer, 2020. 2, 3
+[40] Nicolai Wojke, Alex Bewley, and Dietrich Paulus. Simple online and realtime tracking with a deep association metric. In 2017 IEEE international conference on image processing (ICIP), pages 3645–3649. IEEE, 2017. 1, 3, 7
+[41] Jialian Wu, Jiale Cao, Liangchen Song, Yu Wang, Ming Yang, and Junsong Yuan. Track to detect and segment: An online multi-object tracker. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2021. 1, 7
+[42] Ning Xu, Linjie Yang, Yuchen Fan, Dingcheng Yue, Yuchen Liang, Jianchao Yang, and Thomas Huang. Youtube-vos: A large-scale video object segmentation benchmark. arXiv preprint arXiv:1809.03327, 2018. 2
+[43] Alper Yilmaz, Omar Javed, and Mubarak Shah. Object tracking: A survey. Acm computing surveys (CSUR), 38(4):13–es, 2006. 1
+
+[44] Fisher Yu, Wenqi Xian, Yingying Chen, Fangchen Liu, Mike Liao, Vashisht Madhavan, and Trevor Darrell. Bdd100k: A diverse driving video database with scalable annotation tooling. arXiv preprint arXiv:1805.04687, 2(5):6, 2018. 1, 2, 5
+[45] Zhou Yu, Jun Yu, Jianping Fan, and Dacheng Tao. Multimodal factorized bilinear pooling with co-attention learning for visual question answering. In Proceedings of the IEEE international conference on computer vision, pages 1821– 1830, 2017. 9
+[46] Fangao Zeng, Bin Dong, Tiancai Wang, Cheng Chen, Xiangyu Zhang, and Yichen Wei. Motr: End-to-end multiple-object tracking with transformer. arXiv preprint arXiv:2105.03247, 2021. 3, 7
+[47] Yifu Zhang, Peize Sun, Yi Jiang, Dongdong Yu, Zehuan Yuan, Ping Luo, Wenyu Liu, and Xinggang Wang. Bytetrack: Multi-object tracking by associating every detection box. arXiv preprint arXiv:2110.06864, 2021. 1, 3, 7, 8
+[48] Yifu Zhang, Chunyu Wang, Xinggang Wang, Wenjun Zeng, and Wenyu Liu. Fairmot: On the fairness of detection and re-identiﬁcation in multiple object tracking. arXiv preprint arXiv:2004.01888, 2020. 1, 2, 3, 7
+[49] Xingyi Zhou, Qixing Huang, Xiao Sun, Xiangyang Xue, and Yichen Wei. Towards 3d human pose estimation in the wild: a weakly-supervised approach. In Proceedings of the IEEE International Conference on Computer Vision, pages 398– 407, 2017. 9
+[50] Xingyi Zhou, Vladlen Koltun, and Philipp Kra¨henbu¨hl. Tracking objects as points. In European Conference on Computer Vision, pages 474–490. Springer, 2020. 7
+[51] Xingyi Zhou, Dequan Wang, and Philipp Kra¨henbu¨hl. Objects as points. arXiv preprint arXiv:1904.07850, 2019. 6, 8, 9
+
+11
+

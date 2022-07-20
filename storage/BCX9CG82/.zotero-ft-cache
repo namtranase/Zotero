@@ -1,0 +1,78 @@
+
+Skip to main content
+Cornell University
+We gratefully acknowledge support from
+the Simons Foundation and member institutions.
+arXiv.org > cs > arXiv:2105.04322
+
+Help | Advanced Search
+Search
+Computer Science > Computer Vision and Pattern Recognition
+(cs)
+[Submitted on 10 May 2021]
+Title: RelationTrack: Relation-aware Multiple Object Tracking with Decoupled Representation
+Authors: En Yu , Zhuoling Li , Shoudong Han , Hongwei Wang
+Download PDF
+
+    Abstract: Existing online multiple object tracking (MOT) algorithms often consist of two subtasks, detection and re-identification (ReID). In order to enhance the inference speed and reduce the complexity, current methods commonly integrate these double subtasks into a unified framework. Nevertheless, detection and ReID demand diverse features. This issue would result in an optimization contradiction during the training procedure. With the target of alleviating this contradiction, we devise a module named Global Context Disentangling (GCD) that decouples the learned representation into detection-specific and ReID-specific embeddings. As such, this module provides an implicit manner to balance the different requirements of these two subtasks. Moreover, we observe that preceding MOT methods typically leverage local information to associate the detected targets and neglect to consider the global semantic relation. To resolve this restriction, we develop a module, referred to as Guided Transformer Encoder (GTE), by combining the powerful reasoning ability of Transformer encoder and deformable attention. Unlike previous works, GTE avoids analyzing all the pixels and only attends to capture the relation between query nodes and a few self-adaptively selected key samples. Therefore, it is computationally efficient. Extensive experiments have been conducted on the MOT16, MOT17 and MOT20 benchmarks to demonstrate the superiority of the proposed MOT framework, namely RelationTrack. The experimental results indicate that RelationTrack has surpassed preceding methods significantly and established a new state-of-the-art performance, e.g., IDF1 of 70.5% and MOTA of 67.2% on MOT20. 
+
+Comments: 	11 pages, 5 figures, conference
+Subjects: 	Computer Vision and Pattern Recognition (cs.CV)
+Cite as: 	arXiv:2105.04322 [cs.CV]
+  	(or arXiv:2105.04322v1 [cs.CV] for this version)
+Submission history
+From: En Yu [ view email ]
+[v1] Mon, 10 May 2021 13:00:40 UTC (4,626 KB)
+Full-text links:
+Download:
+
+    PDF
+    Other formats 
+
+( license )
+Current browse context:
+cs.CV
+< prev   |   next >
+new | recent | 2105
+Change to browse by:
+cs
+References & Citations
+
+    NASA ADS
+    Google Scholar
+    Semantic Scholar
+
+DBLP - CS Bibliography
+listing | bibtex
+En Yu
+Hongwei Wang
+a export bibtex citation Loading...
+Bookmark
+BibSonomy logo Mendeley logo Reddit logo ScienceWISE logo
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer ( What is the Explorer? )
+Litmaps Toggle
+Litmaps ( What is Litmaps? )
+scite.ai Toggle
+scite Smart Citations ( What are Smart Citations? )
+Code & Data
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax ( What is MathJax? )
+
+    About
+    Help
+
+    contact arXiv Click here to contact arXiv Contact
+    subscribe to arXiv mailings Click here to subscribe Subscribe
+
+    Copyright
+    Privacy Policy
+
+    Web Accessibility Assistance
+
+    arXiv Operational Status
+    Get status notifications via email or slack
+

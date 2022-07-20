@@ -1,0 +1,860 @@
+Rethinking Counting and Localization in Crowds: A Purely Point-Based Framework
+Qingyu Song1* Changan Wang1∗ Zhengkai Jiang1 Yabiao Wang1 Ying Tai1 Chengjie Wang1 Jilin Li1 Feiyue Huang1† Yang Wu2 1Tencent Youtu Lab, 2Applied Research Center (ARC), Tencent PCG
+qingyusong@zju.edu.cn, {changanwang, zhengkjiang, caseywang}@tencent.com {yingtai, jasoncjwang, jerolinli, garyhuang, dylanywu}@tencent.com
+
+arXiv:2107.12746v3 [cs.CV] 7 Aug 2021
+
+Abstract
+Localizing individuals in crowds is more in accordance with the practical demands of subsequent high-level crowd analysis tasks than simply counting. However, existing localization based methods relying on intermediate representations (i.e., density maps or pseudo boxes) serving as learning targets are counter-intuitive and error-prone. In this paper, we propose a purely point-based framework for joint crowd counting and individual localization. For this framework, instead of merely reporting the absolute counting error at image level, we propose a new metric, called density Normalized Average Precision (nAP), to provide more comprehensive and more precise performance evaluation. Moreover, we design an intuitive solution under this framework, which is called Point to Point Network (P2PNet). P2PNet discards superﬂuous steps and directly predicts a set of point proposals to represent heads in an image, being consistent with the human annotation results. By thorough analysis, we reveal the key step towards implementing such a novel idea is to assign optimal learning targets for these proposals. Therefore, we propose to conduct this crucial association in an one-to-one matching manner using the Hungarian algorithm. The P2PNet not only signiﬁcantly surpasses state-of-the-art methods on popular counting benchmarks, but also achieves promising localization accuracy. The codes will be available at: TencentYoutuResearch/CrowdCounting-P2PNet.
+1. Introduction
+Among all the related concrete tasks of crowd analysis, crowd counting is a fundamental pillar, aiming to estimate the number of individuals in a crowd. However, simply giving a single number is obviously far from being able to support the practical demands of subsequent higher-level crowd
+*Equal contribution. †Corresponding author.
+
+Target
+
+Prediction
+
+Density Map
+
+Density Map
+
+Ground Truth (Points)
+
+Bounding Boxes
+
+Bounding Boxes
+
+Target Generation Model Training
+
+Points (Ours)
+
+Figure 1. Illustrations for the comparison of our pipeline with existing methods, in which the predictions are marked in Red while the ground truths are marked as Green. Top ﬂow: The dominated density map learning based methods fail to provide the exact locations of individuals. Middle ﬂow: The estimated inaccurate ground truth bounding boxes make the detection based methods error-prone, such as the missing detections as indicated, especially for the NMS-like process. Bottom ﬂow: Our pipeline directly predicts a set of points to represent the locations of individuals, which is simple, intuitive and competitive as demonstrated, bypassing those error-prone steps. Best viewed in color.
+
+analysis tasks, such as crowd tracking, activity recognition, abnormality detection, ﬂow/behavior prediction, etc.
+In fact, there is an obvious tendency in this ﬁeld for more challenging ﬁne-grained estimation (i.e., the locations of individuals) beyond simply counting. Speciﬁcally, some approaches cast crowd counting as a head detection problem, but leaving more efforts on labor-intensive annotation for tiny-scale heads. Other approaches [30, 35] attempted to generate the pseudo bounding boxes of heads with only
+
+point annotations provided, which however appears to be tricky or inaccurate at least. Also trying to directly locate individuals, several methods [17, 24] got stuck in suppressing or splitting over-close instance candidates, making themselves error-prone due to the extreme head scale variation, especially for highly-congested regions. To eschew the above problems, we propose a purely point-based framework for jointly counting and localizing individuals in crowds. This framework directly uses point annotations as learning targets and simultaneously outputs points to locate individuals, beneﬁting from the high-precision localization property of point representation and its relatively cheaper annotation cost. The pipeline is illustrated in Figure 1.
+Additionally, in terms of the evaluation metrics, some farsighted works [9, 37] encourage to adopt patch-level metrics for ﬁne-grained evaluation, but they only provide a rough measure for localization. Other existing localization aware metrics either ignore the signiﬁcant density variation across crowds [30, 35] or lack the punishment for duplicate predictions [35, 40]. Instead, we propose a new metric called density Normalized Average Precision (nAP) to provide a comprehensive evaluation metric for both localization and counting errors. The nAP metric supports both box and point representation as inputs (i.e., predictions or annotations), without the defects mentioned above.
+Finally, as an intuitive solution under this new framework, we develop a novel method to directly predict a set of point proposals with the coordinates of heads in an image and their conﬁdences. Speciﬁcally, we propose a Point-toPoint Network (P2PNet) to directly receive a set of annotated head points for training and predict points too during inference. Then to make such an idea work correctly, we delve into the ground truth target assignation process to reveal the crucial of such association. The conclusion is that either the case when multiple proposals are matched to a single ground truth, or the opposite case, can make the model confused during training, leading to over-estimated or under-estimated counts. So we propose to perform an one-to-one matching by Hungarian algorithm to associate the point proposals with their ground truth targets, and the unmatched proposals should be classiﬁed as negatives. We empirically show that such a matching is beneﬁcial to improving the nAP metric, serving as a key component for our solution under the new framework. This simple, intuitive and efﬁcient design yields state-of-the-art counting performance and promising localization accuracy.
+The major contributions of this work are three-fold:
+1. We propose a purely point-based framework for joint counting and individual localization in crowds. This framework encourages ﬁne-grained predictions, beneﬁting the practical demands of downstream tasks in crowd analysis.
+2. We propose a new metric termed density Normalized Average Precision to account for the evaluation of both lo-
+
+calization and counting, as a comprehensive evaluation metric under the new framework.
+3. We propose P2PNet as an intuitive solution following this conceptually simple framework. The method achieves state-of-the-art counting accuracy and promising localization performance, and might also be inspiring for other tasks relying on point predictions.
+2. Related Works
+In this section, we review two kinds of crowd counting methods in recent literature. They are grouped according to whether locations of individuals could be provided. Since we focus on the estimation of locations, existing metrics accounting for localization errors are also discussed.
+Density Map based Methods. The adoption of density map is a common choice of most state-of-the-art crowd counting methods, since it was ﬁrstly introduced in [18]. And the estimated count is obtained by summing over the predicted density maps. Recently, many efforts have been devoted to pushing forward the counting performance frontier of such methods. They either conduct a pixel-wise density map regression [20, 32, 14, 2, 29, 11], or resort to classify the count value of local patch into several bins [45, 25, 26]. Although many compelling models have been proposed, these density map learning based models still fail to provide the exact locations of individuals in crowds, not to mention their inherent ﬂaws as pointed out in [2, 31, 25]. Whereas the proposed method goes beyond counting and focuses on the direct prediction for locations of individuals, eschewing the defects of density maps and also beneﬁting the downstream practical applications.
+Localization based Methods. These methods typically achieve counting by ﬁrstly predicting the locations of individuals. Motivating by cutting-edge object detectors, some counting methods [21, 30, 35] try to predict the bounding boxes for heads of individuals. However, with only the point annotations available, these methods rely on heuristic estimation for ground truth bounding boxes, which is error-prone or even infeasible. These inaccurate bounding boxes not only confuse the model training process, but also make the post-process, i.e., NMS, fail to suppress false detections. Without those inaccurate targets introduced, other methods locate individuals by points [24] or blobs [17], but leaving more efforts to remove duplicates or split over-close detected individuals in congest regions. Instead, bypassing these tricky post-processing with an one-to-one matching, we propose to streamline the framework to directly estimate the point locations of individuals.
+Localization Aware Metrics. Traditional universally agreed evaluation metrics only measure the counting errors, entirely ignoring the signiﬁcant spatial variation of estimation errors in single image. To provide a more accurate eval-
+
+uation, some works [9, 27, 37] advocate to adopt patch-level or pixel-level absolute counting error as criteria, in lieu of the commonly used image-level metric. Other research [35] proposes Mean Localization Error to compute the average pixel distance between the predictions and ground truths, merely evaluating the localization errors. Inspired by evaluation metric used in object detection, [13] proposes to use the area under the Precision-Recall curve after a greedy association, which however ignores the punishment for duplicate predictions. Hence, [24] proposes to adopt a sequential matching and then use the standard Average Precision (AP) for evaluation. In this paper, we propose a new metric, termed density Normalized Average Precision (nAP), as a comprehensive evaluation metric for both localization errors and false detections. In particular, the nAP metric introduces a density normalization to account for the large density variation problem in crowds.
+3. Our Work
+We ﬁrstly introduce the proposed framework in detail (Sec. 3.1), and the new evaluation metric nAP is also presented (Sec. 3.2). Then we conduct a thorough analysis to reveal the key issue in improving the nAP metric under the new framework (Sec. 3.3). Inspired by the insightful analysis, we introduce the proposed P2PNet (Sec. 3.4), which directly predicts a set of point proposals to represent heads.
+3.1. The Purely Point-based Framework
+The proposed framework directly receives point annotations as its learning targets and then provides the exact locations for individuals in a crowd, rather than simply counting the number of individuals within it. And the locations of individuals are typically indicated by the center points of heads, possibly with optional conﬁdence scores.
+Formally, given an image with N individuals, we use pi = (xi, yi), i ∈ {1, .., N }, to represent the head’s center point of the i-th individual, which is located in (xi, yi). Then the collection of the center points for all individuals could be further denoted as P = {pi|i ∈ {1, .., N }}. Assuming a well-designed model M is trained to instantiate this new framework. And the model M predicts another two collections Pˆ = {pˆj|j ∈ {1, .., M }} and Cˆ = {cˆj|j ∈ {1, .., M }}, in which M is the number of predicted individuals, and cˆj is the conﬁdence score of the predicted point pˆj. Without loss of generality, we may assume that pˆj is exactly the prediction for the ground truth point pi. Then our goal is to ensure that the distance between pˆj and pi is as close as possible with a sufﬁciently high score cˆj. As a byproduct, the number of predicted individuals M should also be close enough to the ground truth crowd number N . In a nutshell, the new framework could simultaneously achieve crowd counting and individual localization.
+
+Compared with traditional counting methods, the individual locations provided by this framework are helpful to those motion based crowd analysis tasks, such as crowd tracking [49], activity recognition [8], abnormality detection [4], etc. Besides, without relying on laborintensive annotations, inaccurate pseudo boxes or tricky post-processing, this framework beneﬁts from the highprecision localization property of original point representation, especially for highly-congested regions in crowds.
+Therefore, this new framework is worth more attentions due to its advantages and practical values over traditional crowd counting. However, since the existence of severe occlusions, density variations, and annotation errors, it is quite challenging to tackle with such a task [24, 30, 35], which even is considered as ideal but infeasible in [13].
+3.2. Density Normalized Average Precision
+It is natural to ask that how to evaluate the performance of model M under the above new framework. In fact, a well-performed model following this framework should not only produce as few as false positives or false negatives, but also achieve competitive localization accuracy. Therefore, motivated by the mean Average Precision (mAP) [23] metric widely used in Object Detection, we propose a density Normalized Average Precision (nAP) to evaluate both the localization errors and counting performance.
+The nAP is calculated based on the Average Precision, which is the area under the Precision-Recall (PR) curve. And the PR curve could be easily obtained by accumulating a binary list following the common practice in [23]. In the binary list, a True Positive (TP) prediction is indicated by 1, and a False Positive (FP) prediction is indicated by 0. Speciﬁcally, given all predicted head points Pˆ, we ﬁrstly sort the point list with their conﬁdence scores from high to low. Then we sequentially determine that the point under investigation is either TP or FP, according to a pre-deﬁned density aware criterion. Different from the greedy association used in [13, 35], we apply a sequential association in which those higher scored predictions are associated ﬁrstly. In this way, these TP predictions could be easily obtained by a simple threshold ﬁltering during inference.
+We introduce our density aware criterion as follows. A predicted point pˆj is classiﬁed as TP only if it could be matched to certain ground truth pi, in which pi must not be matched before by any higher-ranked point. The matching process is guided by a pixel-level Euclidean distance based
+criterion 1(pˆj, pi). However, directly using the pixel dis-
+tance to measure the afﬁnity ignores the side effects from the large density variation across crowds. Thus, we introduce a density normalization for this matching criterion to mitigate the density variation problem. The density around a certain ground truth point is estimated following [48].
+
+25% 50%
+100%
+
+Center GT Point 3-Nearest GT Points Extra GT Points
+
+Figure 2. Illustration for different levels of localization accuracy in nAP (k=3). The yellow circle indicates the region within dkNN(pi) pixels from the center GT point pi. A typical value for δ is 0.5, as indicated by the blue circle, which means that the nearest GT point of most pixels within this region should be pi. The red circle represents a threshold (δ=0.25) for stricter localization accuracy.
+
+Formally, the ﬁnal criterion used in nAP is deﬁned as:
+
+1(pˆj, pi) =
+
+1, 0,
+
+if d(pˆj, pi)/dkNN(pi) < δ, otherwise,
+
+(1)
+
+where d(pˆj, pi) = ||pˆj − pi||2 denotes to the Euclidean distance, and dkNN(pi) denotes the average distance to the k nearest neighbors of pi. We use a threshold δ to control the desired localization accuracy, as shown in Figure 2.
+3.3. Our Approach
+Our approach is an intuitive solution following the proposed framework, which directly predict a set of point proposals to represent the center points for heads of individuals. In fact, the idea of point prediction is not new to the vision community, although it is quite different here. To name a few, in the ﬁeld of pose estimation, some methods adopt heatmap regression [5, 43] or direct point regression [38, 44] to predict the locations of pre-deﬁned keypoints. Since the number of the keypoints to be predicted is ﬁxed, the learning targets for these point proposals could be determined entirely before the training. Differently, the proposed framework aims to predict a point set of unknown size and is an open-set problem by nature [45]. Thus, one crucial problem of such a methodology is to determine which ground truth point should the current prediction be responsible for.
+We propose to solve this key problem with a mutually optimal one-to-one association strategy during the training stage. Let us conduct a thorough analysis to show the defects of the other two strategies for the ground truth targets assignment. Firstly, for each ground truth point, the proposal with the nearest distance should produce the best prediction. However, if we select the nearest proposal for every ground truth point, it is likely that one proposal might be matched to multiple ground truth points, as shown in Figure 3 (a). In such a case, only one ground truth could be correctly predicted, leading to under-estimated counts, especially for the congested regions. Secondly, for each point proposal, we may assign the nearest ground truth point as
+
+(a) 1 v N Match
+
+(b) N v 1 Match
+
+(c) 1 v 1 Match
+
+Ground Truth Point Matched
+
+Positive Proposal
+
+Negative Proposal
+
+Positive Region
+
+Figure 3. (a) Multiple ground truth points might be matched to the same proposal when selecting the nearest proposal for each of them, which leads to under-estimated counts. (b) Multiple proposals might be matched to the same ground truth point when selecting the nearest ground truth for each of them, which leads to over-estimated counts. (c) Our One-to-One match is without the above two defects, thus is suitable for direct point prediction.
+
+its target. Intuitively, this strategy might be helpful to alleviate the overall overhead of the optimization, since the nearest ground truth point is relatively easier to predict. However, in such an assignment, there may exist multiple proposals which simultaneously predict the same ground truth, as shown in Figure 3 (b). Because there are no scale annotations available, it is tricky to suppress these duplicate predictions, which might lead to over-estimated. Consequently, the association process should take both sides into consideration and produces the mutually optimal one-toone matching results, as shown in Figure 3 (c).
+Additionally, both the other two strategies have to determine a negative threshold, and the proposals whose distance with their matched targets are above this threshold will be considered as negatives. While using the one-to-one matching, those unmatched proposals are automatically remained as negatives, without any hyperparameter introduced. In a nutshell, the key to solve the open-set direct point prediction problem is to ensure a mutually optimal one-to-one matching between predicted and ground truth points.
+After the ground truth targets are obtained, these point proposals could be trained through an end-to-end optimization. Finally, the positive proposals should be pushed toward their targets, while those negative proposals would be simply classiﬁed as backgrounds. Since the point proposals are dynamically updated along with the training process, those proposals which have the potential to perform better could be gradually selected by the one-to-one matching to serve as the ﬁnal predictions.
+Actually, the distance used in above matching could be any other cost measure beyond pixel distance, such as a combination of conﬁdence score and pixel distance. We empirically show that taking conﬁdence scores of proposals into consideration during the one-to-one matching is helpful to improve the proposed nAP metric. Let us consider
+
+Feature Map
+
+Image
+
+Feature Map
+
+Image
+
+𝑠=2 𝑠=2
+
+×4
+(a) Center Layout
+
+(b) Grid Layout
+
+Figure 4. Two types of layout for reference points (s = 2, K = 4).
+
+two predicted proposals around the same ground truth point pi. If they have the same conﬁdence score, the one closer to pi should be matched as positive and encouraged to achieve higher localization accuracy. While the other one proposal should be matched as negative and supervised to lower its conﬁdence, thus might not be matched again during next training iteration. On the contrary, if the two proposals share the same distance from pi, the one with higher conﬁdence should be trained to be closer to pi with a much higher conﬁdence. Both the above two cases would encourage the positive proposals to have more accurate locations as well as relatively higher conﬁdences, which is beneﬁcial to the improvement of nAP under the proposed framework.
+
+3.4. The P2PNet Model
+
+In this part, we present the detailed pipeline of the proposed Point to Point Network (P2PNet). Begining with the generation of point proposals, we introduce our one-to-one association strategy in detail. Then we present the loss function and the network architecture for the P2PNet.
+Point Proposal Prediction. Let us denote the deep feature map outputted from the backbone network by Fs, in which s is the downsampling stride and Fs is with a size of H × W . Then based on Fs, we adopt two parallel branches for point coordinate regression and proposal classiﬁcation. For the classiﬁcation branch, it outputs the conﬁdence scores with a Softmax normalization. For the regression branch, it resorts to predict the offsets of the point coordinates due to the intrinsic translation invariant property of convolution layers. Speciﬁcally, each pixel on Fs should correspond to a patch of size s × s in the input image. In that patch, we ﬁrstly introduces a set of ﬁxed reference points R = {Rk|k ∈ {1, ..., K}} with pre-deﬁned locations Rk = (xk, yk). These reference points could be either densely arranged on the patch or just set to the center of that patch, as shown in Figure 4. Since there are K reference points for each location on Fs, the regression branch should produce totally H × W × K point proposals. Assuming the reference point Rk predicts offsets (∆kjx, ∆kjy) for its point proposal pˆj = (xˆj, yˆj), then the coordinate of pˆj is calculated as follows:
+
+xˆj = xk + γ∆kjx, yˆj = yk + γ∆kjy,
+
+(2)
+
+where γ is a normalization term, which scales the offsets to rectify the relatively small predictions.
+
+Proposal Matching. Following the symbols deﬁned in Sec. 3.1, we assign the ground truth target from Pˆ for every point proposal in P using an one-to-one matching strategy Ω(P, Pˆ, D). The D is a pair-wise matching cost matrix with the shape N × M , which measures the distance
+between two points in a pair. Instead of simply using the
+pixel distance, we also consider the conﬁdence score of that
+proposal, since we encourage the positive proposals to have higher conﬁdences. Formally, the cost matrix D is deﬁned
+as follows:
+
+D(P, Pˆ) = τ ||pi − pˆj ||2 − cˆj i∈N,j∈M ,
+
+(3)
+
+where ||·||2 denotes to the l2 distance, and cˆj is the conﬁdence score of the proposal pˆj. τ is a weight term to balance the effect from the pixel distance.
+Based on the pair-wise cost matrix D, we conduct the as-
+sociation using the Hungarian algorithm [16, 34, 42] as the
+matching strategy Ω. Note that in our implementation, we
+ensure M > N to produce many enough predictions, since
+those redundant proposals would be classiﬁed as negatives.
+From the perspective of the ground truth points, let us use a
+permutation ξ of {1, ..., M } to represent the optimal matching result, i.e., ξ = Ω(P, Pˆ, D). That is to say, the ground
+truth point pi is matched to the proposal pˆξ(i). Furthermore, those matched proposals (positives) could be represented as a set Pˆpos = {pˆξ(i)|i ∈ {1, ..., N }}, and those unmatched proposals in the set Pˆneg = pˆξ(i)|i ∈ {N + 1, ..., M } are labeled as negatives.
+
+Loss Design. After the ground truth targets have been obtained, we calculate the Euclidean loss Lloc to supervise the point regression, and use Cross Entropy loss Lcls to train the proposal classiﬁcation. The ﬁnal loss function L is the summation of the above two losses, which is deﬁned as:
+
+1N
+
+M
+
+Lcls
+
+=
+
+− M
+
+log cˆξ(i) + λ1
+
+log 1 − cˆξ(i) ,
+
+i=1
+
+i=N +1
+
+(4)
+
+1N Lloc = N
+
+pi − pˆξ(i)
+
+2 2
+
+,
+
+(5)
+
+i=1
+
+L = Lcls + λ2Lloc,
+
+(6)
+
+where ||·||l2 denotes to the Euclidean distance, λ1 is a reweight factor for negative proposals, and λ2 is a weight term
+to balance the effect of the regression loss.
+
+Network Design. As illustrated in Figure 5, we use the ﬁrst 13 convolutional layers in VGG-16 bn [36] to extract deep features. With the outputted feature map, we upsample its spatial resolution by a factor of 2 using nearest neighbor interpolation. Then the upsampled map is merged with
+
+VGG16
+
+H, W
+
+1 v 1 Match
+
+H/2, W/2
+
+Ground Truth Points
+
+Predicted Point Proposals
+
+H/4, W/4
+Regressed Points 𝒙𝒊, 𝒚𝒊 丨𝒊 ∈ 𝟏, … , 𝑴
+𝒄𝒊丨𝒊 ∈ 𝟏, … , 𝑴 Classification Scores
+
+H/8, W/8
+
+H/16, W/16
+
+H/8, W/8
+
+H/16, W/16
+
+Ground Truth Point Positive Proposal Negative Proposal
+
+Upsample Convolution Summation
+
+Regression Head H/8, W/8
+
+Classification
+
+Head
+
+H/8, W/8
+
+H/8, W/8
+
+Figure 5. The overall architecture of the proposed P2PNet. Built upon the VGG16, it ﬁrstly introduce an upsampling path to obtain ﬁne-
+
+grained deep feature map. Then it exploits two branches to simultaneously predict a set of point proposals and their conﬁdence scores. The key step in our pipeline is to ensure an one-to-one matching between point proposals and ground truth points, which determines the
+
+learning targets of those proposals.
+
+the feature map from a lateral connection by element-wise addition. This lateral connection is used to reduce channel dimensions of the feature map after the fourth convolutional blcok. Finally, the merged feature map undergoes a 3 × 3 convolutional layer to get Fs, and the convolution in which is used to reduce the aliasing effect due to the upsampling.
+The prediction head in our P2PNet is consisted of two branches, which are both fed with Fs and produce point locations and conﬁdence scores respectively. For simplicity, the architecture of the two branches are kept same, which is consisted of three stacked convolutions interleaved with ReLU activations. We have empirically found this simple structure yield competitive results.
+
+the max size of image no longer than 1408 and 1920, respectively, and keep the original aspect ratio.
+Hyperparameters. We use the feature map of stride s = 8 for the prediction. The number K of the reference points is set to 4 (8 for QNRF dataset). And K is set according to the dataset statistics to ensure M > N . For the point regression, we set the γ to 100. The weight term τ during the matching is set as 5e-2. In the loss function, the λ1 is set to 0.5, and λ2 is set to 2e-4. Adam algorithm [15] with a ﬁxed learning rate 1e-4 is used to optimize the model parameters. Since the weights in the backbone network have been pre-trained on the ImageNet, thus, we use a smaller learning rate 1e-5. The training batch size is set to 8.
+
+4. Experiments
+4.1. Implementation Details
+Dataset. We exploit existing publicly available datasets in crowd counting to demonstrate the superiority of our method. Speciﬁcally, extensive experiments are conducted on four challenging datasets, including ShanghaiTech PartA and PartB [48], UCF CC 50 [12], UCF-QNRF [13] and NWPU-Crowd [40]. For experiments on UCF CC 50, we conduct a ﬁve-fold cross validation following [12].
+Data Augmentations. We ﬁrstly adopt random scaling with its scaling factor selected from [0.7, 1.3], keeping the shorter side not less than 128. Then we randomly crop an image patches with a ﬁxed-size of 128 × 128 from the resized image. Finally, random ﬂipping with a probability of 0.5 is also adopted. For the datasets containing extremely large resolution, i.e., QNRF and NWPU-Crowd, we keep
+
+4.2. Model Evaluation
+As a comprehensive criteria, the proposed nAP metric is ﬁrstly reported to evaluate the performance of our P2PNet model. As shown in Table 1, the nAP is reported using three different thresholds of δ, which corresponds to the average precision under different localization accuracies of the predicted individual points. Typically, nAP0.5 could satisfy the requirements of most practical applications, which means that the ground truth point is exactly the nearest neighbor for most points within this region. Besides, nAP0.1 and nAP0.25 are reported to account for some requirements of high localization accuracy. Following recent detection methods which report the average of AP under several thresholds to provide a single number for the overall performance, we adopt a similar metric. Speciﬁcally, we calculate multiple nAPδ with the δ starting from 0.05 to 0.50, with steps of 0.05. Then an average is done to
+
+nAPδ
+
+SHTech PartA SHTech PartB UCF CC 50 UCF-QNRF NWPU-Crowd
+
+δ = 0.05 δ = 0.25 δ = 0.50 δ = {0.05 : 0.05 : 0.50}
+
+10.9% 70.3% 90.1% 64.4%
+
+23.8% 84.2% 94.1% 76.3%
+
+5.0% 54.5% 88.1% 54.3%
+
+5.9% 55.4% 83.2% 53.1%
+
+12.9% 71.3% 89.1% 65.0%
+
+Table 1. The overall performance of our P2PNet.
+
+Methods
+
+Venue
+
+SHTech PartA SHTech PartB UCF CC 50
+
+UCF-QNRF
+
+MAE MSE MAE MSE MAE MSE MAE MSE
+
+CAN [28]
+
+CVPR’19 62.3 100.0 7.8 12.2 212.2 243.7 107.0 183.0
+
+Bayesian+ [31]
+
+ICCV’19 62.8 101.8 7.7 12.7 229.3 308.2 88.7 154.8
+
+S-DCNet [45]
+
+ICCV’19 58.3 95.0 6.7 10.7 204.2 301.3 104.4 176.1
+
+SANet + SPANet [7] ICCV’19 59.4 92.5 6.5 9.9 232.6 311.7 -
+
+-
+
+SDANet [32]
+
+AAAI’20 63.6 101.8 7.8 10.2 227.6 316.4 -
+
+-
+
+ADSCNet [2]
+
+CVPR’20 55.4 97.7 6.4 11.3 198.4 267.3 71.3 132.5
+
+ASNet [14]
+
+CVPR’20 57.78 90.13 -
+
+- 174.84 251.63 91.59 159.71
+
+AMRNet [29]
+
+ECCV’20 61.59 98.36 7.02 11.00 184.0 265.8 86.6 152.2
+
+AMSNet [11]
+
+ECCV’20 56.7 93.4 6.7 10.2 208.4 297.3 101.8 163.2
+
+DM-Count [39] NeurIPS’20 59.7 95.7 7.4 11.8 211.0 291.5 85.6 148.3
+
+Ours
+
+-
+
+52.74 85.06 6.25 9.9 172.72 256.18 85.32 154.5
+
+Table 2. Comparison of the counting accuracy with state-of-the-art methods.
+
+get the overall average precision nAP{0.05:0.05:0.50}. From the Table 1, we observe that our P2PNet achieves
+a promising average precision under different levels of localization accuracy. Speciﬁcally, its overall metric nAP{0.05:0.05:0.50} is around 60% on all datassets, which should already meet the requirements of many practical applications. In terms of the primary indicator nAP0.5, the P2PNet generally achieves a promising precision of more
+
+scores higher than 0.5. We compare the P2PNet with stateof-the-art methods on several challenging datasets with various densities. Similar to [48], we also adopt Mean Absolute Error (MAE) and Mean Squared Error (MSE) as the evaluation metrics. The results are illustrated in Table 2 and Table 3. The top performance is indicated by bold numbers and the second best is indicated by underlined numbers.
+
+than 80%. For most datasets, the P2PNet could achieve a nAP0.5 of nearly 90%, which demonstrates the effectiveness of our approach on individual localization. Even for the stricter metric nAP0.25, the precision is still higher than 55%. These results are encouraging, since we did not use any techniques like coordinate reﬁnement in [3, 47] or exploiting multiple feature levels [22], which are both orthog-
+
+Methods
+CSRNet [20] Bayesian+ [31] S-DCNet [45] DM-Count [39]
+Ours
+
+MAE[O] 121.3 105.4 90.2 88.4 77.44
+
+NWPU-Crowd
+
+MSE[O] MAE[L]
+
+387.8 112.0
+
+454.2 115.8
+
+370.5
+
+82.9
+
+388.6
+
+88.0
+
+362
+
+83.28
+
+MAE[S] 522.7 750.5 567.8 498.0 553.92
+
+onal to our contributions and should bring more improve-
+
+Table 3. Comparison on the NWPU-Crowd dataset.
+
+ments. Besides, the P2PNet achieves a relatively lower precision on the nAP0.05, which is reasonable since the effects of the labeling deviations might gradually become apparent under such high localization accuracy.
+Besides, we also notice that the NWPU-Crowd dataset [40] provides scarce yet valuable box annotations, so we report our localization performance using their metrics to
+
+ShanghaiTech. There are two independent subsets in ShanghaiTech dataset: PartA and PartB. The PartA contains highly congested images collecting from the Internet. While the PartB is collected from a busy street and represents relatively sparse scenes. Our P2PNet achieves the best performance on both PartA and PartB. In particular, on the PartA, the P2PNet reduces the MAE by 4.8% and MSE by
+
+compare with other competitors. And our P2PNet achieves an F1-measure/Precision/Recall of 71.2%/72.9%/69.5%, which is the best among published methods with similar backbones. For other localization based methods with ofﬁcial codes available, we also report their results in nAP metric (much lower than ours) in Supplementary.
+
+12.9% respectively, compared with the second best method ADSCNet. For sparse scenes in PartB, the P2PNet could also bring a reduction of 2.3% in MAE. UCF CC 50. UCF CC 50 has only 50 images collecting from the Internet, but contains complicated scenes with large variation of crowd numbers. As shown in Table 2,
+
+Furthermore, we also evaluate the counting accuracy of our P2PNet surpasses all the other methods, reducing the
+
+our model. The estimated crowd number of our P2PNet is obtained by counting the predicted points with conﬁdence
+
+MAE by 2.1 compared with the second best performance. UCF-QNRF. UCF-QNRF is a challenging dataset due to
+
+Ground Truth
+
+307
+
+760
+
+1366
+
+Prediction
+
+300
+
+774
+
+1397
+
+Figure 6. Some qualitative results for the predicted individuals of our P2PNet. The white numbers denote to the ground truth or prediction counts. The visualizations demonstrate the superiority of our method under various densities in terms of both localization and counting.
+
+the much wider range of counts. As shown in Table 2, our P2PNet achieves an MAE of 85.32, which is much better than the Neural Architecture Search based method AMSNet. Compared with the previous best method ADSCNet, although the accuracy of our method is not so competitive, it is still much higher than ADSCNet on all other datasets. Besides, among all the methods in Table 2, only ours could provide exact individual locations. NWPU-Crowd. The NWPU-Crowd dataset is a large-scale congested dataset recently introduced in [40]. As shown in Table 3, our P2PNet achieves the best overall MAE, with a reduction of 12.4% compared with the second best method DM-Count. Since our predictions are only based on a single scale feature map for simplicity, the result is slightly lower than those best performance on MAE[S]. MAE[S] is the average MAE of different scale levels, please refer to [40].
+4.3. Ablation Studies
+Layout MAE MSE nAPδ Center 53.7 89.61 61.7 Grid 52.74 85.06 64.4
+Table 4. The effect of the layout for reference points. For an overall comparison, we use δ = {0.05 : 0.05 : 0.50}. Layout of reference points. We ﬁrstly evaluate the effect from the layouts of the reference points. As shown in Table 4, we compare two layouts in the Figure 4. Generally speaking, both the two layouts achieve state-of-the-art per-
+
+Method s=4
+P2PNet s = 8 s = 16
+
+MAE 53.51 52.74 54.3
+
+MSE 85.77 85.06 85.18
+
+nAPδ 66.8 64.4 52.4
+
+Table 5. The ablation study on SHTech PartA. For an overall comparison, we use δ = {0.05 : 0.05 : 0.50}.
+
+P2PNet consistently achieves competitive results using different feature levels, which demonstrates the effectiveness of our point based solution. In particular, the feature level with a stride of 8 provides a trade-off for the various densities, thus yields better performance.
+In terms of the localization accuracy, we observe an obvious trend of improvement on nAP when we increase the feature map resolution, as shown in Table 5. It implies that the ﬁnest feature map is beneﬁcial for localization, which is also in accord with the consensus on other tasks. Besides, based on our baseline method, it would be interesting to introduce existing multi-scale feature fusion techniques such as [22], which are discarded in our P2PNet for simplicity.
+
+5. Conclusion
+In this work, we go beyond crowd counting and propose a purely point-based framework to directly predict locations for crowd individuals. This new framework could better satisfy the practical demands of downstream tasks in crowd analysis. In conjunction with it, we advocate to use a new metric nAP for a more comprehensive accuracy evaluation
+
+formance with minor difference, proving that the target association matters more than the layout of reference points. The Grid layout performs slightly better due to its dense ar-
+
+on both localization and counting. Moreover, as an intuitive solution following this framework, we propose a novel network P2PNet, which is capable of directly taking point
+
+rangement of reference points, which is beneﬁcial for the congested regions. Effect of feature levels. We exhibit the effect of different feature levels used for prediction. For fair comparison, we
+
+annotations as supervision whilst predicting the point locations during inference. P2PNet’s key component is the oneto-one matching during the ground truth targets association, which is beneﬁcial to the improvement of the nAP metric.
+
+keep the total reference points the same when using feature levels with different strides. As shown in Table 5, the
+
+This conceptually simple framework yields state-of-the-art counting performance and promising localization accuracy.
+
+References
+[1] Shahira Abousamra, Minh Hoai, Dimitris Samaras, and Chao Chen. Localization in the crowd with topological constraints. 2021. 11
+[2] Shuai Bai, Zhiqun He, Yu Qiao, Hanzhe Hu, Wei Wu, and Junjie Yan. Adaptive dilated network with self-correction supervision for counting. In IEEE Conference on Computer Vision and Pattern Recognition, 2020. 2, 7
+[3] Zhaowei Cai and Nuno Vasconcelos. Cascade r-cnn: Delving into high quality object detection. In IEEE Conference on Computer Vision and Pattern Recognition, 2018. 7
+[4] Xiao-Han Chen and Jian-Huang Lai. Detecting abnormal crowd behaviors based on the div-curl characteristics of ﬂow ﬁelds. Pattern Recognition, 2019. 3
+[5] Yilun Chen, Zhicheng Wang, Yuxiang Peng, Zhiqiang Zhang, Gang Yu, and Jian Sun. Cascaded pyramid network for multi-person pose estimation. In IEEE Conference on Computer Vision and Pattern Recognition, 2018. 4
+[6] Jian Cheng, Haipeng Xiong, Zhiguo Cao, and Hao Lu. Decoupled two-stage crowd counting and beyond. IEEE Transactions on Image Processing, 30:2862–2875, 2021. 11
+[7] Zhi-Qi Cheng, Jun-Xiu Li, Qi Dai, Xiao Wu, and Alexander G Hauptmann. Learning spatial awareness to improve crowd counting. In IEEE International Conference on Computer Vision, 2019. 7
+[8] Camille Dupont, Luis Tobias, and Bertrand Luvison. Crowd11: A dataset for ﬁne grained crowd behaviour analysis. In IEEE Conference on Computer Vision and Pattern Recognition Workshops, 2017. 3
+[9] Ricardo Guerrero-Go´mez-Olmedo, Beatriz Torre-Jime´nez, Roberto Lo´pez-Sastre, Saturnino Maldonado-Basco´n, and Daniel Onoro-Rubio. Extremely overlapping vehicle counting. In Iberian Conference on Pattern Recognition and Image Analysis, 2015. 2, 3
+[10] Peiyun Hu and Deva Ramanan. Finding tiny faces. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 951–959, 2017. 11
+[11] Yutao Hu, Xiaolong Jiang, Xuhui Liu, Baochang Zhang, Jungong Han, Xianbin Cao, and David Doermann. Nas-count: Counting-by-density with neural architecture search. In European Conference on Computer Vision, 2020. 2, 7, 11
+[12] Haroon Idrees, Imran Saleemi, Cody Seibert, and Mubarak Shah. Multi-source multi-scale counting in extremely dense crowd images. In IEEE Conference on Computer Vision and Pattern Recognition, 2013. 6
+[13] Haroon Idrees, Muhmmad Tayyab, Kishan Athrey, Dong Zhang, Somaya Al-Maadeed, Nasir Rajpoot, and Mubarak Shah. Composition loss for counting, density map estimation and localization in dense crowds. In European Conference on Computer Vision, 2018. 3, 6
+[14] Xiaoheng Jiang, Li Zhang, Mingliang Xu, Tianzhu Zhang, Pei Lv, Bing Zhou, Xin Yang, and Yanwei Pang. Attention scaling for crowd counting. In IEEE Conference on Computer Vision and Pattern Recognition, 2020. 2, 7, 11
+[15] Diederik P Kingma and Jimmy Ba. Adam: A method for stochastic optimization. International Conference for Learning Representations, 2014. 6
+
+[16] Harold W Kuhn. The hungarian method for the assignment problem. Naval Research Logistics Quarterly, 1955. 5
+[17] Issam H Laradji, Negar Rostamzadeh, Pedro O Pinheiro, David Vazquez, and Mark Schmidt. Where are the blobs: Counting by localization with point supervision. In European Conference on Computer Vision, 2018. 2
+[18] Victor Lempitsky and Andrew Zisserman. Learning to count objects in images. In Advances in Neural Information Processing Systems, 2010. 2
+[19] Chongyi Li, Chunle Guo, Jichang Guo, Ping Han, Huazhu Fu, and Runmin Cong. Pdr-net: Perception-inspired single image dehazing network with reﬁnement. IEEE Transactions on Multimedia, 22(3):704–716, 2019. 11
+[20] Yuhong Li, Xiaofan Zhang, and Deming Chen. Csrnet: Dilated convolutional neural networks for understanding the highly congested scenes. In IEEE Conference on Computer Vision and Pattern Recognition, 2018. 2, 7, 11
+[21] Dongze Lian, Jing Li, Jia Zheng, Weixin Luo, and Shenghua Gao. Density map regression guided detection network for rgb-d crowd counting and localization. In IEEE Conference on Computer Vision and Pattern Recognition, 2019. 2
+[22] Tsung-Yi Lin, Piotr Dolla´r, Ross Girshick, Kaiming He, Bharath Hariharan, and Serge Belongie. Feature pyramid networks for object detection. In IEEE Conference on Computer Vision and Pattern Recognition, 2017. 7, 8, 11
+[23] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dolla´r, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In European Conference on Computer Vision, 2014. 3
+[24] Chenchen Liu, Xinyu Weng, and Yadong Mu. Recurrent attentive zooming for joint crowd counting and precise localization. In IEEE Conference on Computer Vision and Pattern Recognition, 2019. 2, 3, 11
+[25] Liang Liu, Hao Lu, Haipeng Xiong, Ke Xian, Zhiguo Cao, and Chunhua Shen. Counting objects by blockwise classiﬁcation. IEEE Transactions on Circuits and Systems for Video Technology, 2019. 2
+[26] Liang Liu, Hao Lu, Hongwei Zou, Haipeng Xiong, Zhiguo Cao, and Chunhua Shen. Weighing counts: Sequential crowd counting by reinforcement learning. In European Conference on Computer Vision, 2020. 2
+[27] Weizhe Liu, Krzysztof Lis, Mathieu Salzmann, and Pascal Fua. Geometric and physical constraints for drone-based head plane crowd density estimation. In International Conference on Intelligent Robots and Systems, 2019. 3
+[28] Weizhe Liu, Mathieu Salzmann, and Pascal Fua. Contextaware crowd counting. In IEEE Conference on Computer Vision and Pattern Recognition, 2019. 7
+[29] Xiyang Liu, Jie Yang, and Wenrui Ding. Adaptive mixture regression network with local counting map for crowd counting. In European Conference on Computer Vision, 2020. 2, 7
+[30] Yuting Liu, Miaojing Shi, Qijun Zhao, and Xiaofang Wang. Point in, box out: Beyond counting persons in crowds. In IEEE Conference on Computer Vision and Pattern Recognition, 2019. 1, 2, 3
+
+[31] Zhiheng Ma, Xing Wei, Xiaopeng Hong, and Yihong Gong. Bayesian loss for crowd count estimation with point supervision. In IEEE International Conference on Computer Vision, 2019. 2, 7
+[32] Yunqi Miao, Zijia Lin, Guiguang Ding, and Jungong Han. Shallow feature based dense attention network for crowd counting. In Association for the Advancement of Artiﬁcial Intelligence, 2020. 2, 7, 11
+[33] Shaoqing Ren, Kaiming He, Ross Girshick, and Jian Sun. Faster r-cnn: towards real-time object detection with region proposal networks. IEEE transactions on pattern analysis and machine intelligence, 39(6):1137–1149, 2016. 11
+[34] Stewart Russell, Andriluka Mykhaylo, and Andrew Y. Ng. End-to-end people detection in crowded scenes. In IEEE Conference on Computer Vision and Pattern Recognition, 2016. 5
+[35] Deepak Babu Sam, Skand Vishwanath Peri, Mukuntha Narayanan Sundararaman, Amogh Kamath, and Venkatesh Babu Radhakrishnan. Locate, size and count: Accurately resolving people in dense crowds via detection. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2020. 1, 2, 3, 11
+[36] Karen Simonyan and Andrew Zisserman. Very deep convolutional networks for large-scale image recognition. arXiv preprint arXiv:1409.1556, 2014. 5
+[37] Yukun Tian, Yiming Lei, Junping Zhang, and James Z Wang. Padnet: Pan-density crowd counting. IEEE Transactions on Image Processing, 2019. 2, 3
+[38] Alexander Toshev and Christian Szegedy. Deeppose: Human pose estimation via deep neural networks. In IEEE Conference on Computer Vision and Pattern Recognition, 2014. 4
+[39] Boyu Wang, Huidong Liu, Dimitris Samaras, and Minh Hoai Nguyen. Distribution matching for crowd counting. Advances in Neural Information Processing Systems, 2020. 7
+[40] Qi Wang, Junyu Gao, Wei Lin, and Xuelong Li. Nwpucrowd: A large-scale benchmark for crowd counting and localization. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2020. 2, 6, 7, 8, 11
+[41] Yi Wang, Junhui Hou, Xinyu Hou, and Lap-Pui Chau. A self-training approach for point-supervised object detection and counting in crowds. IEEE Transactions on Image Processing, 30:2876–2887, 2021. 11
+[42] Zijun Wei, Wang Boyu, Hoai Minh, Zhang Jianming, Shen Xiaohui, Lin Zhe, Mech Radomir, and Samaras Dimitris. Sequence-to-segments networks for detecting segments in videos. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2019. 5
+[43] Bin Xiao, Haiping Wu, and Yichen Wei. Simple baselines for human pose estimation and tracking. In European Conference on Computer Vision, 2018. 4
+[44] Fu Xiong, Boshen Zhang, Yang Xiao, Zhiguo Cao, Taidong Yu, Joey Tianyi Zhou, and Junsong Yuan. A2j: Anchor-tojoint regression network for 3d articulated pose estimation from a single depth image. In IEEE International Conference on Computer Vision, 2019. 4
+[45] Haipeng Xiong, Hao Lu, Chengxin Liu, Liang Liu, Zhiguo Cao, and Chunhua Shen. From open set to closed set: Count-
+
+ing objects by spatial divide-and-conquer. In IEEE International Conference on Computer Vision, 2019. 2, 4, 7
+[46] Zhaoyi Yan, Yuan Yuchen, Zuo Wangmeng, Tan Xiao, Wang Yezhen, Wen Shilei, and Ding Errui. Perspective-guided convolution networks for crowd counting. In IEEE International Conference on Computer Vision, 2019. 11
+[47] Shifeng Zhang, Longyin Wen, Xiao Bian, Zhen Lei, and Stan Z Li. Single-shot reﬁnement neural network for object detection. In IEEE Conference on Computer Vision and Pattern Recognition, 2018. 7
+[48] Yingying Zhang, Desen Zhou, Siqin Chen, Shenghua Gao, and Yi Ma. Single-image crowd counting via multi-column convolutional neural network. In IEEE Conference on Computer Vision and Pattern Recognition, 2016. 3, 6, 7, 11
+[49] Feng Zhu, Xiaogang Wang, and Nenghai Yu. Crowd tracking by group structure evolution. IEEE Transactions on Circuits and Systems for Video Technology, 2016. 3
+
+Supplementary
+
+1. Counting Evaluation Metrics
+
+Similar to previous works in crowding counting, we adopt Mean Absolute Error (MAE) and Mean squared error (MSE) as our evaluation metrics which are deﬁned as:
+
+1N
+
+MAE = N
+
+|zˆi − zi| ,
+
+(7)
+
+i
+
+MSE =
+
+1 N
+
+N
+(zˆi − zi)2,
+
+(8)
+
+i
+
+where zˆi and zi represent estimated crowd number and ground-truth crowd number of the i-th image, respectively. N denotes the total number of test images.
+
+2. Discussion on Spatial Scale Problem
+Despite its superior performance, the proposed P2PNet did not explicitly deal with the scale variation problem. Actually, different from bounding boxes, the head points themselves are scale ignorant in nature. In other words, the one-one matching ensures that no matter which scale the head is, only one optimal predicted proposal will be chosen as its prediction. Thus, some implicit scale cues might be learned automatically during the training process. Besides, the proposed framework is orthogonal to some previous works dealing with scale variations, such as FPN [22], PGCNet [46], CSRNet [20], MCNN [48], etc.
+
+3. Hyperparameters Analysis
+We set the number of reference points (K) based on the nearest neighbour distance distribution of ground truth points. Speciﬁcally, based on the observation that nearly 95% (SHTech PartA) of the head points are within the nearest neighbour distance of 4 pixels, we set the number of the reference points K as 4 on the feature map with stride 8. We experimentally analyze the accuracy sensitivity of this parameter in Table 6. As shown from the results, the model with K=1 still achieves state-of-the-art accuracy, although it’s reference points are too few to cover all the heads in congested areas. Setting K to a value greater than 4 leads to inferior accuracy, which might be caused by the increase of negative samples.
+
+4. Localization Performance
+Thanks to the scarce yet valuable box annotations provided by the NWPU-Crowd dataset [40], we could compare the localization performance of our P2PNet with other competitors using their metrics. As shown in Table 7, our
+
+K K =1 K =4 K =8
+
+MAE 54.08 52.74 53.43
+
+MSE 84.37 85.06 87.57
+
+nAPδ 60.1 64.4 58.8
+
+K =12
+
+54.13
+
+87.9
+
+58.6
+
+K =16
+
+53.47
+
+86.1
+
+58.3
+
+Table 6. The performance change w.r.t. the number K for reference points. For an overall comparison, we use δ = {0.05 : 0.05 : 0.50}.
+
+Method
+
+F1-Measure Precision Recall
+
+FasterRCNN [33] TinyFaces [10] RAZ [24]
+Crowd-SDNet [41] PDRNet [19] TopoCount [1] D2CNet [6] Ours
+
+0.068 0.567 0.599 0.637 0.653 0.692 0.700 0.712
+
+0.958 0.529 0.666 0.651 0.675 0.683 0.741 0.729
+
+0.035 0.611 0.543 0.624 0.633 0.701 0.662 0.695
+
+Table 7. Comparison for the localization performance on NWPU.
+
+P2PNet achieves the best F1 score among the published methods with similar computation complexity.
+Among a few existing localization-based methods, almost none of them have ofﬁcial codes or third-party reimplementations except for [35]. So for a fair comparison, we evaluate the nAP0:05:0:05:0:50 of [35] on SHTech PartA, SHTech PartB and QNRF, which are 33.2%, 45.8% and 8.9% respectively. As shown from the results, our P2PNet achieves signiﬁcantly higher localization performance in terms of nAP, especially on the challenging QNRF dataset.
+5. Visual Results for Qualitative Evaluation
+In Figure 7-19, we exhibit the results of several example images with different densities from sparse, medium to dense. As seen from these results, our P2PNet achieves impressive localization and counting accuracy under various crowd density conditions.
+Additionally, from these qualitative results, we also ﬁnd that P2PNet may fail on some extreme large heads and gray images (old photos). But similar failure cases could also be found in other top methods, such as ASNet (CVPR’20) [14], AMSNet (ECCV’20) [11], SDANet (AAAI’20) [32], etc. Fortunately, these might be alleviated to some extent by adding more relevant training data.
+
+181
+
+171
+
+165
+
+174
+
+71
+
+72
+
+92
+
+96
+
+Image
+
+190 Ground Truth
+Figure 7. Visual results of sparse scenes (1).
+
+190 Prediction
+
+135
+
+129
+
+157
+
+141
+
+153
+
+150
+
+182
+
+174
+
+Image
+
+141 Ground Truth
+Figure 8. Visual results of sparse scenes (2).
+
+155 Prediction
+
+181 69
+
+171 71
+
+165
+
+143
+
+199
+
+197
+
+121
+
+120
+
+Image
+
+198 Ground Truth
+Figure 9. Visual results of sparse scenes (3).
+
+198 Prediction
+
+149 166 122
+
+137 147 135
+
+133
+
+151
+
+Image
+
+115 Ground Truth
+Figure 10. Visual results of sparse scenes (4).
+
+111 Prediction
+
+361
+
+373
+
+277
+vgg16_bn_11-13_21-50-11
+460
+
+269 453
+
+760
+
+774
+
+Image
+
+250 Ground Truth
+
+244 Prediction
+
+Figure 11. Visual results of moderately congested scenes (1).
+
+717
+
+767
+
+366
+
+369
+
+382
+
+398
+
+384
+
+392
+
+Image
+
+297 Ground Truth
+Figure 12. Visual results of moderately congested scenes (2).
+
+Prediction
+
+314
+
+349
+
+315
+
+356
+
+362
+
+468
+
+463
+
+212
+
+222
+
+Image
+
+485 Ground Truth
+
+Prediction
+
+Figure 13. Visual results of moderately congested scenes (3).
+
+483
+
+207
+
+203
+
+218
+
+213
+
+579
+
+567
+
+417
+
+431
+
+Image
+
+383 Ground Truth
+Figure 14. Visual results of moderately congested scenes (4).
+
+Prediction
+
+382
+
+246
+
+231
+
+522
+
+530
+
+391
+
+428
+
+381
+
+342
+
+Image
+
+251 Ground Truth
+Figure 15. Visual results of moderately congested scenes (5).
+
+265 Prediction
+
+1068 961
+
+1031 963
+
+1006 1366
+
+977 1397
+
+Image
+
+867 Ground Truth
+Figure 16. Visual results of congested scenes (1).
+
+865 Prediction
+
+1307
+
+1336
+
+1531
+
+1520
+
+11002033
+
+10172
+
+1505
+
+1505
+
+Image
+
+Ground Truth
+
+1977
+
+Figure 17. Visual results of congested scenes (2).
+
+Prediction
+
+1874
+
+2670
+
+2703
+
+1101 1449 1748
+
+1022 1432 1711
+
+Image
+
+5951 Ground Truth Figure 18. Visual results of congested scenes (3).
+
+Prediction
+
+5623
+
+1448 1619 1188
+
+1445 1636 1167
+
+Image
+
+20033 Ground Truth Figure 19. Visual results of congested scenes (4).
+
+Prediction
+
+22558
+

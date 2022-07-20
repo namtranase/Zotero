@@ -1,0 +1,83 @@
+
+Skip to main content
+Cornell University
+We gratefully acknowledge support from
+the Simons Foundation and member institutions.
+arxiv logo > cs > arXiv:2103.07461
+
+Help | Advanced Search
+Search
+Computer Science > Computer Vision and Pattern Recognition
+(cs)
+[Submitted on 12 Mar 2021]
+Title: Probabilistic two-stage detection
+Authors: Xingyi Zhou , Vladlen Koltun , Philipp Krähenbühl
+Download PDF
+
+    Abstract: We develop a probabilistic interpretation of two-stage object detection. We show that this probabilistic interpretation motivates a number of common empirical training practices. It also suggests changes to two-stage detection pipelines. Specifically, the first stage should infer proper object-vs-background likelihoods, which should then inform the overall score of the detector. A standard region proposal network (RPN) cannot infer this likelihood sufficiently well, but many one-stage detectors can. We show how to build a probabilistic two-stage detector from any state-of-the-art one-stage detector. The resulting detectors are faster and more accurate than both their one- and two-stage precursors. Our detector achieves 56.4 mAP on COCO test-dev with single-scale testing, outperforming all published results. Using a lightweight backbone, our detector achieves 49.2 mAP on COCO at 33 fps on a Titan Xp, outperforming the popular YOLOv4 model. 
+
+Comments: 	Code is available at this https URL
+Subjects: 	Computer Vision and Pattern Recognition (cs.CV)
+Cite as: 	arXiv:2103.07461 [cs.CV]
+  	(or arXiv:2103.07461v1 [cs.CV] for this version)
+  	https://doi.org/10.48550/arXiv.2103.07461
+Focus to learn more
+arXiv-issued DOI via DataCite
+Submission history
+From: Xingyi Zhou [ view email ]
+[v1] Fri, 12 Mar 2021 18:56:17 UTC (3,016 KB)
+Full-text links:
+Download:
+
+    PDF
+    Other formats 
+
+( license )
+Current browse context:
+cs.CV
+< prev   |   next >
+new | recent | 2103
+Change to browse by:
+cs
+References & Citations
+
+    NASA ADS
+    Google Scholar
+    Semantic Scholar
+
+DBLP - CS Bibliography
+listing | bibtex
+Xingyi Zhou
+Vladlen Koltun
+Philipp Krähenbühl
+a export bibtex citation Loading...
+Bookmark
+BibSonomy logo Mendeley logo Reddit logo ScienceWISE logo
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer ( What is the Explorer? )
+Litmaps Toggle
+Litmaps ( What is Litmaps? )
+scite.ai Toggle
+scite Smart Citations ( What are Smart Citations? )
+Code & Data
+Demos
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax ( What is MathJax? )
+
+    About
+    Help
+
+    contact arXiv Click here to contact arXiv Contact
+    subscribe to arXiv mailings Click here to subscribe Subscribe
+
+    Copyright
+    Privacy Policy
+
+    Web Accessibility Assistance
+
+    arXiv Operational Status
+    Get status notifications via email or slack
+

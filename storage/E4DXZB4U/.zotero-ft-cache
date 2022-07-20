@@ -1,0 +1,1051 @@
+1
+RelationTrack: Relation-aware Multiple Object Tracking with Decoupled Representation
+En Yu, Zhuoling Li, Shoudong Han and Hongwei Wang
+
+arXiv:2105.04322v1 [cs.CV] 10 May 2021
+
+Abstract—Existing online multiple object tracking (MOT) algorithms often consist of two subtasks, detection and reidentiﬁcation (ReID). In order to enhance the inference speed and reduce the complexity, current methods commonly integrate these double subtasks into a uniﬁed framework. Nevertheless, detection and ReID demand diverse features. This issue would result in an optimization contradiction during the training procedure. With the target of alleviating this contradiction, we devise a module named Global Context Disentangling (GCD) that decouples the learned representation into detection-speciﬁc and ReID-speciﬁc embeddings. As such, this module provides an implicit manner to balance the different requirements of these two subtasks. Moreover, we observe that preceding MOT methods typically leverage local information to associate the detected targets and neglect to consider the global semantic relation. To resolve this restriction, we develop a module, referred to as Guided Transformer Encoder (GTE), by combining the powerful reasoning ability of Transformer encoder and deformable attention. Unlike previous works, GTE avoids analyzing all the pixels and only attends to capture the relation between query nodes and a few self-adaptively selected key samples. Therefore, it is computationally efﬁcient. Extensive experiments have been conducted on the MOT16, MOT17 and MOT20 benchmarks to demonstrate the superiority of the proposed MOT framework, namely RelationTrack. The experimental results indicate that RelationTrack has surpassed preceding methods signiﬁcantly and established a new state-of-the-art performance, e.g., IDF1 of 70.5% and MOTA of 67.2% on MOT20.
+Index Terms—Multiple object tracking, optimization contradiction, decoupling representation, Transformer encoder, deformable attention.
+I. INTRODUCTION
+A S a fundamental vision task, multiple object tracking (MOT) aims to estimate the locations of several targets [1], [2] and identify which of them belong to the same object [3], [4], [5], [6], [7]. Much attention has been drawn due to its numerous practical applications, such as video analysis [8], autonomous driving [9], robots [10], etc. Although prominent progress has been achieved, existing MOT systems still suffer from poor tracking precision and need improvements.
+Former MOT frameworks mainly comprise two sub-models, a detection model to localize the targets and a re-identiﬁcation
+E. Yu and Z. Li contribute equally to this work (Corresponding author: Shoudong Han).
+E. Yu, S. Han and H. Wang are with the National Key Laboratory of Science and Technology on Multispectral Information Processing, School of Artiﬁcial Intelligence and Automation, Huazhong Univerisity of Science and Technology, 1037 Luoyu Road, Wuhan, China, PC 430074 (e-mail:{yuen, shoudonghan, hongweiwang}@hust.edu.cn)
+Z. Li is with the Shenzhen International Graduate School, Tsinghua University, Ministry of Education, Shenzhen, China, PC 518000 (e-mail: lzl20@mails.tsinghua.edu.cn).
+
+Orignal
+
+Decoupled
+
+Detection-specific
+
+GCD
+
+GTE
+
+ReID-specific
+
+Category feature
+
+Identity feature
+
+Background feature
+
+Fig. 1. Diagram that presents how the proposed two modules (GCD and GTE) affect the training procedure. GCD can decouple the learned features as detection-speciﬁc and ReID-speciﬁc embeddings. Instead of using dot-product attention of transformer that would lead to huge computational cost, GTE combine deformable attention and transformer encoder to capture the global semantic relation.
+
+(ReID) model for connecting them to the trajectories [11]. However, executing these two models separately results in slow inference speed and huge computational cost. A possible solution to this problem is building networks as the jointdetection-and-embedding architecture [12], which incorporates detection and ReID into a single network and conducts them simultaneously.
+Nevertheless, directly merging the detection and ReID models into a single framework leads to a serious optimization contradiction [13]. For the detection part, the network wishes to strengthen the representation similarity of objects belonging to the same category. By contrary, the ReID part desires to maximize the feature discrepancy among various targets, even though they pertain to an identical category. Their inconsistent optimization objectives hinder current MOT frameworks evolving towards more efﬁcient forms.
+In order to address this contradiction, we design a selfmotivated feature decoupling module, Global Context Disentangling (GCD) that decouples the feature representation as detection-speciﬁc and ReID-speciﬁc embeddings, as shown in Fig. 1. Veriﬁed by our experiments, this module contributes to alleviating the contradiction between detection and ReID, and it improves the tracking precision signiﬁcantly (e.g., from 73.3% to 74.9% on MOT17 for the metric IDF1 as illustrated in Table IV).
+Additionally, we observe that previous methods often track targets with only local information. However, a prior sense behind MOT is that the global relation among objects and background is important since the surrounding pixels are
+
+2
+
+efﬁcient cues for tracking [14]. To capture this long-range relation, a possible solution is employing the global attention [15]. Nevertheless, global attention needs to compute the pairwise similarity of every query nodes with all the other pixels in the image to generate an attention map. This strategy brings a severe calculation burden.
+We argue that not all the pixels affect the semantic content of query nodes. Therefore, only considering the relation with a small handful of crucial key samples could be a better alternative. With respect to this hypothesis, we employ deformable attention [16] to incorporate the structural relation. Compared with global attention, deformable attention is quite lightweight and reduces the computational complexity from O(n2) to O(n). Besides, unlike graph based methods that only gather information from restricted surrounding pixels [6], deformable attention selects valuable key samples automatically across the whole image.
+Furthermore, we resort to the powerful reasoning ability of Transformer encoder [17], [18] for better modeling the longrange dependency. Through combining the deformable attention and Transformer encoder, the resulted module, Guided Transformer Encoder (GTE), allows the MOT framework (RelationTrack) to explore the rich content of pixel-to-pixel relation with a global receptive ﬁeld.
+To demonstrate the superiority of RelationTrack1, extensive experiments have been conducted on three benchmark datasets, i.e., MOT16 [19], MOT17 [19] and MOT20 [20]. The results indicate that the proposed framework has outperformed preceding counterparts signiﬁcantly. For instance, with respect to the metric IDF1, RelationTrack has surpassed the former stateof-the-art (SOTA) method FairMOT [11] by 3.0% on MOT16 and 2.4% on MOT17.
+Comprehensively, our contributions are summarized as follows:
+• We observe that the optimization contradiction between detection and ReID during the training procedure would hinder networks evolving towards more efﬁcient forms. To address this contradiction, we devise a self-motivated module named GCD that decouples the learned features as detection-speciﬁc and ReID-speciﬁc embeddings.
+• We highlight the importance of global relation among objects and background for ReID of MOT. By combining the advantages of deformable attention and Transformer encoder, we develop a lightweight module (GTE) for exploring the long-range dependency across the whole image.
+• Incorporating the power of GCD and GTE, the proposed MOT framework, RelationTrack, surpasses its previous counterparts obviously. Evaluated with 5 groups of experiments on 3 benchmark datasets, RelationTrack establishes a new SOTA performance. For example, we achieve IDF1 of 70.5% and MOTA of 67.2% on the MOT20 benchmark.
+II. RELATED WORKS
+Inﬂuenced by recent great progresses of detection techniques [21], [22], [23], detection-based MOT algorithms have
+1Code will be available online once the paper is accepted.
+
+dominated the mainstream. These algorithms mostly comprise two parts, i.e., estimating the locations of targets and associating them to the trajectories. According to how the framework is organized, existing detetion-based MOT methods can mainly be categorized into three classes, which are introduced as follows.
+A. Tracking-by-detection
+There exist numerous publications following the trackingby-detection paradigm [11], [12], [24], [25], [26], [27], [28]. Many of them concentrate on how to enhance the association ability of methods. Early works often address this challenge through designing algorithms based on kinematics, such as Kalman ﬁltering [29]. These methods usually ﬁrst take current states of concerned targets as input and attempt to predict their locations in the next frames. Afterwards, the Hungarian algorithm [30] would be applied to adjust the predicted results.
+Nevertheless, since the trajectories of moving objects (such as pedestrians) are highly diverse and hard to be predicted, kinematics based methods often fail to track the targets. To overcome this obstacle, appearance based strategies are introduced. For example, DeepSort [28] utilizes techniques of ReID to extract features and compute the similarity. FGAGT [31] considers both motion and appearance information through the graph neural network.
+Although with competitive performance, the aforementioned models still suffer from some restrictions. For instance, they usually implement detection and association as two independent sub-models. Both them will inﬂuence the ﬁnal tracking precision considerably. Therefore, if any sub-model fails to behave well, the ﬁnal results could be terrible. In addition, since the two sub-models do not share network layers, the resulted slow inference speed and heavy computation burden restrict the tracking-by-detection paradigm from further improvements.
+B. Joint-detection-and-prediction
+Many attempts have been conducted to overcome the disadvantages brought by implementing two separate sub-models [2], [32], [33], [34], [35]. Among these attempts, incorporating the two parts, i.e., detecting targets and predicting trajectories, into a uniﬁed framework is a common practice.
+With respect to this motivation, joint-detection-andprediction methods employ a single network to localize and predict the position of targets and then associate them. For example, Tracktor [35] adopts the bounding box regression module in Faster R-CNN [36] to correct the predicted results. CTracker [37] exploits rich content among adjacent frames to enhance the regression precision. MAT [38] regards the information of well-established kinematic models as extra cues to facilitate the estimation procedure.
+Moreover, some works take advantage of Siamese network [39], [40], [41], [42] to explore the feature similarity and estimate trajectories, such as DeepMOT [43], which decomposes MOT as several single object tracking (SOT) tasks. Likewise, Centertrack [44] produces bounding box offsets with the inspiration from CenterNet [45].
+
+3
+
+Embedding LayerNorm Relu Conv
+Addition Product
+
+Feature extraction
+
+GCD
+
+Feature decoupling
+Detection-specific transformation
+
+Softmax
+
+Conv 1×1
+
+H  W
+
+1×1×64
+
+Detection
+
+Detection-specific
+
+Conv
+
+Center offset
+
+Conv
+
+Center point
+
+Conv
+H  W  64
+
+Width and height
+
+Representation extraction
+ReID-specific
+
+H×W×3
+
+H  W  C
+Backbone
+
+ReID-specific transformation
+
+Embedding
+GTE
+
+H  W  64
+
+H  W  128
+
+Fig. 2. The overall pipeline of RelationTrack (LayerNorm: layer normalization, Relu: rectiﬁed linear unit, Conv: convolution).
+
+Association
+Frame t Frame t+1
+Hungarian algorithm
+Affinity matrix
+
+Generally, joint-detection-and-prediction models behave better than the tracking-by-detection paradigm mainly due to their trajectory prediction blocks [11], [12], [24], [25], [26], [27], [28]. However, when they are applied to sophiscated application scenarios, further improvements are still demanded.
+C. Joint-detection-and-embedding
+Similar to the above joint-detection-and-prediction strategies, joint-detection-and-embedding methods often implement their two components, detection and identiﬁcation, as a onestage network. However, rather than directly estimating the moving offsets, they associate the concerned targets to trajectories based on extracted embeddings. Among these methods, the outstanding ones include JDE (the ﬁrst real-time MOT system) [12], FairMOT (an anchor-free tracker) [11], etc.
+As the double branches (detection and identiﬁcation) of joint-detection-and-embedding models contribute to the performance of each other, the tracking precision of trained networks is often competitive. Nevertheless, we observe that there still exist some obstacles which restrict this paradigm. First of all, the contradiction between detection and identiﬁcation hurts the optimization procedure. Meanwhile, previous frameworks primarily only utilize the local information and ignore the global semantic relation among targets and background regions. In this paper, we propose several strategies to address these obstacles.
+III. METHOD
+This section explains how RelationTrack is organized. First of all, Subsection A presents the problem formulation. Then, Subsection B describes the overall framework of RelationTrack. Afterwards, Subsection C, D and E introduce the implementation details of modules (GCD, GTE, detection and association) that compose RelationTrack, respectively. Finally, Subsection F provides the detailed optimization objective settings during the training phase.
+A. Problem Formulation
+RelationTrack aims to detect the concerned objects (detection) and associate the ones with the same identity among various frames to form trajectories (ReID). It consists of three parts, i.e., a detector φ(·) to localize the targets, a feature
+
+extractor ψ(·) for obtaining representative embeddings and an associator ϕ(·) to produce trajectories.
+Formally, given an input image It ∈ RH×W ×C , we denote φ(It) and ψ(It) as bt and et, where bt ∈ Rk×4 and et ∈ Rk×D. In these deﬁnitions, H, W and C represent the height, width and number of channels in the input image It, respectively. k, t and D are the number of detected targets, index of It and dimension of embedding vectors. bt and et severally refer to the coordinates of bounding boxes and corresponding embedding vectors. After detecting the targets and extracting the corresponding embedding vectors, ϕ(·) will link bt in various frames based on et to generate the ﬁnal trajectories.
+Generally, in order to estimate the trajectories correctly, the following optimization objectives should be satisﬁed.
+• The bounding boxes corresponding to bt should contain accurate targets properly.
+• et should represent the identity information of targets appropriately. Speciﬁcally, the extracted embeddings of targets in various frames with the same identity should be more alike to each other in contrasted to the ones belonging to other identities.
+Technically, when the two objectives are both fulﬁlled, the tracking results would be promising even with a simple ϕ(·), such as the Hungarian algorithm.
+B. Overall Framework
+As illustrated in Fig. 2, RelationTrack is composed of 5 parts, i.e., feature extraction, feature decoupling, detection, representation extraction and association. In the ﬁrst part, given a video with N frames It (t = 1, 2, ...N ), the backbone (DLA-34 [46]) transforms every frame to its corresponding feature maps, respectively. Then, in the feature decoupling part (GCD), the learned features are decomposed as detection-speciﬁc and ReID-speciﬁc information to address the aforementioned feature contradiction problem. Afterwards, the networks of the detection branch (similar to Centernet [45]) localize the concerned objects based on the detectionspeciﬁc information. Meanwhile, GTE in the representation estimation part would encode the ReID-speciﬁc information as discriminative representation. With respect to the bounding boxes and obtained representation, we link the detected targets
+
+4
+
+to the ﬁnal trajectories using Hungarian algorithm in the association part.
+
+C. Global Context Disentangling (GCD)
+
+In this section, we introduce the details of GCD that
+
+decouples the features extracted by the backbone as detection-
+
+speciﬁc and ReID-speciﬁc representation. GCD exactly com-
+
+prises two phases, i.e., producing the global context vector and
+
+utilizing this vector to decompose input feature maps. Denote x = {xi}Ni=p1 as the input feature maps, where Np =
+H ×W (H and W are the height and width of input feature
+
+maps, respectively). Then, the process of calculating the global
+
+context vector z (the ﬁrst phase) can be expressed as
+
+Np
+z=
+
+exp(Wk xj )
+
+Np
+
+xj
+
+(1)
+
+j=1
+
+exp(Wk xm )
+
+m=1
+
+where Wk represents a learnable linear projection and it is
+
+modeled as a 1 × 1 convolution layer in our implementation.
+
+Afterwards, in the second phase, we devise two transforma-
+
+tions that decouple z into two task-speciﬁc vectors. By adding
+
+them to x through broadcast element-wise addition, we obtain the detection-speciﬁc embeddings d = {di}Ni=p1 and ReIDspeciﬁc embeddings r = {ri}Ni=p1, respectively. This procedure
+is formulated as follows:
+
+di = xi + Wd2ReLU (Ψln(Wd1z))
+
+(2)
+
+ri = xi + Wr2ReLU (Ψln(Wr1z))
+
+(3)
+
+where Wd1, Wd2, We1 and We2 denote four learnable matrices. ReLU (·) and Ψln(·) represent the rectiﬁed linear unit and layer normalization operator [47], respectively. Given a
+
+data batch I with the shape of (B , H , W , C ), Ψln(·) can be deﬁned as
+
+1
+
+HW C
+
+µb = H W C
+
+Ibhwc
+
+(4)
+
+111
+
+σb2
+
+=
+
+H
+
+1 W
+
+C
+
+H
+
+W
+
+C
+(Ibhwc − µb)2
+
+(5)
+
+111
+
+I˜bhwc
+
+=
+
+Ibhwc − µb σb2 +
+
+(6)
+
+where Ibhwc and I˜bhwc are the elements in input and output
+
+data batches with the index of (b, h, w, c), and denotes a tiny
+
+predeﬁned value.
+
+It could be observed from Equation (1) that z is invariant
+
+to the selection of i while aggregating the global context
+
+information. All the elements of d and r can be computed
+
+using the same z. Caused by this characteristic, the calculation complexity of GCD is only O(C2). In contrast to former global attention methods with complexity of O(HW C2) [14],
+
+GCD is quite computationally efﬁcient. Moreover, according
+
+to the experiments in Subsection D of Section IV, GCD
+
+successfully decouples learned features and addresses the
+
+feature contradiction problem.
+
+D. Guided Transformer Encoder (GTE)
+
+Attention is a widely adopted strategy to enhance the discriminability of learned features [14]. However, most previous works generate attention maps by convolutions with
+
+GTE
+
+Transfomer encoder
+
+Add & Norm
+
+Feature query
+Position embedding
+
+Feed forward Add & Norm
+
+⊕
+
+Deformable attention m
+
+Deformable attention
+
+a
+
+Offset Map Fa
+
+Fb b
+
+...
+
+Sampling key nodes Vk
+
+d
+
+Softmax c
+
+ ⊕ Weight sum
+
+Wm
+
+Attention weights Fc
+
+Fig. 3. Diagram of the proposed GTE Module (FC: fully connected layer).
+limited receptive ﬁelds [48], which ignore the global relation information among various targets and background regions.
+To bridge this gap, we attempt to utilize the power of global attention, which considers the interaction among all pixels. Nevertheless, global attention would result in serious computing burden, which limits the depth of networks and resolution of input feature maps.
+With the target of addressing this restriction, we resort to deformable attention to capture the structural content. Unlike global attention, deformable attention can self-adaptively detect valuable key samples and avoid calculating the similarity between query nodes and all values in feature maps. This strategy successfully reduces the computing complexity from O(H2W 2C) to O(HW C).
+Furthermore, we propose the GTE module through combining the advantages of deformable attention and Transformer encoder as illustrated in Fig. 3. Integrated with the outstanding inference capability of Transformer and self-adaptive global receptive ﬁeld of deformable attention, GTE produces representative embeddings.
+In the following, we will introduce the details of two components of GTE, Transformer encoder and deformable attention, respectively.
+Transformer encoder. Transformer [18] is ﬁrst proposed for natural language processing and then extensively applied to various computer vision tasks [49]. Standard Transformer mainly comprises two components, an encoder and a decoder. In GTE, we build a network with a structure similar to the Transformer encoder to obtain powerful embeddings for subsequent association operations.
+
+5
+
+Detected target Aggregating information Produced embeddings
+
+（a）
+
+（b）
+
+（c）
+
+Fig. 4. Abstract diagram of deformable attention. The red point is the query node and purple points are the self-adaptively selected key samples. In contrast to global encoder, deformable attention avoids the huge computational burden of considering the relation among all pixels.
+
+As shown in Fig. 3, transformer encoder typically consists of a multi-head attention block and one feed-forward network (FFN). Generally, given a query q and a set of key elements Ωk as input, Transformer ﬁrst produces the relation maps via dot-product between q and k (k ∈ Ωk). Then, the obtained relation maps are normalized and correlated with k again to generate representative embeddings. Afterwards, FFN is utilized to further extract the information in the embeddings.
+
+Mathematically, the aforementioned procedure could be
+
+formulated as
+
+Nhead
+
+ΦT (q, k) = Γ(
+
+Wi( Aij Wi kj ))
+
+(7)
+
+i=1
+
+j∈Ωk
+
+Aij
+
+∝
+
+exp( qT UiT Vikj ρ
+
+)
+
+(8)
+
+where Wi, Wi , Ui and Vi are learnable weights. ΦT (·), Γ(·), Nhead and ρ represent the Transformer, FFN, number of
+attention heads and normalization factor, respectively.
+
+According to the above description, the computational complexity of Transformer encoder is O(H2W 2C) for input data with the shape of (H, W, C). Therefore, the computing cost grows quadratically with respect to the expansion of image size, and the cost is mainly caused by the dot-product attention of multi-head attention. In this work, we adopt a novel attention strategy to alleviate the enormous calculation burden.
+
+Deformable attention. As mentioned before, the huge computational cost of global attention results in slow convergence and limited image resolution during the training phase. In order to overcome this problem, we employ deformable attention instead of global attention.
+Fig. 4 presents the basic idea behind deformable attention. For any query node in the detected regions of interest (Fig 4(a)), deformable attention self-adaptively selects valuable key samples across the whole image (Fig 4(b)). Afterwards, discriminative representation is produced (Fig 4(c)) through interacting information between query nodes and the corresponding key samples.
+The details of deformable attention are illustrated in Fig. 3. First of all, given input feature maps I, three independent encoders, Φa(·), Φb(·) and Φc(·), severally encode the input as the offset maps Fa, key maps Fb and query attention maps
+
+Fc. Notably, if we select Nk key samples for every query node, Fa would contain 2Nk channels, which are horizontal and vertical coordinate offsets of the Nk key samples relative to the corresponding query node. Hence, for every query node
+
+q ∈ I, we can know its coordinate Zq and the offsets of key samples Zk = { Zki }Ni=k1 relative to Zq based on Fa. Then, the coordinates of key samples Zk = {Zki }Ni=k1 can be
+computed as follows.
+
+Zki = Zq + Zki
+
+(9)
+
+Afterwards, according to the coordinates of selected key samples Zk = {Zki }Ni=k1 and key maps Fb, we obtain the key sample vectors Vk = {Vki}Ni=k1. They are further transformed as V˜k by the encoder Φd(·). Moreover, we crop the query attention vectors Vq = {Vqi}Ni=k1 from Fc with respect to Zk.
+The ﬁnal output maps Fo can be calculated as:
+
+Nk
+
+Fo = Wm Vqi • Fci
+
+(10)
+
+i=1
+
+where Wm denotes trainable parameters and • is the Hadamard
+
+multiplication [50]. According to the described procedure,
+
+the computational complexity of deformable attention is
+
+O(HW C) compared with global attention, the complexity of
+
+which is O(H2W 2C).
+
+E. Detection and Association
+We devise a detection module Ψd(·) similar to Centernet to localize the targets. Given the decoupled detection-speciﬁc representation, Ψd(·) would detect the center points of concerned objects, regress the corresponding center offsets and estimate the bounding box shapes simultaneously. Combing all the obtained outputs, the regions that contain targets are determined.
+Afterwards, based on the embeddings produced by GTE and estimated bounding boxes, we employ the Hungarian algorithm to match objects among various frames and generate the trajectories. We keep the same settings in FairMOT [11]. First of all, we initialize tracklets based on the detected boxes in the ﬁrst frame. Then, in the subsequent frames, we link the detected boxes to the original tracklets according to the cosine distances between the corresponding computed embedding vectors. If there exist unmatched detected boxes, they will be connected to newly initialized trajectories. In addition, we adopt the trajectory ﬁlling strategy mentioned in MAT [38] to balance the false positive and false negative scores.
+
+F. Optimization objectives
+
+Since RelationTrack comprises several subtasks, we leverage multiple optimization objectives to train its various parts. These optimization objectives are introduced as follows.
+
+Detection branch. To the end of localizing the concerned
+
+objects, the detection branch ﬁrst estimates the center points of
+
+targets. Denote the ith bounding box annotation in a frame as
+
+bi, and its corresponding upper left and lower right coordinates
+
+are (li, ti) and (ri, bi), respectively. The center point of this
+
+bounding box could be expressed as (cix, ciy), where cix =
+
+li
+
++ri 2
+
+,
+
+ciy
+
+=
+
+ti
+
++bi 2
+
+.
+
+Assuming
+
+there
+
+are
+
+totally
+
+N
+
+bounding
+
+6
+
+box annotations in this frame, we can produce the heatmap groundtruth Rˆ as follows
+
+Rˆxy
+
+=
+
+N i=1
+
+(x exp(−
+
+−
+
+cix)2 + (y 2(σp)2
+
+−
+
+piy )2
+
+)
+
+(11)
+
+where Rˆxy is the heatmap pixel with the coordinate of (x, y)
+
+and σp represents the standard deviation value that is self-
+
+adaptively adjusted according to the heatmap scale. Denoting
+
+the estimated heatmap pixel at (x, y) as Rxy, the similarity value for regressing this pixel can be deﬁned as
+
+Lhxy =
+
+(1 − Rxy)αlogRxy, Rˆxy = 1 (1 − Rˆxy)β(Rxy)αlog(1 − Rxy), Rˆxy = 1
+
+(12)
+
+where α and β are hyper-parameters [51]. Afterwards, the
+
+loss function for estimating the center points of targets is
+
+formulated as follows.
+
+Lh = − 1 N
+
+H
+
+W
+Lhxy
+
+y=1 x=1
+
+(13)
+
+In order to determine the bounding box regions, we build
+
+another network branch to estimate the box shapes and offsets.
+
+In our implementation, the label of the ith box shape is
+
+expressed as sˆi = (ri − li, bi − ti) and its corresponding offset
+
+label
+
+is
+
+oˆi
+
+=
+
+(
+
+cix 4
+
+−
+
+cix 4
+
+,
+
+ciy 4
+
+−
+
+ciy 4
+
+), where
+
+·
+
+represents an
+
+operator that rounds down the input decimals. The optimiza-
+
+tion objective of this branch for predicting bounding boxes
+
+can be given as
+
+N
+
+Lb =
+
+oi − oˆi 1 + |si − sˆi 1
+
+(14)
+
+i=1
+where oi and si are the output of networks, and · 1 denotes the l1 measurement [52].
+
+ReID branch. We regard the ReID task as a classiﬁcation
+
+problem and the targets with an identical identity belong to the
+
+same category. Given multiple bounding boxes, the networks
+
+of the ReID branch would transform the features in every bounding box to a class distribution vector p = {pi}Ki=1, where K denotes the total number of categories. Assuming the onehot annotation for the ReID task is q = {qj}Kj=1, the loss function adopted by the ReID branch could be formulated as
+
+follows.
+
+KK
+
+Lr = −
+
+qj log(pi )
+
+(15)
+
+j=1 i=1
+
+Overall optimization objective. Combining the above loss
+
+functions with learnable coefﬁcients ω1 and ω2, we can obtain the overall optimization objective L for RelationTrack, which
+
+is given as follows.
+
+Ld = Lh + Lb
+
+(16)
+
+L
+
+=
+
+11 2 ( eω1
+
+Ld
+
++
+
+1 eω2
+
+Lr
+
++
+
+ω1
+
++
+
+ω2)
+
+(17)
+
+IV. EXPERIMENT
+This section presents the experimental details. Speciﬁcally, Subsection A introduces the adopted training and evaluation datasets as well as the evaluation metrics. Among the datasets, MOT15, MOT16 and MOT17 are used for validating the
+
+models. Subsection B presents the implementation details in the experiments. Afterwards, Subsection C demonstrates the superiority of RelationTrack by comparing it with existing state-of-the-art MOT methods. Subsection D proves the effectiveness of various components in RelationTrack through ablation experiments. Moreover, Subsection E and F indicate that the proposed GCD and GTE modules can enhance the tracking precision efﬁciently. Finally, Subsection G reveals the robustness of RelationTrack towards extreme cases.
+A. Datasets and evaluation metrics
+MOT15. MOT15 [53] is the ﬁrst release of MOTChallenge and it comprises 22 sequences, a half for training and the other half for testing. This dataset totally contains 996 seconds of videos, which include 11286 frames.
+MOT16. MOT16 [19] is a commonly adopted benchmark in MOT. Composed of 14 sequences, it covers various scenarios, viewpoints, camera poses and weather conditions. Similar to MOT15, 7 sequences in MOT16 are for training and the others are for validation.
+MOT17. MOT17 [19] is established through reconstructing MOT16. In contrast to MOT16, MOT17 provides more reliable groundtruth and more detection bounding boxes produced by various detectors, which include DPM [54], SDP [55], Faster RCNN [36]. The rest is the same as MOT16.
+MOT20. Compared with aforementioned datasets, MOT20 [20] is more challenging. It consists of 8 video sequences captured in 3 very crowded scenes. In some frames, more than 220 pedestrians are included. Meanwhile, the data in MOT20 presents high diversity, which could be indoor or outdoor, at day or night.
+Extended datasets. Following the settings of preceding works [11], besides the above benchmarks on MOT Challenge, we adopt some other datasets for training, which include ETH [56], CityPerson [57], CalTech [58], CUHK-SYSU [59], PRW [60] and CrowdHuman [61]. Meanwhile, the performance veriﬁcation and analysis experiments are mainly performed on MOT16, MOT17 and MOT20.
+Evaluation metrics. The veriﬁcation of RelationTrack is carried out based on the CLEAR-MOT Metrics [62], which is a commonly adopted metric set. It is composed of ID F1 score (IDF1), higher order tracking accuracy (HOTA), multiple object tracking accuracy (MOTA), multiple object tracking precision (MOTP), mostly tracked rate (MT), mostly lost rate (ML), false positives (FP), false negatives (FN), identity switches (IDS) and inference speed (IS). Among them, HOTA [63] is a recently proposed metric. In contrast to former metrics, it reﬂects the capability of tracking, detection and association simultaneously. IDF1, HOTA, MOTA are the most primary indexes for indicating the performance of evaluated models.
+B. Implementation Details
+In our experiments, we employ DLA-34 pre-trained on the COCO dataset [66] and ﬁne-tuned on the aforementioned datasets as the backbone of RelationTrack. Its parameters
+
+7
+
+TABLE I COMPARISON WITH PRECEDING STATE-OF-THE-ART METHODS ON MOT16.
+
+Model
+
+IDF1↑ HOTA↑ MOTA↑ MOTP↑ MT↑ ML↓ FP↓ FN↓ IDS↓ IS↑
+
+JDE [12]
+
+55.8
+
+-
+
+64.4
+
+-
+
+35.4% 20.0% -
+
+- 1544 18.8
+
+CTracker [37]
+
+57.2 48.8
+
+67.6
+
+78.4 32.9% 23.1% 8934 48305 1117 34.4
+
+TubeTK [64]
+
+59.4 48.7
+
+64.0
+
+78.3 33.5% 19.4% 10962 53626 4137 1.0
+
+DeepSortv2 [28]
+
+62.2 50.1
+
+61.4
+
+79.1 32.8% 18.2% 12852 56668 2008 17.4
+
+MAT [38]
+
+63.8 54.4
+
+70.5
+
+80.4 44.7% 17.3% 11318 41592 928 9.1
+
+CSTrack [13]
+
+71.8
+
+-
+
+70.7
+
+-
+
+38.2% 17.8% -
+
+- 1071 15.8
+
+FairMOTv2 [11]
+
+72.8 59.8
+
+74.9
+
+81.2 44.7% 15.9% 10163 34484 1074 25.4
+
+RelationTrack (ours) 75.8 61.7
+
+75.6
+
+80.9 43.1% 21.5% 9786 34214 448 7.4
+
+TABLE II COMPARISON WITH PRECEDING STATE-OF-THE-ART METHODS ON MOT17.
+
+Model
+
+IDF1↑ HOTA↑ MOTA↑ MOTP↑ MT↑ ML↓ FP↓ FN↓ IDS↓ IS↑
+
+CTracker [37]
+
+57.4 49.0
+
+66.6
+
+78.2 32.2% 24.2% 22284 160491 5529 6.8
+
+TubeTK [64]
+
+58.6 48.0
+
+63.0
+
+78.3 31.2% 19.9% 27060 177483 5529 6.8
+
+MAT [38]
+
+63.1 53.8
+
+69.5
+
+80.4 43.8% 18.9& 30660 138741 2844 9.0
+
+CenterTrack [44]
+
+64.7 52.2
+
+67.8
+
+78.4 34.6% 24.6% 18489 160332 3039 22.0
+
+CSTrack [13]
+
+71.6
+
+-
+
+70.6
+
+-
+
+37.5% 18.7% -
+
+- 3465 15.8
+
+FairMOTv2 [11]
+
+72.3 59.3
+
+73.7
+
+81.3 43.2% 17.3% 27507 117477 3303 25.9
+
+RelationTrack (ours) 74.7 61.0
+
+73.8
+
+81.0 41.7% 23.2% 27999 118623 1374 7.4
+
+TABLE III COMPARISON WITH PRECEDING STATE-OF-THE-ART METHODS ON MOT20.
+
+Model
+
+IDF1↑ HOTA↑ MOTA↑ MOTP↑ MT↑ ML↓ FP↓ FN↓ IDS↓ IS↑
+
+MLT [65]
+
+54.6 43.2
+
+48.9
+
+78.0 30.9% 22.1% 45660 216803 2187 3.7
+
+FairMOTv2 [11]
+
+67.3 54.6
+
+61.8
+
+78.6 68.8% 7.6% 103440 88901 5243 13.2
+
+CSTrack [13]
+
+68.6 54.0
+
+66.6
+
+78.8 50.4% 15.5% 25404 144358 3196 4.5
+
+RelationTrack (ours) 70.5 56.5
+
+67.2
+
+79.2 62.2% 8.9% 61134 104597 4243 2.7
+
+are updated using the Adam optimizer [67] with the initial learning rate of 10−4. During the training procedure, the input batch size is set as 12 and the resolution of every image is 1088×608. The experiments are conducted on 2 NVIDIA GeForce RTX 2080Ti GPUs.
+C. Comparison with preceding SOTAs
+In this part, we compare the performance of RelationTrack with preceding SOTA methods on three widely adopted benchmarks, i.e., MOT16, MOT17 and MOT20. The results are reported in Table I, Table II and Table III, respectively. As shown in these three tables, RelationTrack has come out among the top in various metrics and surpassed the contrasted counterparts by large margins, especially on the IDF1, HOTA, MOTA and IDS metrics.
+MOT16/17. For instance, according to Table I and Table II, RelationTrack obtains the metric IDF1 of 75.8% on MOT16 and 74.7% on MOT17. It outperforms the recently proposed FairMOTv2 [11] by 3.0% (75.8%−72.8%) and 2.4% (74.7%−72.3%) on MOT16 and MOT17, respectively. Meanwhile, RelationTrack also behaves better on MOTA than most other trackers. The results indicate the outstanding tracking capability of RelationTrack, which is because that the GCD and GTE modules can produce discriminative features while maintaining competitive detection accuracies. Meanwhile, it can be observed from Table I and Table II that RelationTrack also behaves well on the metric IDS. This phenomenon reveals that the tracking trajectories produced by RelationTrack are still stable even in large-scale and complex scenes.
+MOT20. To further evaluate the proposed framework, we verify its performance on the MOT20 benchmark. As shown in Table III, RelationTrack behaves the best on most metrics. Particularly, it surpasses FairMOTv2 by 3.2% (70.5%−67.3%)
+
+on IDF1, 1.9% (56.5%−54.6%) on HOTA and 5.4% (67.2%− 61.8%) on MOTA.
+
+D. Ablation Study
+In this part, we analyze the effectiveness of GCD and GTE through ablation experiments on MOT17. To this end, we adopt the RelationTrack without GCD and GTE as the baseline model. The results are presented in Table IV.
+According to the 2nd and 3rd rows of Table IV, the proposed GCD module enhances the tracking performance of the baseline by 1.6% (74.9% − 73.3%) on IDF1 and 0.9% (69.4% − 68.5%) on MOTA. These improvements conﬁrm the importance of alleviating the aforementioned optimization contradiction by decoupling features.
+
+TABLE IV THE EFFECTIVENESS OF PROPOSED BLOCKS.
+
+Model
+
+IDF1↑ MOTA↑ FP↓ FN↓
+
+Baseline
+
+73.3 68.5 2567 14135
+
+Baseline + GCD 74.9 69.4 2791 13477
+
+Baseline + GTE 73.6 69.5 2242 14013
+
+RelationTrack 75.3 70.1 2583 13301
+
+IDS↓ 293 286 326 309
+
+Meanwhile, it could be observed that GTE also beneﬁts the inference procedure. As shown, the baseline with GTE outperforms the pure baseline by 0.3% (73.6% − 73.3%) on IDF1 and 1.0% (69.5% − 68.5%) on MOTA.
+Incorporating the baseline model with both GCD and GTE, the resulted RelationTrack achieves outstanding tracking precision. As presented in Table IV, RelationTrack surpasses the baseline by 2.0% (75.3% − 73.3%) on IDF1 and 1.6% (70.1% − 68.5%) on MOTA. The results indicate the great power brought through combining GCD and GTE.
+
+Input image
+
+Original features
+
+8
+
+Detection-specific features
+
+ReID-specific features
+
+Fig. 5. Visualization of the original and decoupled representation (the detection-speciﬁc and ReID-speciﬁc features).
+
+E. Visualization of GCD
+This part aims to verify whether GCD really addresses the optimization contradiction between detection and ReID through decoupling features. To realize this target, we visualize and compare the original and decoupled representation, which is illustrated as Fig. 5.
+As shown, in the original feature maps, the model ignores many small yet important targets. Besides, some irrelevant areas are concentrated on mistakenly. On the contrary, when the features are decoupled, the center parts of targets are highlighted in the detection-speciﬁc feature maps. Meanwhile, only the regions that cover pedestrians are focused on in the ReIDspeciﬁc embeddings. This phenomenon demonstrates that GCD has decoupled the representation vectors as designed. Correspondingly, the optimization contradiction between the detection and ReID branches is addressed successfully.
+
+TABLE V COMPARISON OF DIFFERENT NUMBER OF SAMPLING KEY NODES.
+
+Module
+
+Num
+
+IDF1↑
+
+MOT17 MOTA↑ FP↓
+
+FN↓
+
+IDS↓
+
+6 73.9 69.6 2576 13485 378
+
+GTE 9 75.3 70.1 2583 13301 309
+
+12 75.0 70.0 2636 13261 290
+
+11 74.9 70.0 2262 13652 292
+
+Frame #500
+
+Frame #514
+
+Frame #517
+
+FairMOT
+
+IDS
+
+FN
+
+CSTrack
+
+F. Impact of key sample numbers
+As introduced in Section V, instead of utilizing global attention, we employ deformable attention to capture the long-range dependency. Rather than analyzing the relationship between query nodes and all the other pixels, deformable attention only considers a small amount of adaptively selected key samples. Therefore, the number of the key samples could inﬂuence the ﬁnal tracking precision of models. In this part, we aim to study this problem and the corresponding results are reported in Table V.
+As shown in the 4th column of Table V, when more than 9 samples are produced, the results measured by the metric MOTA do not vary obviously. On the contrary, presented in the 3rd column, the performance of networks under the metric IDF1 is affected signiﬁcantly. When the number of key samples are 6, 9, 12 and 15, the corresponding IDF1 scores are 73.9%, 75.3%, 75.0% and 74.9%, respectively. Although we can further incorporate more key samples, it would result in more computing resource demand. Considering both the tracking performance and calculation burden, we decide to select 9 key samples for every query node.
+
+FP
+
+IDS
+
+Ours
+
+
+
+
+
+Fig. 6. Robustness analysis of RelationTrack compared with the FariMOT and CSTrack frameworks. The check mark indicates that the results are correct. IDS, FP and FN denote different kinds of false estimations which include identity switch, false negative and false positive, respectively.
+
+G. Robustness analysis
+In this part, we analyze the robustness of RelationTrack under extreme cases. A hard case is given in Fig. 6 as an example. In this ﬁgure, a person is partly occluded and hard to be detected. Both FairMOT and CSTrack fail to extract representative embeddings and associate it with the correct trajectory. Speciﬁcally, FairMOT labels this person with a
+
+9
+
+MOT17-01
+
+#13
+
+#28
+
+#37
+
+MOT17-03
+
+#251
+
+#261
+
+#277
+
+MOT17-06
+
+#116
+
+#141
+
+#179
+
+#325
+
+MOT17-07
+
+#243
+
+#351
+
+#419
+
+MOT17-08
+
+#92
+
+#108
+
+#141
+
+MOT17-12
+
+#171
+
+#220
+
+#404
+
+MOT17-14
+
+#417
+
+#453
+
+#532
+
+Fig. 7. Tracking examples of RelationTrack on the MOT17 dataset.
+
+10
+
+false identity in Frame #514 and overlooks this region in Frame #517. Likewise, CSTrack produces wrong results in the two frames. On the contrary, RelationTrack identiﬁes the target successfully. This example reveals the robustness of RelationTrack due to its strong capability of extracting features.
+In order to further conﬁrm this issue, we illustrate more cases in Fig. 7. These cases have covered various practical tracking situations, which include indoor and outdoor scenarios, day and night periods, huge and small targets, etc. The outstanding estimated results prove that RelationTrack can achieve robust and precise performance even under those difﬁcult conditions.
+V. CONCLUSION
+In this work, we observed that the optimization contradiction between the detection and ReID branches had restricted current MOT methods from further improvements. Correspondingly, we developed a module named GCD that alleviates this contradiction through decoupling the features as detection-speciﬁc and ReID-speciﬁc ones. Moreover, we noticed that preceding MOT frameworks mostly only utilize the local features and neglect to consider the global semantic relation among pixels. We attempted to bridge this gap by devising a network similar to the Transformer encoder. Nevertheless, this strategy suffers from heavy computation burden. To address this issue, we replaced the global attention operator in Transformer encoder as deformable attention and designed a novel module named GTE. This module can capture the global structural information while only consuming a limited amount of calculation resources. Combining the GCD and GTE modules, we proposed a competitive MOT framework, namely RelationTrack. Its performance has been validated through 5 groups of experiments on 3 classic MOT benchmark datasets, which include MOT16, MOT17 and MOT20. The results indicate that RelationTrack has outperformed the contrasted counterparts signiﬁcantly and established new SOTA results.
+REFERENCES
+[1] X. Liang, J. Zhang, L. Zhuo, Y. Li, and Q. Tian, “Small object detection in unmanned aerial vehicle images using feature fusion and scaling-based single shot detector with spatial context analysis,” IEEE Transactions on Circuits and Systems for Video Technology, vol. 30, no. 6, pp. 1758–1770, 2019.
+[2] K. Kang, H. Li, J. Yan, X. Zeng, B. Yang, T. Xiao, C. Zhang, Z. Wang, R. Wang, X. Wang et al., “T-cnn: Tubelets with convolutional neural networks for object detection from videos,” IEEE Transactions on Circuits and Systems for Video Technology, vol. 28, no. 10, pp. 2896– 2907, 2017.
+[3] Z. Sun, J. Chen, C. Liang, W. Ruan, and M. Mukherjee, “A survey of multiple pedestrian tracking based on tracking-by-detection framework,” IEEE Transactions on Circuits and Systems for Video Technology, 2020.
+[4] S. Zhang, Q. Zhang, Y. Yang, X. Wei, P. Wang, B. Jiao, and Y. Zhang, “Person re-identiﬁcation in aerial imagery,” IEEE Transactions on Multimedia, vol. 23, pp. 281–291, 2020.
+[5] G. Ciaparrone, F. L. Sa´nchez, S. Tabik, L. Troiano, R. Tagliaferri, and F. Herrera, “Deep learning in video multi-object tracking: A survey,” Neurocomputing, vol. 381, pp. 61–88, 2020.
+[6] X. Weng, Y. Wang, Y. Man, and K. M. Kitani, “Gnn3dmot: Graph neural network for 3d multi-object tracking with 2d-3d multi-feature learning,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2020, pp. 6499–6508.
+
+[7] Y. Xiang, A. Alahi, and S. Savarese, “Learning to track: Online multiobject tracking by decision making,” in Proceedings of the IEEE International Conference on Computer Vision, 2015, pp. 4705–4713.
+[8] N. Takahashi, M. Gygli, and L. Van Gool, “Aenet: Learning deep audio features for video analysis,” IEEE Transactions on Multimedia, vol. 20, no. 3, pp. 513–524, 2017.
+[9] W. Luo, B. Yang, and R. Urtasun, “Fast and furious: Real time endto-end 3d detection, tracking and motion forecasting with a single convolutional net,” in Proceedings of the IEEE conference on Computer Vision and Pattern Recognition, 2018, pp. 3569–3577.
+[10] A. Manglik, X. Weng, E. Ohn-Bar, and K. M. Kitani, “Forecasting timeto-collision from monocular video: Feasibility, dataset, and challenges,” arXiv preprint arXiv:1903.09102, 2019.
+[11] Y. Zhan, C. Wang, X. Wang, W. Zeng, and W. Liu, “A simple baseline for multi-object tracking,” arXiv preprint arXiv:2004.01888, 2020.
+[12] Z. Wang, L. Zheng, Y. Liu, and S. Wang, “Towards real-time multiobject tracking,” arXiv preprint arXiv:1909.12605, vol. 2, no. 3, p. 4, 2019.
+[13] C. Liang, Z. Zhang, Y. Lu, X. Zhou, B. Li, X. Ye, and J. Zou, “Rethinking the competition between detection and reid in multi-object tracking,” arXiv preprint arXiv:2010.12138, 2020.
+[14] Z. Zhang, C. Lan, W. Zeng, X. Jin, and Z. Chen, “Relation-aware global attention for person re-identiﬁcation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2020, pp. 3186–3195.
+[15] M. Yin, Z. Yao, Y. Cao, X. Li, Z. Zhang, S. Lin, and H. Hu, “Disentangled non-local neural networks,” in European Conference on Computer Vision, 2020, pp. 191–207.
+[16] X. Zhu, W. Su, L. Lu, B. Li, X. Wang, and J. Dai, “Deformable detr: Deformable transformers for end-to-end object detection,” arXiv preprint arXiv:2010.04159, 2020.
+[17] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov, and S. Zagoruyko, “End-to-end object detection with transformers,” in European Conference on Computer Vision. Springer, 2020, pp. 213– 229.
+[18] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. Kaiser, and I. Polosukhin, “Attention is all you need,” in Conference on Neural Information Processing Systems, 2017.
+[19] A. Milan, L. Leal-Taixe´, I. Reid, S. Roth, and K. Schindler, “Mot16: A benchmark for multi-object tracking,” arXiv preprint arXiv:1603.00831, 2016.
+[20] P. Dendorfer, H. Rezatoﬁghi, A. Milan, J. Shi, D. Cremers, I. Reid, S. Roth, K. Schindler, and L. Leal-Taixe´, “Mot20: A benchmark for multi object tracking in crowded scenes,” arXiv preprint arXiv:2003.09003, 2020.
+[21] Z. Cai and N. Vasconcelos, “Cascade r-cnn: Delving into high quality object detection,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2018, pp. 6154–6162.
+[22] H. Law and J. Deng, “Cornernet: Detecting objects as paired keypoints,” in Proceedings of the European Conference on Computer Vision, 2018, pp. 734–750.
+[23] Z. Yang, S. Liu, H. Hu, L. Wang, and S. Lin, “Reppoints: Point set representation for object detection,” in Proceedings of the IEEE/CVF International Conference on Computer Vision, 2019, pp. 9657–9666.
+[24] L. Chen, H. Ai, Z. Zhuang, and C. Shang, “Real-time multiple people tracking with deeply learned candidate selection and person reidentiﬁcation,” in 2018 IEEE International Conference on Multimedia and Expo, 2018, pp. 1–6.
+[25] F. Yu, W. Li, Q. Li, Y. Liu, X. Shi, and J. Yan, “Poi: Multiple object tracking with high performance detection and appearance feature,” in European Conference on Computer Vision, 2016, pp. 36–42.
+[26] J. Zhu, H. Yang, N. Liu, M. Kim, W. Zhang, and M.-H. Yang, “Online multi-object tracking with dual matching attention networks,” in Proceedings of the European Conference on Computer Vision, 2018, pp. 366–382.
+[27] A. Bewley, Z. Ge, L. Ott, F. Ramos, and B. Upcroft, “Simple online and realtime tracking,” in 2016 IEEE International Conference on Image Processing, 2016, pp. 3464–3468.
+[28] N. Wojke, A. Bewley, and D. Paulus, “Simple online and realtime tracking with a deep association metric,” in 2017 IEEE International Conference on Image Processing, 2017, pp. 3645–3649.
+[29] G. Welch, G. Bishop et al., “An introduction to the kalman ﬁlter,” 1995. [30] H. W. Kuhn, “The hungarian method for the assignment problem,” Naval
+Research Logistics Quarterly, vol. 2, no. 1-2, pp. 83–97, 1955. [31] C. Shan, C. Wei, B. Deng, J. Huang, X.-S. Hua, X. Cheng, and
+K. Liang, “Fgagt: Flow-guided adaptive graph tracking,” arXiv preprint arXiv:2010.09015, 2020.
+
+11
+
+[32] X. Zhu, Y. Wang, J. Dai, L. Yuan, and Y. Wei, “Flow-guided feature aggregation for video object detection,” in Proceedings of the IEEE International Conference on Computer Vision, 2017, pp. 408–417.
+[33] Z. Zhang, D. Cheng, X. Zhu, S. Lin, and J. Dai, “Integrated object detection and tracking with tracklet-conditioned detection,” arXiv preprint arXiv:1811.11167, 2018.
+[34] C. Feichtenhofer, A. Pinz, and A. Zisserman, “Detect to track and track to detect,” in Proceedings of the IEEE International Conference on Computer Vision, 2017, pp. 3038–3046.
+[35] P. Bergmann, T. Meinhardt, and L. Leal-Taixe, “Tracking without bells and whistles,” in Proceedings of the IEEE/CVF International Conference on Computer Vision, 2019, pp. 941–951.
+[36] S. Ren, K. He, R. Girshick, and J. Sun, “Faster r-cnn: towards real-time object detection with region proposal networks,” IEEE Transactions on Pattern Analysis and Machine Intelligence, vol. 39, no. 6, pp. 1137– 1149, 2016.
+[37] J. Peng, C. Wang, F. Wan, Y. Wu, Y. Wang, Y. Tai, C. Wang, J. Li, F. Huang, and Y. Fu, “Chained-tracker: Chaining paired attentive regression results for end-to-end joint multiple-object detection and tracking,” in European Conference on Computer Vision, 2020, pp. 145–161.
+[38] S. Han, P. Huang, H. Wang, E. Yu, D. Liu, X. Pan, and J. Zhao, “Mat: Motion-aware multi-object tracking,” arXiv preprint arXiv:2009.04794, 2020.
+[39] L. Bertinetto, J. Valmadre, J. F. Henriques, A. Vedaldi, and P. H. Torr, “Fully-convolutional siamese networks for object tracking,” in European Conference on Computer Vision, 2016, pp. 850–865.
+[40] R. Tao, E. Gavves, and A. W. Smeulders, “Siamese instance search for tracking,” in Proceedings of the IEEE Conference on Computer vision and Pattern Recognition, 2016, pp. 1420–1429.
+[41] B. Li, J. Yan, W. Wu, Z. Zhu, and X. Hu, “High performance visual tracking with siamese region proposal network,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2018, pp. 8971–8980.
+[42] B. Li, W. Wu, Q. Wang, F. Zhang, J. Xing, and J. Yan, “Siamrpn++: Evolution of siamese visual tracking with very deep networks,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2019, pp. 4282–4291.
+[43] Y. Xu, Y. Ban, X. Alameda-Pineda, and R. Horaud, “Deepmot: a differentiable framework for training multiple object trackers,” arXiv preprint arXiv:1906.06618, 2019.
+[44] X. Zhou, V. Koltun, and P. Kra¨henbu¨hl, “Tracking objects as points,” in European Conference on Computer Vision, 2020, pp. 474–490.
+[45] X. Zhou, D. Wang, and P. Kra¨henbu¨hl, “Objects as points,” arXiv preprint arXiv:1904.07850, 2019.
+[46] T. Yin, X. Zhou, and P. Kra¨henbu¨hl, “Center-based 3d object detection and tracking,” arXiv preprint arXiv:2006.11275, 2020.
+[47] Z. Li, H. Wang, T. Swistek, W. Chen, Y. Li, and H. Wang, “Enabling the network to surf the internet,” arXiv preprint arXiv:2102.12205, 2021.
+[48] B. Chen, W. Deng, and J. Hu, “Mixed high-order attention network for person re-identiﬁcation,” in Proceedings of the IEEE/CVF International Conference on Computer Vision, 2019, pp. 371–381.
+[49] T. Meinhardt, A. Kirillov, L. Leal-Taixe, and C. Feichtenhofer, “Trackformer: Multi-object tracking with transformers,” arXiv preprint arXiv:2101.02702, 2021.
+[50] J. Mu¨ller, “The hadamard multiplication theorem and applications in summability theory,” Complex Variables and Elliptic Equations, vol. 18, no. 3-4, pp. 155–166, 1992.
+[51] T.-Y. Lin, P. Goyal, R. Girshick, K. He, and P. Dolla´r, “Focal loss for dense object detection,” in Proceedings of the IEEE International Conference on Computer Vision, 2017, pp. 2980–2988.
+[52] Z. Li, Y. Li, Y. Liu, P. Wang, R. Lu, and H. B. Gooi, “Deep learning based densely connected network for load forecasting,” IEEE Transactions on Power Systems, 2020.
+[53] L. Leal-Taixe´, A. Milan, I. Reid, S. Roth, and K. Schindler, “Motchallenge 2015: Towards a benchmark for multi-target tracking,” arXiv preprint arXiv:1504.01942, 2015.
+[54] P. F. Felzenszwalb, R. B. Girshick, D. McAllester, and D. Ramanan, “Object detection with discriminatively trained part-based models,” IEEE Transactions on Pattern Analysis and Machine Intelligence, vol. 32, no. 9, pp. 1627–1645, 2009.
+[55] F. Yang, W. Choi, and Y. Lin, “Exploit all the layers: Fast and accurate cnn object detector with scale dependent pooling and cascaded rejection classiﬁers,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2016, pp. 2129–2137.
+[56] A. Ess, B. Leibe, K. Schindler, and L. Van Gool, “A mobile vision system for robust multi-person tracking,” in 2008 IEEE Conference on Computer Vision and Pattern Recognition, 2008, pp. 1–8.
+
+[57] S. Zhang, R. Benenson, and B. Schiele, “Citypersons: A diverse dataset for pedestrian detection,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2017, pp. 3213–3221.
+[58] P. Dolla´r, C. Wojek, B. Schiele, and P. Perona, “Pedestrian detection: A benchmark,” in 2009 IEEE Conference on Computer Vision and Pattern Recognition, 2009, pp. 304–311.
+[59] T. Xiao, S. Li, B. Wang, L. Lin, and X. Wang, “Joint detection and identiﬁcation feature learning for person search,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2017, pp. 3415–3424.
+[60] Z. Zhong, L. Zheng, Z. Zheng, S. Li, and Y. Yang, “Camstyle: A novel data augmentation method for person re-identiﬁcation,” IEEE Transactions on Image Processing, vol. 28, no. 3, pp. 1176–1190, 2018.
+[61] S. Shao, Z. Zhao, B. Li, T. Xiao, G. Yu, X. Zhang, and J. Sun, “Crowdhuman: A benchmark for detecting human in a crowd,” arXiv preprint arXiv:1805.00123, 2018.
+[62] K. Bernardin and R. Stiefelhagen, “Evaluating multiple object tracking performance: the clear mot metrics,” EURASIP Journal on Image and Video Processing, vol. 2008, pp. 1–10, 2008.
+[63] J. Luiten, A. Osep, P. Dendorfer, P. Torr, A. Geiger, L. Leal-Taixe´, and B. Leibe, “Hota: A higher order metric for evaluating multi-object tracking,” International Journal of Computer Vision, vol. 129, no. 2, pp. 548–578, 2021.
+[64] B. Pang, Y. Li, Y. Zhang, M. Li, and C. Lu, “Tubetk: Adopting tubes to track multi-object in a one-step training model,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2020, pp. 6308–6318.
+[65] Y. Zhang, H. Sheng, Y. Wu, S. Wang, W. Ke, and Z. Xiong, “Multiplex labeling graph for near-online tracking in crowded scenes,” IEEE Internet of Things Journal, vol. 7, no. 9, pp. 7892–7902, 2020.
+[66] T.-Y. Lin, M. Maire, S. Belongie, J. Hays, P. Perona, D. Ramanan, P. Dolla´r, and C. L. Zitnick, “Microsoft coco: Common objects in context,” in European Conference on Computer Vision, 2014, pp. 740– 755.
+[67] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,” in International Conference on Leanring Representations, 2015.
+

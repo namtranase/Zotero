@@ -1,0 +1,141 @@
+arXiv:2101.08040v2 [cs.CV] 1 Feb 2021
+
+1st Place Solution to ECCV-TAO-2020: Detect and Represent Any Object for Tracking
+Fei Du1, Bo Xu2, Jiasheng Tang1, Yuqi Zhang1, Fan Wang1, and Hao Li1
+1 Alibaba Group. 2 Cainiao Inc.
+{dufei.df,jiasheng.tjs,gongyou.zyq,fan.w,lihao.lh}@alibaba-inc.com songbai.xb@cainiao.com
+Abstract. We extend the classical tracking-by-detection paradigm to this tracking-any-object task. Solid detection results are ﬁrst extracted from TAO dataset. Some state-of-the-art techniques like BAlanced-Group Softmax (BAGS[7]) and DetectoRS[11] are integrated during detection. Then we learned appearance features to represent any object by training feature learning networks. We ensemble several models for improving detection and feature representation. Simple linking strategies with most similar appearance features and tracklet-level post association module are ﬁnally applied to generate ﬁnal tracking results. Our method is submitted as AOA on the challenge website3. Code is available at https://github.com/feiaxyt/Winner_ECCV20_TAO.
+1 Introduction
+Tracking Any Object (TAO)[3] dataset is the ﬁrst work to bring more sophisticated categories in an open world to the multiple-objects-tracking (MOT) community. Besides, despite the whole consecutive frames are given, they are only annotated at 1 FPS, which makes some popular MOT frameworks not work. Since there are over 1200 categories in it, detecting and tracking on such a longtailed dataset is super challenging. In this paper, we will describe our method used for TAO and our thoughts about tracking on such a hard setting.
+We follow the classical tracking-by-detection framework to build TAO pipeline. Since better detection leads to powerful tracking results, especially for this longtailed task, we carefully built our fundamental detection model with MaskRCNN. More details can be found in 2.1. In the tasks of multiple objects tracking on pedestrians or vehicles (like KITTI, MOT-16, MOT-17, etc.), tracking is usually done by combining appearance and motion features since it also tracks on real-time videos. But as for TAO, we tested some mainstream tracking approaches within real-time and low-frame-rate ones. We chose to track with anything-appearance feature on 1 FPS. More details can be found in 2.2 and 2.3. 3 Due to unknown issue when submitted to MOT server, we failed on archiving all
+three ﬁles ﬁrst. Then by replacing empty json ﬁles for train and validition, it seems good. So if anyone who is interested in our train and validation results, please contact us for this purpose. We would like to share those ones.
+
+2
+
+F.Du et al.
+
+2 Method Details
+
+2.1 Detection
+We trained two detection models with MMDetection[2] framework from OpenMMLab. The ﬁrst model is built with a strong-enough backbone network, SENet154 with RFP, and then ﬁne-tuned with balanced group softmax loss on LVIS[4] v1.0 dataset. A v1.0-to-v0.5 LVIS label mapping is applied with synset ﬁeld to make it possible to inference on TAO. Besides, we directly bring an opensource model BAGS to TAO, which is the state-of-the-art method for modeling long-tailed data.
+
+2.2 Tracking: Category-Agnostic Feature Representation
+Before TAO was released, multiple-objects-tracking has always been performed in a full-frame-rate setting, which means all the frames are used for detection/tracking, no matter in online or oﬄine pipelines. However, most of these previous methods failed on TAO under our tests by using the metric of mAP. Better mAP leads us to pay more attention to the Recall of detections and thus brings some challenges while tracking:
+1. With more than 400 categories, the object motion is highly irregular. Combining with the camera motion, object trajectories shown in those videos are very unpredictable. Even tracking with detections at 30 FPS, SORT-like tracker still cannot get satisfying results.
+2. Compared to MOTChallenge[10], more boxes from detection methods are desired to increase the recall rate. Therefore, algorithms about linking detection boxes in an oﬄine manner didn’t demonstrate strong advantages here, such as Min-Cost Network Flow or Graph Neural Networks. We also trained a GBDT model to use geometry cues and appearance cues for linkage prediction, which only got less than 90% precision.
+3. Compared to Single-Object-Tracking which is usually category-agnostic, there is no user-initialized box. Tracking on such a number of boxes is also costly with high frame rate.
+Thus, the most feasible way is to link detection boxes only based on their appearance features. The model used for feature representation is trained with a State-of-the-Art Person-ReID framework, whose task is to ﬁnd a feature embedding for instance matching of any object category. With collections from a few SOT datasets including YouTube-BB[12], GOT-10k[5] and ImageNet VID[13], over 200,000 trajectories are obtained, which can be treated as 200,000 instance IDs as the training data. We believe this could be able to cover a large variety of object appearance variation, like lighting conditions, view points, deformations, etc., to help learning a discriminative feature representation for any category of objects.
+Therefore, we train two ReID models to extract features. One is trained using only SOT datasets, and the other is trained by adding the training set of TAO.
+
+DRAO
+
+3
+
+Another line of feature representation used in tracking is by training a Siameselike network inspired by popular Single-Object-Tracking frameworks. Similar to SiamRPN[6], the model is built to discriminate from similar ones than any other detractors. After feature extraction with backbone net, feature map at the center point with 256-dimensional is selected to represent the given object. During our experiments, this kind of feature doesn’t perform as well compared with features from ReID model.
+Hence, with the two appearance models, we can link boxes through time. We also found that detecting more boxes on more frames might accumulate errors over time. We thus set our tracking method with 1 FPS.
+
+2.3 Post-processing and Model Ensemble
+Prior to TAO, [14] shows a direct improvement on MOT dataset by using trajectory-ﬁx, the PA module in their work. We use a similar idea and reimplement it in a simple way: re-linking these two tracklets which have no timeoverlap with these tracklet-level mean appearance features. This implementation can reach similar performance but with less cost and easier implementation.
+As for model ensemble of tracking, we found that directly mixing our tracking results from two detection models can improve the performance of mAP. This can be explained as improving the recall of tracklets. The two appearance features are concatenated during the tracking stage. Recalling the pipeline: the two detection models ﬁrst detect object respectively. Then appearance features concatenated from two ReID models is applied to track with these two detection results at 1 FPS. Finally, two tracking results are merged together, then the PA module for tracklet-level ﬁx is used for post-processing. Figure 1 shows the whole pipeline of our approach.
+
+Fig. 1. Pipeline of Our Approach
+
+4
+
+F.Du et al.
+
+3 Experiments
+
+3.1 Implementation
+As mentioned above, the detection module is implemented with MMDetection framework. And the appearance model is trained with [9][8]. The detailed feature linking strategies come from DeepSORT[15] by removing its dependency on geometry cues.
+The biggest model in our submission is the LVIS v1.0 detection model, which is distributedly trained with three servers, each with 8 of 32G V100 GPU. It is built with DetectoRS with SENet-154 as backbone, then ﬁne-tuned with (BAGS) for modeling long-tailed-distribution data like LVIS.
+
+3.2 Results
+Due to limited submission tries on TAO test set, we reported the performance of our detection models on validation set of LVIS and tracking results on validation set of TAO respectively.
+We use Model 1 (the open-source BAGS) for our initial experiment. This model can archive 34.98 of AP50 on TAO validation set, compared with 27.26 of the baseline model. Composed with SORT at 30 FPS, slight improvement of mAP can be reached. Then we test this model with our anything-appearance features. A discriminative result can be easily reached with our SOT features and ReID ones. Better result can be gained when switched to detection Model 2.
+An important trick for detection output before tracking is that only output the 482 LVIS categories appeared in TAO, which would improve the recall of labels considered in TAO during detection phase. We mark it as Model{number}-482 in the table. Table 1 and 2 show the performance in detail. SOT and ReID are short for SOT appearance feature and anything-appearance feature respectively.
+We also analyse our models with oracle setting for knowing the upper bound of our approach. The results are illustrated in table 3. As can be seen from the table, we achieve performance of 46.10 mAP and 48.51 mAP by linking the detection results of Model 1 and Model 2 with oracle tracks, respectively. However, by combining the detection results of the two models, we achieve much higher performance of 57.72 mAP, which sets a high upper bound for our approach.
+
+Table 1. Detection performance on LVIS v0.5 validation set
+
+Model Name Main Setting
+
+Dataset for training mAP
+
+Model-1 Model-2
+
+gs-htc-dconv-x101-64x4d-fpn LVIS v0.5 && COCO 37.71
+
+gs-htc-dconv-senet154-rfp LVIS v1.0
+
+39.701
+
+DRAO
+
+5
+
+Table 2. Tracking performance on TAO validation set with various setting
+
+Detection Tracking
+
+Spec. mAP
+
+Model-1
+
+SORT
+
+30 FPS 14.80
+
+Model-1
+
+SOT
+
+1 FPS 23.42
+
+Model-1
+
+ReID1
+
+1 FPS 24.52
+
+Model-1-482 ReID1
+
+1 FPS 25.02
+
+Model-1-482 ReID2
+
+1 FPS 25.53
+
+Model-1-482 ReID1+ReID2
+
+1 FPS 26.02
+
+Model-2-482 ReID1+ReID2
+
+1 FPS 26.32
+
+Model-1-2-482 ReID1+ReID2
+
+1 FPS 28.59
+
+Model-1-2-482 ReID1+ReID2+PA 1 FPS 29.27
+
+Table 3. Tracking performance of applying the ‘track’ oracle on TAO validation set.
+
+Detection Model-1-482 Model-2-482 Model-1-2-482
+
+mAP 46.10 48.51 57.72
+
+4 Conclusions
+In our solution for TAO competition, tracking is performed simply with a relatively strong appearance features. The evaluation metric mAP is crucial to this part. Most of existing MOT framework fail on this situation of high recall. The only paradigm that we didn’t test and believe work with high frame rate is tracktor[1]. With huge amount of data and limited time, we cannot test it since the fundamental detection model would be too large and costly to track with real-time videos.
+References
+1. Bergmann, P., Meinhardt, T., Leal-Taix´e, L.: Tracking without bells and whistles. In: The IEEE International Conference on Computer Vision (ICCV) (October 2019)
+2. Chen, K., Wang, J., Pang, J., Cao, Y., Xiong, Y., Li, X., Sun, S., Feng, W., Liu, Z., Xu, J., Zhang, Z., Cheng, D., Zhu, C., Cheng, T., Zhao, Q., Li, B., Lu, X., Zhu, R., Wu, Y., Dai, J., Wang, J., Shi, J., Ouyang, W., Loy, C.C., Lin, D.: MMDetection:
+1 Reported on LVIS v1.0 validation set.
+
+6
+
+F.Du et al.
+
+Open mmlab detection toolbox and benchmark. arXiv preprint arXiv:1906.07155 (2019) 3. Dave, A., Khurana, T., Tokmakov, P., Schmid, C., Ramanan, D.: Tao: A large-scale benchmark for tracking any object (2020) 4. Gupta, A., Dolla´r, P., Girshick, R.: Lvis: A dataset for large vocabulary instance segmentation (2019) 5. Huang, L., Zhao, X., Huang, K.: GOT-10k: A large high-diversity benchmark for generic object tracking in the wild. arXiv preprint arXiv: 1810.11981 (2018) 6. Li, B., Wu, W., Wang, Q., Zhang, F., Yan, J.: Siamrpn++: Evolution of siamese visual tracking with very deep networks. In: 2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) (2019) 7. Li, Y., Wang, T., Kang, B., Tang, S., Wang, C., Li, J., Feng, J.: Overcoming classiﬁer imbalance for long-tail object detection with balanced group softmax. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 10991–11000 (2020) 8. Luo, H., Gu, Y., Liao, X., Lai, S., Jiang, W.: Bag of tricks and a strong baseline for deep person re-identiﬁcation. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition Workshops. pp. 0–0 (2019) 9. Luo, H., Jiang, W., Gu, Y., Liu, F., Liao, X., Lai, S., Gu, J.: A strong baseline and batch normalization neck for deep person re-identiﬁcation. IEEE Transactions on Multimedia (2019) 10. Milan, A., Leal-Taix´e, L., Reid, I., Roth, S., Schindler, K.: MOT16: A benchmark for multi-object tracking. arXiv:1603.00831 [cs] (Mar 2016), http://arxiv.org/ abs/1603.00831, arXiv: 1603.00831 11. Qiao, S., Chen, L.C., Yuille, A.: Detectors: Detecting objects with recursive feature pyramid and switchable atrous convolution (2020) 12. Real, E., Shlens, J., Mazzocchi, S., Pan, X., Vanhoucke, V.: YouTubeBoundingBoxes: A large high-precision human-annotated data set for object detection in video. In: CVPR (2017) 13. Russakovsky, O., Deng, J., Su, H., Krause, J., Satheesh, S., Ma, S., Huang, Z., Karpathy, A., Khosla, A., Bernstein, M.S., Berg, A.C., Li, F.: Imagenet large scale visual recognition challenge. IJCV 115(3), 211–252 (2015) 14. Tang, J., Xiong, X., Xie, C., Zhang, Y., Wang, P., Wang, F., Du, F., Han, L., Zheng, Y., Pan, P., et al.: Min-cost network ﬂow and trajectory ﬁx for multiple objects tracking 15. Wojke, N., Bewley, A.: Deep cosine metric learning for person re-identiﬁcation. In: 2018 IEEE Winter Conference on Applications of Computer Vision (WACV). pp. 748–756. IEEE (2018). https://doi.org/10.1109/WACV.2018.00087
+

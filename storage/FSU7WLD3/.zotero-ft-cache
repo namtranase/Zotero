@@ -1,0 +1,84 @@
+
+close this message
+arXiv smileybones icon
+Giving Week!
+
+Show your support for Open Science by donating to arXiv during Giving Week, April 25th-29th.
+DONATE
+Skip to main content
+Computer Science > Computer Vision and Pattern Recognition
+(cs)
+[Submitted on 29 Nov 2021]
+Title: DanceTrack: Multi-Object Tracking in Uniform Appearance and Diverse Motion
+Authors: Peize Sun , Jinkun Cao , Yi Jiang , Zehuan Yuan , Song Bai , Kris Kitani , Ping Luo
+Download PDF
+
+    Abstract: A typical pipeline for multi-object tracking (MOT) is to use a detector for object localization, and following re-identification (re-ID) for object association. This pipeline is partially motivated by recent progress in both object detection and re-ID, and partially motivated by biases in existing tracking datasets, where most objects tend to have distinguishing appearance and re-ID models are sufficient for establishing associations. In response to such bias, we would like to re-emphasize that methods for multi-object tracking should also work when object appearance is not sufficiently discriminative. To this end, we propose a large-scale dataset for multi-human tracking, where humans have similar appearance, diverse motion and extreme articulation. As the dataset contains mostly group dancing videos, we name it "DanceTrack". We expect DanceTrack to provide a better platform to develop more MOT algorithms that rely less on visual discrimination and depend more on motion analysis. We benchmark several state-of-the-art trackers on our dataset and observe a significant performance drop on DanceTrack when compared against existing benchmarks. The dataset, project code and competition server are released at: \url{ this https URL }. 
+
+Subjects: 	Computer Vision and Pattern Recognition (cs.CV)
+Cite as: 	arXiv:2111.14690 [cs.CV]
+  	(or arXiv:2111.14690v1 [cs.CV] for this version)
+  	https://doi.org/10.48550/arXiv.2111.14690
+Focus to learn more
+arXiv-issued DOI via DataCite
+Submission history
+From: Peize Sun [ view email ]
+[v1] Mon, 29 Nov 2021 16:49:06 UTC (11,018 KB)
+Full-text links:
+Download:
+
+    PDF
+    Other formats 
+
+( license )
+Current browse context:
+cs.CV
+< prev   |   next >
+new | recent | 2111
+Change to browse by:
+cs
+References & Citations
+
+    NASA ADS
+    Google Scholar
+    Semantic Scholar
+
+DBLP - CS Bibliography
+listing | bibtex
+Jinkun Cao
+Yi Jiang
+Zehuan Yuan
+Song Bai
+Kris Kitani
+…
+a export bibtex citation Loading...
+Bookmark
+BibSonomy logo Mendeley logo Reddit logo ScienceWISE logo
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer ( What is the Explorer? )
+Litmaps Toggle
+Litmaps ( What is Litmaps? )
+scite.ai Toggle
+scite Smart Citations ( What are Smart Citations? )
+Code & Data
+Demos
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax ( What is MathJax? )
+
+    About
+    Help
+
+    contact arXiv Click here to contact arXiv Contact
+    subscribe to arXiv mailings Click here to subscribe Subscribe
+
+    Copyright
+    Privacy Policy
+
+    Web Accessibility Assistance
+
+    arXiv Operational Status
+    Get status notifications via email or slack
+

@@ -1,0 +1,78 @@
+
+Skip to main content
+Cornell University
+We gratefully acknowledge support from
+the Simons Foundation and member institutions.
+arXiv.org > cs > arXiv:2109.09416
+
+Help | Advanced Search
+Search
+Computer Science > Computer Vision and Pattern Recognition
+(cs)
+[Submitted on 20 Sep 2021 ( v1 ), last revised 13 Dec 2021 (this version, v3)]
+Title: ElasticFace: Elastic Margin Loss for Deep Face Recognition
+Authors: Fadi Boutros , Naser Damer , Florian Kirchbuchner , Arjan Kuijper
+Download PDF
+
+    Abstract: Learning discriminative face features plays a major role in building high-performing face recognition models. The recent state-of-the-art face recognition solutions proposed to incorporate a fixed penalty margin on commonly used classification loss function, softmax loss, in the normalized hypersphere to increase the discriminative power of face recognition models, by minimizing the intra-class variation and maximizing the inter-class variation. Marginal penalty softmax losses, such as ArcFace and CosFace, assume that the geodesic distance between and within the different identities can be equally learned using a fixed penalty margin. However, such a learning objective is not realistic for real data with inconsistent inter-and intra-class variation, which might limit the discriminative and generalizability of the face recognition model. In this paper, we relax the fixed penalty margin constrain by proposing elastic penalty margin loss (ElasticFace) that allows flexibility in the push for class separability. The main idea is to utilize random margin values drawn from a normal distribution in each training iteration. This aims at giving the decision boundary chances to extract and retract to allow space for flexible class separability learning. We demonstrate the superiority of our ElasticFace loss over ArcFace and CosFace losses, using the same geometric transformation, on a large set of mainstream benchmarks. From a wider perspective, our ElasticFace has advanced the state-of-the-art face recognition performance on seven out of nine mainstream benchmarks. 
+
+Subjects: 	Computer Vision and Pattern Recognition (cs.CV)
+Cite as: 	arXiv:2109.09416 [cs.CV]
+  	(or arXiv:2109.09416v3 [cs.CV] for this version)
+Submission history
+From: Fadi Boutros [ view email ]
+[v1] Mon, 20 Sep 2021 10:31:50 UTC (3,837 KB)
+[v2] Wed, 22 Sep 2021 13:18:06 UTC (3,837 KB)
+[v3] Mon, 13 Dec 2021 14:21:27 UTC (4,239 KB)
+Full-text links:
+Download:
+
+    PDF
+    Other formats 
+
+( license )
+Current browse context:
+cs.CV
+< prev   |   next >
+new | recent | 2109
+Change to browse by:
+cs
+References & Citations
+
+    NASA ADS
+    Google Scholar
+    Semantic Scholar
+
+DBLP - CS Bibliography
+listing | bibtex
+Arjan Kuijper
+a export bibtex citation Loading...
+Bookmark
+BibSonomy logo Mendeley logo Reddit logo ScienceWISE logo
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer ( What is the Explorer? )
+Litmaps Toggle
+Litmaps ( What is Litmaps? )
+scite.ai Toggle
+scite Smart Citations ( What are Smart Citations? )
+Code & Data
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax ( What is MathJax? )
+
+    About
+    Help
+
+    contact arXiv Click here to contact arXiv Contact
+    subscribe to arXiv mailings Click here to subscribe Subscribe
+
+    Copyright
+    Privacy Policy
+
+    Web Accessibility Assistance
+
+    arXiv Operational Status
+    Get status notifications via email or slack
+

@@ -1,0 +1,425 @@
+Skip to search form Skip to main content Skip to account menu
+> Semantic Scholar Semantic Scholar's Logo
+Search
+Sign In Create Free Account
+You are currently offline. Some features of the site may not work correctly.
+
+    Corpus ID: 214802364 
+
+A Simple Baseline for Multi-Object Tracking
+
+ @article{Zhang2020ASB,
+  title={A Simple Baseline for Multi-Object Tracking},
+  author={Yifu Zhang and Chunyu Wang and Xinggang Wang and Wenjun Zeng and Wenyu Liu},
+  journal={ArXiv},
+  year={2020},
+  volume={abs/2004.01888}
+}
+
+    Yifu Zhang , Chunyu Wang , +2 authors Wenyu Liu
+    Published 4 April 2020
+    Computer Science
+    ArXiv 
+
+There has been remarkable progress on object detection and re-identification in recent years which are the core components for multi-object tracking. However, little attention has been focused on accomplishing the two tasks in a single network to improve the inference speed. The initial attempts along this path ended up with degraded results mainly because the re-identification branch is not appropriately learned. In this work, we study the essential reasons behind the failure, and accordingly present a simple baseline to addresses the problem. It remarkably outperforms the state-of-the-arts on the public datasets at $30$ fps. We hope this baseline could inspire and help evaluate new ideas in this field. The code and the pre-trained models are available at \url{this https URL}.  Collapse
+chunyuwang.org
+Save to Library Save
+Create Alert Alert
+Cite
+Share This Paper
+56 Citations
+Highly Influential Citations
+15
+Background Citations
+22
+Methods Citations
+26
+Results Citations
+2
+View All
+Topics from this paper
+
+    Baseline (configuration management) 
+
+    Object detection 
+
+    Norm (social) 
+
+Paper Mentions
+News Article
+检测、重识别为啥很难一步到位？华中科技大、微软深入挖掘，新方法实现新SOTA
+Sohu News
+19 May 2020
+News Article
+Researchers open-source state-of-the-art object tracking AI
+VentureBeat
+8 April 2020
+56 Citations
+Date Range
+Citation Type
+Has PDF
+Publication Type
+Author
+More Filters
+Simple Unsupervised Multi-Object Tracking
+
+    Shyamgopal Karthik , Ameya Prabhu , Vineet Gandhi
+    Computer Science
+    ArXiv
+    2020 
+
+TLDR
+This work proposes an unsupervised re-identification network, thus sidestepping the labeling costs entirely, required for training, and demonstrates that SimpleReID performs substantially better than simpler alternatives, and recovers the full performance of its supervised counterpart consistently across diverse tracking frameworks. Expand
+
+    24
+    PDF
+
+Save
+Alert
+CL-MOT: A Contrastive Learning Framework for Multi-Object Tracking
+
+    D. Silva , danielzgsilva
+    2020 
+
+The field of Multi-Object Tracking (MOT) has seen tremendous progress with the emergence of joint detection and tracking algorithms. Nevertheless, these approaches still rely on supervised learning … Expand
+
+    Highly Influenced
+    PDF
+
+    View 9 excerpts 
+
+Save
+Alert
+Multiple Object Tracking in Deep Learning Approaches: A Survey
+
+    Yesul Park , L. Dang , Sujin Lee , Dongil Han , Hyeonjoon Moon
+    Computer Science
+    Electronics
+    2021 
+
+TLDR
+This paper focuses on giving a thorough review of the evolution of MOT in recent decades, investigating the recent advances in MOT, and showing some potential directions for future work. Expand
+
+    PDF
+
+Save
+Alert
+ReMOT: A model-agnostic refinement for multiple object tracking
+
+    Fan Yang , Xin Chang , S. Sakti , Yang Wu , Satoshi Nakamura
+    Computer Science
+    Image Vis. Comput.
+    2021 
+
+TLDR
+A Refining MOT Framework (ReMOT), which first splits imperfect tracklets and then merges the split tracklets with appearance features improved by self-supervised learning, is proposed, which can make significant improvements to state-of-the-art MOT results as powerful post-processing. Expand
+
+    2
+    PDF
+
+Save
+Alert
+On the detection-to-track association for online multi-object tracking
+
+    Xufeng Lin , Chang-Tsun Li , Victor Sanchez , C. Maple
+    Computer Science
+    Pattern Recognit. Lett.
+    2021 
+
+TLDR
+This work proposes a hybrid track association (HTA) algorithm that models the historical appearance distances of a track with an incremental Gaussian mixture model (IGMM) and incorporates the derived statistical information into the calculation of the detection-to-track association cost. Expand
+
+    2
+    PDF
+
+Save
+Alert
+A General Recurrent Tracking Framework without Real Data
+
+    Shuai Wang , Hao Sheng , Yang Zhang , Yubin Wu , Zhangyue Xiong
+
+Recent progress in multi-object tracking (MOT) has shown great significance of a robust scoring mechanism for potential tracks. However, the lack of available data in MOT makes it difficult to learn … Expand
+
+    Highly Influenced
+    PDF
+
+    View 10 excerpts, cites background and methods 
+
+Save
+Alert
+Attention Modulated Multiple Object Tracking with Motion Enhancement and Dual Correlation
+
+    Yifeng Wang , Zhijiang Zhang , Ning Zhang , Dan Zeng
+    Computer Science
+    Symmetry
+    2021 
+
+TLDR
+It is demonstrated that the proposed MAC-MOT can achieve a better performance than the baseline state of the arts (SOTAs) and is evaluated on the popular multiple object tracking benchmarks MOT16 and MOT17. Expand
+
+    1
+    PDF
+
+Save
+Alert
+Analysis of Recent Re-Identification Architectures for Tracking-by-Detection Paradigm in Multi-Object Tracking
+
+    Haruya Ishikawa , Masaki Hayashi , Trong Huy Phan , Kazuma Yamamoto , Makoto Masuda , Y. Aoki
+    Computer Science
+    VISIGRAPP
+    2021 
+
+TLDR
+This work combines modern state-of-the-art re-identification models and modeling techniques on the basic tracking-by-detection framework and proves that these methods are, in fact, effective for multi-object tracking. Expand
+
+    Highly Influenced
+    PDF
+
+    View 5 excerpts, cites methods and background 
+
+Save
+Alert
+RelationTrack: Relation-aware Multiple Object Tracking with Decoupled Representation
+
+    En Yu , Zhuoling Li , Shoudong Han , Hongwei Wang
+    Computer Science
+    ArXiv
+    2021 
+
+TLDR
+A module named Global Context Disentangling (GCD) is devised that decouples the learned representation into detection-specific and ReID-specific embeddings and provides an implicit manner to balance the different requirements of these two subtasks. Expand
+
+    2
+    Highly Influenced
+    PDF
+
+    View 8 excerpts, cites methods and background 
+
+Save
+Alert
+MAT: Motion-Aware Multi-Object Tracking
+
+    Shoudong Han , Piao Huang , +4 authors Jun Zhao
+    Computer Science
+    ArXiv
+    2020 
+
+TLDR
+This paper proposes an enhanced MOT paradigm, namely Motion-Aware Tracker (MAT), focusing more on various motion patterns of different objects, and introduces the dynamic reconnection context module, which aims to balance the robustness of long-range motion-based reconnection. Expand
+
+    12
+    PDF
+
+Save
+Alert
+...
+1
+2
+3
+4
+5
+...
+References
+SHOWING 1-10 OF 65 REFERENCES
+SORT BY
+MOTChallenge 2015: Towards a Benchmark for Multi-Target Tracking
+
+    L. Leal-Taixé , Anton Milan , I. Reid , S. Roth , K. Schindler
+    Computer Science
+    ArXiv
+    2015 
+
+TLDR
+With MOTChallenge, the work toward a novel multiple object tracking benchmark aimed to address issues of standardization, and the way toward a unified evaluation framework for a more meaningful quantification of multi-target tracking is described. Expand
+
+    510
+    PDF
+
+    View 1 excerpt, references background 
+
+Save
+Alert
+MOTS: Multi-Object Tracking and Segmentation
+
+    P. Voigtlaender , Michael Krause , +4 authors B. Leibe
+    Computer Science
+    2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+    2019 
+
+TLDR
+This paper creates dense pixel-level annotations for two existing tracking datasets using a semi-automatic annotation procedure, and proposes a new baseline method which jointly addresses detection, tracking, and segmentation with a single convolutional network. Expand
+
+    223
+    Highly Influential
+    PDF
+
+    View 7 excerpts, references methods and background 
+
+Save
+Alert
+Simple online and realtime tracking with a deep association metric
+
+    N. Wojke , A. Bewley , D. Paulus
+    Computer Science
+    2017 IEEE International Conference on Image Processing (ICIP)
+    2017 
+
+TLDR
+This paper integrates appearance information to improve the performance of SORT and reduces the number of identity switches, achieving overall competitive performance at high frame rates. Expand
+
+    927
+    PDF
+
+    View 3 excerpts, references methods and background 
+
+Save
+Alert
+Online multi-object tracking with convolutional neural networks
+
+    Long Chen , H. Ai , C. Shang , Zijie Zhuang , Bo Bai
+    Computer Science
+    2017 IEEE International Conference on Image Processing (ICIP)
+    2017 
+
+TLDR
+A novel online multi-object tracking framework, which exploits features from multiple convolutional layers, which uses the top layer to formulate a category-level classifier and a lower layer to identify instances from one category under the intuition that lower layers contain much more details. Expand
+
+    70
+
+Save
+Alert
+Real-Time Multiple People Tracking with Deeply Learned Candidate Selection and Person Re-Identification
+
+    Long Chen , H. Ai , Zijie Zhuang , C. Shang
+    Computer Science
+    2018 IEEE International Conference on Multimedia and Expo (ICME)
+    2018 
+
+TLDR
+This paper proposes to handle unreliable detection by collecting candidates from outputs of both detection and tracking, and adopts a deeply learned appearance representation, which is trained on large-scale person re-identification datasets, to improve the identification ability of the tracker. Expand
+
+    169
+    PDF
+
+    View 3 excerpts, references background and methods 
+
+Save
+Alert
+TubeTK: Adopting Tubes to Track Multi-Object in a One-Step Training Model
+
+    Bo Pang , Yizhuo Li , YiFan Zhang , Muchen Li , Cewu Lu
+    Computer Science
+    2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+    2020 
+
+TLDR
+A concise end-to-end model TubeTK which only needs one step training by introducing the "bounding-tube" to indicate temporal-spatial locations of objects in a short video clip is proposed which achieves state-of-the-art performances even if it adopts no ready-made detection results. Expand
+
+    56
+    Highly Influential
+    PDF
+
+    View 3 excerpts, references background 
+
+Save
+Alert
+Detect to Track and Track to Detect
+
+    Christoph Feichtenhofer , A. Pinz , Andrew Zisserman
+    Computer Science
+    2017 IEEE International Conference on Computer Vision (ICCV)
+    2017 
+
+TLDR
+This paper sets up a ConvNet architecture for simultaneous detection and tracking, using a multi-task objective for frame-based object detection and across-frame track regression, and introduces correlation features that represent object co-occurrences across time to aid the ConvNet during tracking. Expand
+
+    315
+    PDF
+
+    View 1 excerpt, references background 
+
+Save
+Alert
+MOT16: A Benchmark for Multi-Object Tracking
+
+    Anton Milan , L. Leal-Taixé , I. Reid , S. Roth , K. Schindler
+    Computer Science
+    ArXiv
+    2016 
+
+TLDR
+A new release of the MOTChallenge benchmark, which focuses on multiple people tracking, and offers a significant increase in the number of labeled boxes, but also provides multiple object classes beside pedestrians and the level of visibility for every single object of interest. Expand
+
+    821
+    PDF
+
+    View 2 excerpts, references methods and background 
+
+Save
+Alert
+Multi-target tracking using CNN-based features: CNNMTT
+
+    Nima Mahmoudi , S. M. Ahadi , M. Rahmati
+    Computer Science
+    Multimedia Tools and Applications
+    2018 
+
+TLDR
+Comprehensive evaluations of the algorithm (CNNMTT) reveal that the CNNMTT method achieves high quality tracking results in comparison to the state of the art while being faster and involving much less computational cost. Expand
+
+    41
+
+    View 3 excerpts, references methods 
+
+Save
+Alert
+Performance Measures and a Data Set for Multi-target, Multi-camera Tracking
+
+    Ergys Ristani , Francesco Solera , Roger S. Zou , R. Cucchiara , Carlo Tomasi
+    Computer Science
+    ECCV Workshops
+    2016 
+
+TLDR
+A new pair of precision-recall measures of performance that treats errors of all types uniformly and emphasizes correct identification over sources of error are presented to help accelerate progress in multi-target, multi-camera tracking systems. Expand
+
+    1,291
+    PDF
+
+    View 2 excerpts, references methods 
+
+Save
+Alert
+...
+1
+2
+3
+4
+5
+...
+Related Papers
+
+    Abstract
+    Topics
+    Paper Mentions
+    56 Citations
+    65 References
+    Related Papers 
+
+Stay Connected With Semantic Scholar
+Sign Up
+What Is Semantic Scholar?
+
+Semantic Scholar is a free, AI-powered research tool for scientific literature, based at the Allen Institute for AI.
+Learn More
+About
+About Us Publishers Beta Program Contact
+Research
+Team Datasets Open Corpus Supp.ai
+Resources
+Librarians Tutorials FAQ API
+Proudly built by AI2
+Collaborators & Attributions • Terms of Service • Privacy Policy
+The Allen Institute for AI
+By clicking accept or continuing to use the site, you agree to the terms outlined in our Privacy Policy , Terms of Service , and Dataset License
+ACCEPT & CONTINUE

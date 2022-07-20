@@ -1,0 +1,16 @@
+Title:          Multiple Object Tracking in Deep Learning Approaches: A Survey
+Subject:        Object tracking is a fundamental computer vision problem that refers to a set of methods proposed to precisely track the motion trajectory of an object in a video. Multiple Object Tracking (MOT) is a subclass of object tracking that has received growing interest due to its academic and commercial potential. Although numerous methods have been introduced to cope with this problem, many challenges remain to be solved, such as severe object occlusion and abrupt appearance changes. This paper focuses on giving a thorough review of the evolution of MOT in recent decades, investigating the recent advances in MOT, and showing some potential directions for future work. The primary contributions include: (1) a detailed description of the MOT's main problems and solutions, (2) a categorization of the previous MOT algorithms into 12 approaches and discussion of the main procedures for each category, (3) a review of the benchmark datasets and standard evaluation methods for evaluating the MOT, (4) a discussion of various MOT challenges and solutions by analyzing the related references, and (5) a summary of the latest MOT technologies and recent MOT trends using the mentioned MOT categories.
+Keywords:       multiple object tracking; occlusion; ID switch; appearance; association
+Author:         Yesul Park, L. Minh Dang and Hyeonjoon Moon
+Creator:        LaTeX with hyperref
+Producer:       pdfTeX-1.40.21
+CreationDate:   Sun Oct 10 10:26:01 2021
+ModDate:        Sun Oct 10 04:35:16 2021
+Tagged:         no
+Form:           none
+Pages:          31
+Encrypted:      no
+Page size:      595.276 x 841.89 pts (A4) (rotated 0 degrees)
+File size:      2355711 bytes
+Optimized:      no
+PDF version:    1.7

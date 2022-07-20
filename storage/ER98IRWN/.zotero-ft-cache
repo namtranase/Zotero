@@ -1,0 +1,80 @@
+
+Skip to main content
+Cornell University
+We gratefully acknowledge support from
+the Simons Foundation and member institutions.
+arXiv.org > cs > arXiv:2107.02396
+
+Help | Advanced Search
+Search
+Computer Science > Computer Vision and Pattern Recognition
+(cs)
+[Submitted on 6 Jul 2021]
+Title: Semi-TCL: Semi-Supervised Track Contrastive Representation Learning
+Authors: Wei Li , Yuanjun Xiong , Shuo Yang , Mingze Xu , Yongxin Wang , Wei Xia
+Download PDF
+
+    Abstract: Online tracking of multiple objects in videos requires strong capacity of modeling and matching object appearances. Previous methods for learning appearance embedding mostly rely on instance-level matching without considering the temporal continuity provided by videos. We design a new instance-to-track matching objective to learn appearance embedding that compares a candidate detection to the embedding of the tracks persisted in the tracker. It enables us to learn not only from videos labeled with complete tracks, but also unlabeled or partially labeled videos. We implement this learning objective in a unified form following the spirit of constrastive loss. Experiments on multiple object tracking datasets demonstrate that our method can effectively learning discriminative appearance embeddings in a semi-supervised fashion and outperform state of the art methods on representative benchmarks. 
+
+Subjects: 	Computer Vision and Pattern Recognition (cs.CV)
+Cite as: 	arXiv:2107.02396 [cs.CV]
+  	(or arXiv:2107.02396v1 [cs.CV] for this version)
+Submission history
+From: Wei Li [ view email ]
+[v1] Tue, 6 Jul 2021 05:23:30 UTC (19,013 KB)
+Full-text links:
+Download:
+
+    PDF
+    Other formats 
+
+Current browse context:
+cs.CV
+< prev   |   next >
+new | recent | 2107
+Change to browse by:
+cs
+References & Citations
+
+    NASA ADS
+    Google Scholar
+    Semantic Scholar
+
+DBLP - CS Bibliography
+listing | bibtex
+Wei Li
+Yuanjun Xiong
+Shuo Yang
+Mingze Xu
+Yongxin Wang
+…
+a export bibtex citation Loading...
+Bookmark
+BibSonomy logo Mendeley logo Reddit logo ScienceWISE logo
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer ( What is the Explorer? )
+Litmaps Toggle
+Litmaps ( What is Litmaps? )
+scite.ai Toggle
+scite Smart Citations ( What are Smart Citations? )
+Code & Data
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax ( What is MathJax? )
+
+    About
+    Help
+
+    contact arXiv Click here to contact arXiv Contact
+    subscribe to arXiv mailings Click here to subscribe Subscribe
+
+    Copyright
+    Privacy Policy
+
+    Web Accessibility Assistance
+
+    arXiv Operational Status
+    Get status notifications via email or slack
+

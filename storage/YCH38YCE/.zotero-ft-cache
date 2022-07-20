@@ -1,0 +1,437 @@
+PP-YOLOE: An evolved version of YOLO
+Shangliang Xu, Xinxin Wang, Wenyu Lv, Qinyao Chang, Cheng Cui, Kaipeng Deng, Guanzhong Wang, Qingqing Dang, Shengyu Wei, Yuning Du, Baohua Lai
+Baidu Inc.
+{xushangliang, wangxinxin08, lvwenyu01, dengkaipeng, dangqingqing} @baidu.com
+
+arXiv:2203.16250v2 [cs.CV] 2 Apr 2022
+
+Abstract
+In this report, we present PP-YOLOE, an industrial state-of-the-art object detector with high performance and friendly deployment. We optimize on the basis of the previous PP-YOLOv2, using anchor-free paradigm, more powerful backbone and neck equipped with CSPRepResStage, ET-head and dynamic label assignment algorithm TAL. We provide s/m/l/x models for different practice scenarios. As a result, PP-YOLOE-l achieves 51.4 mAP on COCO testdev and 78.1 FPS on Tesla V100, yielding a remarkable improvement of (+1.9 AP, +13.35% speed up) and (+1.3 AP, +24.96% speed up), compared to the previous state-ofthe-art industrial models PP-YOLOv2 and YOLOX respectively. Further, PP-YOLOE inference speed achieves 149.2 FPS with TensorRT and FP16-precision. We also conduct extensive experiments to verify the effectiveness of our designs. Source code and pre-trained models are available at PaddleDetection1.
+1. Introduction
+One-stage object detector is popular in real-time applications due to excellent speed and accuracy trade-off. The most prominent architecture among one-stage detectors is the YOLO series[21, 22, 23, 2, 26, 14, 6, 18, 13]. Since YOLOv1[21], YOLO series object detectors have undergone tremendous changes in network structure, label assignment and so on. At present, YOLOX[6] achieves an optimal balance of speed and accuracy with 50.1 mAP at the speed of 68.9 FPS on Tesla V100.
+YOLOX introduces advanced anchor-free method equipped with dynamic label assignment to improve the performance of detector, signiﬁcantly outperforming YOLOv5[14] in terms of precision. Inspired by YOLOX, we further optimize our previous work PP-YOLOv2[13]. PP-YOLOv2 is a high-performance one-stage detector with 49.5 mAP at the speed of 68.9 FPS on Tesla V100. Based
+1 https://github.com/PaddlePaddle/PaddleDetection
+
+Figure 1: Comparison of the PP-YOLOE and other state-ofthe-art models. PP-YOLOE-l achieves 51.4 mAP on COCO test-dev and 78.1 FPS on Tesla V100, obtains 1.9 AP and 9.2 FPS improvement compared with PP-YOLOv2[13].
+on PP-YOLOv2, we proposed an evolved version of YOLO named PP-YOLOE. PP-YOLOE avoids using operators like deformable convolution[3, 34] and Matrix NMS[28] to be well supported on various hardware. Moreover, PPYOLOE can easily scale to a series of models for various hardware with different computing power. These characteristics further promote the application of PP-YOLOE in a wider range of practical scenarios.
+As shown in Fig. 1, PP-YOLOE outperforms YOLOv5 and YOLOX in terms of speed and accuracy trade-off. Speciﬁcally, PP-YOLOE-l achieves 51.4 mAP on COCO with 640 × 640 resolution at the speed of 78.1 FPS, surpassing PP-YOLOv2 by 1.9% AP and YOLOX-l by 1.3% AP. Moreover, PP-YOLOE has a series of models, which can be simply conﬁgured through width multiplier and depth multiplier like YOLOv5. Our code has released on
+
+1
+
+PaddleDetection[1], with TensorRT and ONNX supported.
+2. Method
+In this section, we will ﬁrst review our baseline model and then introduce the design of PP-YOLOE (Fig. 2) in detail from the aspects of network structure, label assignment strategy, head structure and loss function.
+2.1. A Brief Review of PP-YOLOv2
+The overall architecture of PP-YOLOv2 contains the backbone of ResNet50-vd[10] with deformable convolution[34], the neck of PAN with SPP layer and DropBlock[7] and the lightweight IoU aware head. In PPYOLOv2, ReLU activation function is used in backbone while mish activation function is used in neck. Following YOLOv3, PP-YOLOv2 only assigns one anchor box for each ground truth object. In addition to classiﬁcation loss, regression loss and objectness loss, PP-YOLOv2 also uses IoU loss and IoU aware loss to boost the performance. For more details, please refer to [13].
+2.2. Improvement of PP-YOLOE
+Anchor-free. As mentioned above, PP-YOLOv2[13] assigns ground truths in an anchor-based manner. However, anchor mechanism introduces a number of hyperparameters and depends on hand-crafted design which may not generalize well on other datasets. For the above reason, we introduce anchor-free method in PP-YOLOv2. Following FCOS[25], which tiles one anchor point on each pixel, we set upper and lower bounds for three detection heads to assign ground truths to corresponding feature map. Then, the center of bounding box is calculated to select the closest pixel as positive samples. Following YOLO series, a 4D vector (x, y, w, h) is predicted for regression. This modiﬁcation makes the model a little faster with the loss of 0.3 AP as shown in Table 2. Although upper and lower bounds are carefully set according to the anchor sizes of PPYOLOv2, there are still some minor inconsistencies in the assignment results between anchor-based and anchor-free manner, which may lead to little precision drop.
+Backbone and Neck. Residual connections[9, 29, 11] and dense connections[12, 15, 20] have been widely used in modern convolutional neural network. Residual connections introduce shortcut to relieve gradient vanishing problem and can be also regarded as a model ensemble approach. Dense connections aggregate intermediate features with diverse receptive ﬁelds, showing good performance on the object detection task. CSPNet[27] utilizes cross stage dense connections to lower computation burden without the loss of precision, which is popular among effective object detectors such as YOLOv5[14], YOLOX[6].
+
+VoVNet[15] and subsequent TreeNet[20] also show superior performance in object detection and instance segmentation. Inspired by these works, we propose a novel RepResBlock by combining the residual connections and dense connections, which is used in our backbone and neck.
+Originating from TreeBlock[20], our RepResBlock is shown in Fig. 3(b) during the training phase and Fig. 3(c) during the inference phase. Firstly, we simplify the original TreeBlock (Fig. 3(a)). Then, we replace the concatenation operation with element-wise add operation (Fig. 3(b)), because of the approximation of these two operations to some extent shown in RMNet [19]. Thus, during the inference phase, we can re-parameterizes RepResBlock to a basic residual block (Fig. 3(c)) used by ResNet-34 in a RepVGG[4] style.
+We use proposed RepResBlock to build backbone and neck. Similar to ResNet, our backbone, named CSPRepResNet, contains one stem composed of three convolution layer and four subsequent stages stacked by our RepResBlock as shown in Fig. 3(d). In each stage, cross stage partial connections are used to avoid numerous parameters and computation burden brought by lots of 3 × 3 convolution layers. ESE (Effective Squeeze and Extraction) layer is also used to impose channel attention in each CSPRepResStage while building backbone. We build neck with proposed RepResBlock and CSPRepResStage following PP-YOLOv2[13]. Different from backbone, shortcut in RepResBlock and ESE layer in CSPRepResStage are removed in neck.
+We use width multiplier α and depth multiplier β to scale the basic backbone and neck jointly like YOLOv5[14]. Thus, we can get a series of detection network with different parameters and computation cost. The width setting of basic backbone is [64, 128, 256, 512, 1024]. Except for the stem, the depth setting of basic backbone is [3, 6, 6, 3]. The width setting and depth setting of basic neck are [192, 384, 768] and 3 respectively. Table 1 shows the speciﬁcation of width multiplier α and depth multiplier β for different model. Such modiﬁcations obtains 0.7% AP performance improvements – 49.5% AP as shown in Table 2.
+
+width multiplier α depth multiplier β
+
+s
+
+0.50
+
+0.33
+
+m
+
+0.75
+
+0.67
+
+l
+
+1.00
+
+1.00
+
+x
+
+1.25
+
+1.33
+
+Table 1: Width multiplier α and depth multiplier β speciﬁcation for a series of networks
+
+Task Alignment Learning (TAL). To further improve the
+
+2
+
+Figure 2: The model architecture of our PP-YOLOE. The backbone is CSPRepResNet, the neck is Path Aggregation Network (PAN), and the head is Efﬁcient Task-aligned Head (ET-head).
+
+(a) Simpliﬁed TreeBlock
+
+(b) Our RepResBlock during training (c) Our RepResBlock during inference
+Figure 3: Structure of our RepResBlock and CSPRepResStage
+
+(d) Our CSPRepResStage
+
+accuracy, label assignment is another aspect to be considered. YOLOX uses SimOTA as the label assignment strategy to improve performance. However, to further overcome the misalignment of classiﬁcation and localization, task alignment learning (TAL) is proposed in TOOD[5], which is composed of a dynamic label assignment and task aligned loss. Dynamic label assignment means prediction/loss aware. According to the prediction, it allocate dynamic number of positive anchors for each ground-truth. By explicitly aligning the two tasks, TAL can obtain the highest classiﬁcation score and the most precise bounding box at the same time.
+For task aligned loss, TOOD use a normalized t, namely tˆ, to replace the target in loss. It adopts the largest IoU within each instance as the normalization. The Binary Cross Entropy (BCE) for the classiﬁcation can be rewritten as:
+
+Npos
+
+Lcls−pos =
+
+BCE pi, tˆi
+
+(1)
+
+i=1
+
+We investigate the performance using different label assignment strategy. We conduct this experiment on above modiﬁed model, which use CSPRepResNet as backbone. For get the veriﬁcation results quickly, we only train 36 epochs on COCO train2017 and verify it on COCO val. As shown in Table 3, TAL achieves the best 45.2% AP performance. We use TAL to replace label assignment like FCOS style and achieve 0.9% AP improvement – 50.4% AP as shown in Table 2.
+Efﬁcient Task-aligned Head (ET-head). In object detection, the task conﬂict between classiﬁcation and localization is a well-known problem. Corresponding solutions are proposed in many papers[5, 32, 16, 30]. YOLOX’s decoupled head draws lessons from most of the one-stage and two-stage detectors, and successfully apply to YOLO model to improve accuracy. However, the decoupled head may make the classiﬁcation and localization tasks separate and independent, and lack of task speciﬁc learning. Based on
+
+3
+
+Model
+
+mAP(%) Parameters(M) GFLOPs Latency(ms) FPS
+
+PP-YOLOv2 baseline model +Anchor-free +CSPRepResNet +TAL +ET-head
+
+49.1 48.8 (−0.3) 49.5 (+0.7) 50.4 (+0.9) 50.9 (+0.5)
+
+54.58 54.27 47.42 48.32 52.20
+
+115.77 114.78 101.87 104.75 110.07
+
+14.5
+
+68.9
+
+14.3
+
+69.8
+
+11.7
+
+85.5
+
+11.9
+
+84.0
+
+12.8
+
+78.1
+
+Table 2: Ablation study of PP-YOLOE-l on COCO val. We use 640×640 resolution as input with FP32-precision, and test on Tesla V100 without post-processing.
+
+Method ATSS[33] SimOTA[6] TAL[5]
+
+mAP(0.5:0.95) 43.1 44.3 45.2
+
+Table 3: Different label assignment on base model. We use CSPRepResStage as backbone and neck, one 1×1 conv layer as head, and only train 36 epochs on COCO train2017.
+
+TOOD[5], we improve the head and propose ET-head with the goal of both speed and accuracy. As shown in Fig. 2, we use ESE to replace the layer attention in TOOD, simplify the alignment of classiﬁcation branches to shortcut, and replace the alignment of regression branches with distribution focal loss (DFL) layer[16]. Through the above changes, the ET-head brings an increase of 0.9ms on V100.
+For the learning of classiﬁcation and location tasks, we choose varifocal loss (VFL) and distribution focal loss (DFL) respectively. PP-Picodet[31] successfully applys VFL and DFL in object detectors, and obtains performance improvement. For VFL in [32], different from the quality focal loss (QFL) in [16], VFL uses target score to weight the loss of positive samples. This implementation makes the contribution of positive samples with high IoU to loss relatively large. This also makes the model pay more attention to high-quality samples rather than those low-quality ones at training time. The same is that both use IoU-aware classiﬁcation score (IACS) as the target to predict. This can effectively learn a joint representation of classiﬁcation score and localization quality estimation, which enables high consistency between training and inference. For DFL, in order to solve the problem of inﬂexible representation of bounding box, [16] proposes to use general distribution to predict bounding box. Our model is supervised by the loss function:
+
+Loss
+
+=
+
+α
+
+·
+
+lossV F L
+
++
+
+β
+
+·
+
+lossGIoU
+
+Npos i
+
+tˆ
+
++
+
+γ
+
+· lossDF L
+
+(2)
+
+where tˆdenote the normalized target score, see Eq. (1). And as shown in Table 2, the ET-head obtains 0.5% AP improve-
+
+ment – 50.9% AP.
+3. Experiment
+In this section, we present the experiments details and results. All experiments are trained on MS COCO-2017 training set with 80 classes and 118k images. For ablation study, we use the standard COCO AP metric with single scale on MS COCO-2017 validation set with 5000 images. And we report ﬁnal results using MS COCO-2017 test-dev.
+3.1. Implementation details
+We use stochastic gradient descent (SGD) with momentum = 0.9 and weight decay = 5e-4. We use cosine learning rate schedule, total epochs are 300, warmup epochs are 5, and base learning rate is 0.01. The total batch size is 64 on 8 × 32 G V100 GPU devices by default, and we follow linear scaling rule[8] to adjust learning rate. The exponential moving average (EMA) strategy with decay = 0.9998 is also adopted during training process. We only use some basic data augmentations, including random crop, random horizontal ﬂip, color distortion, and multi-scale. Specially, input size is evenly drawn from 320 to 768 with 32 stride.
+3.2. Comparsion with Other SOTA Detectors
+Table 4 and Figure 1 show comparison of the results on MS-COCO test split with other state-of-the-art object detectors. We re-evaluate YOLOv5[14] and YOLOX[6] using ofﬁcial codebase because they have non-scheduled updates. We compare model inference speed with batch size = 1 (without data preprocess and non-maximum suppression). However, PP-YOLOE series using paddle inference engine. Further, for fair comparison, we also test the FP16 precision speed based on tensorRT 6.0 in the same environment. It should be emphasized that PaddlePaddle2 ofﬁcially supports tensorRT for model deployment. Therefore, PPYOLOE can use paddle inference with tensorRT directly, and other tests follow the ofﬁcial guidelines.
+2 https://github.com/PaddlePaddle/Paddle
+
+4
+
+Method
+
+Backbone
+
+Size
+
+FPS (v100) w/o TRT with TRT
+
+AP
+
+AP50 AP75 APS APM APL
+
+YOLOv3 + ASFF* [17] Darknet-53
+
+320
+
+60
+
+YOLOv3 + ASFF* [17] Darknet-53
+
+416
+
+54
+
+YOLOv4 [2]
+
+CSPDarknet-53
+
+416
+
+96
+
+YOLOv4 [2]
+
+CSPDarknet-53
+
+512
+
+83
+
+YOLOv4-CSP [26]
+
+Modiﬁed CSPDarknet-53 512
+
+97
+
+YOLOv4-CSP [26]
+
+Modiﬁed CSPDarknet-53 640
+
+73
+
+EfﬁcientDet-D0 [24] Efﬁcient-B0
+
+512
+
+98.0
+
+EfﬁcientDet-D1 [24] Efﬁcient-B1
+
+640
+
+74.1
+
+EfﬁcientDet-D2 [24] Efﬁcient-B2
+
+768
+
+56.5
+
+EfﬁcientDet-D2 [24] Efﬁcient-B3
+
+896
+
+34.5
+
+PP-YOLO [18] PP-YOLO [18] PP-YOLO [18] PP-YOLO [18]
+
+ResNet50-vd-dcn ResNet50-vd-dcn ResNet50-vd-dcn ResNet50-vd-dcn
+
+320
+
+132.2+
+
+416
+
+109.6+
+
+512
+
+89.9+
+
+608
+
+72.9+
+
+PP-YOLOv2 [13] PP-YOLOv2 [13] PP-YOLOv2 [13] PP-YOLOv2 [13] PP-YOLOv2 [13]
+
+ResNet50-vd-dcn ResNet50-vd-dcn ResNet50-vd-dcn ResNet50-vd-dcn ResNet101-vd-dcn
+
+320
+
+123.3
+
+416
+
+102+
+
+512
+
+93.4+
+
+640
+
+68.9+
+
+640
+
+50.3+
+
+YOLOv5-s [14] YOLOv5-m [14] YOLOv5-l [14] YOLOv5-x [14]
+
+Modiﬁed CSP v6 Modiﬁed CSP v6 Modiﬁed CSP v6 Modiﬁed CSP v6
+
+640
+
+156.2+
+
+640
+
+121.9+
+
+640
+
+99.0+
+
+640
+
+82.6+
+
+YOLOX-s [6] YOLOX-m [6] YOLOX-l [6] YOLOX-x [6]
+
+Modiﬁed CSP v5 Modiﬁed CSP v5 Modiﬁed CSP v5 Modiﬁed CSP v5
+
+640 119.0∗ | 102.0+ 640 96.1∗ | 81.3+ 640 62.5∗ | 68.9+ 640 40.3∗ | 57.8+
+
+-
+-
+-
+-
+-
+-
+-
+-
+-
+242.2+ 215.4+ 188.4+ 155.6+
+152.9 145.1+ 141.2+ 106.5+ 87.0+ 454.5∗ 263.1∗ 172.4∗ 117.6∗ 246.9∗ 177.3∗ 120.1∗ 87.4∗
+
+38.1% 40.6% 41.2% 43.0% 46.2% 47.5% 33.8% 39.6% 43.0% 45.8% 39.3% 42.5% 44.4% 45.9% 43.1% 46.3% 48.2% 49.5% 50.3% 37.4% 45.4% 49.0% 50.7% 40.5% 47.2% 50.1% 51.5%
+
+57.4% 60.6% 62.8% 64.9% 64.8% 66.2% 52.2% 58.6% 62.3% 65.0% 59.3% 62.8% 64.6% 65.2% 61.7% 65.1% 67.1% 68.2% 69.0% 56.8% 64.1% 67.3% 68.9%
+-
+
+42.1% 45.1% 44.3% 46.5% 50.2% 51.7% 35.8% 42.3% 46.2% 49.3% 42.7% 46.5% 48.8% 49.9% 46.5% 50.3% 52.7% 54.4% 55.3%
+-
+
+16.1% 20.3% 20.4% 24.3% 24.6% 28.2% 12.0% 17.9% 22.5% 26.6% 16.7% 21.2% 24.4% 26.3% 19.7% 23.9% 27.7% 30.7% 31.6%
+-
+
+41.6% 44.2% 44.4% 46.1% 50.4% 51.2% 38.3% 44.3% 47.0% 49.4% 41.4% 45.2% 47.1% 47.8% 46.3% 50.2% 52.1% 52.9% 53.9%
+-
+
+53.6% 54.1% 56.0% 55.2% 61.9% 59.8% 51.2% 56.0% 58.4% 59.8% 57.8% 58.2% 58.2% 57.2% 61.8% 62.2% 62.1% 61.2% 62.4%
+-
+
+PP-YOLOE-s PP-YOLOE-m PP-YOLOE-l PP-YOLOE-x
+
+CSPRepResNet CSPRepResNet CSPRepResNet CSPRepResNet
+
+640
+
+208.3
+
+640
+
+123.4
+
+640
+
+78.1
+
+640
+
+45.0
+
+333.3 208.3 149.2 95.2
+
+43.1% 48.9% 51.4% 52.2%
+
+60.5% 66.5% 68.9% 69.9%
+
+46.6% 53.0% 55.6% 56.5%
+
+23.2% 28.6% 31.4% 33.3%
+
+46.4% 52.9% 55.3% 56.3%
+
+56.9% 63.8% 66.1% 66.4%
+
+Table 4: Comparison of the speed and accuracy of different object detectors on COCO 2017 test-dev. Results marked by ”+” are updated results from the corresponding ofﬁcial release. Results marked by ”*” are tested in our environment using ofﬁcial codebase and model. The input size of YOLOv5 is not exactly square of 640 × 640 in validation and speed test, so we skip it in the table. The default precision of speed is FP32 for w/o trt and FP16 for with trt. Moreover, we provide both FP32 and FP16 for YOLOX w/o trt scene, the FP32 speed on the left side of split line and FP16 speed on the right.
+
+4. Conclusion
+In this report, we present several updates to PPYOLOv2, including scalable backbone-neck architecture, efﬁcient task aligned head, advanced label assignment strategy and reﬁned objective loss function, which forms a series high-performance object detectors called PP-YOLOE. Meanwhile, we present s/m/l/x models which can cover different scenarios in practice. Moreover, these models can smoothly transition to deployment, with PaddlePaddle ofﬁcial support. We hope these designs with encouraging results can provide inspirations for developers and researchers.
+References
+[1] PaddlePaddle Authors. PaddleDetection, object detection and instance segmentation toolkit based on paddlepaddle. https://github.com/PaddlePaddle/ PaddleDetection, 2021. 2
+
+[2] Alexey Bochkovskiy, Chien-Yao Wang, and HongYuan Mark Liao. Yolov4: Optimal speed and accuracy of object detection. arXiv preprint arXiv:2004.10934, 2020. 1, 5
+[3] Jifeng Dai, Haozhi Qi, Yuwen Xiong, Yi Li, Guodong Zhang, Han Hu, and Yichen Wei. Deformable convolutional networks. In Proceedings of the IEEE international conference on computer vision, pages 764–773, 2017. 1
+[4] Xiaohan Ding, Xiangyu Zhang, Ningning Ma, Jungong Han, Guiguang Ding, and Jian Sun. Repvgg: Making vgg-style convnets great again. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 13733–13742, 2021. 2
+[5] Chengjian Feng, Yujie Zhong, Yu Gao, Matthew R Scott, and Weilin Huang. Tood: Task-aligned one-stage object detection. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 3510–3519, 2021. 3, 4
+[6] Zheng Ge, Songtao Liu, Feng Wang, Zeming Li, and Jian Sun. Yolox: Exceeding yolo series in 2021. arXiv preprint arXiv:2107.08430, 2021. 1, 2, 4, 5
+
+5
+
+[7] Golnaz Ghiasi, Tsung-Yi Lin, and Quoc V Le. Dropblock: A regularization method for convolutional networks. Advances in neural information processing systems, 31, 2018. 2
+[8] Priya Goyal, Piotr Dolla´r, Ross B. Girshick, Pieter Noordhuis, Lukasz Wesolowski, Aapo Kyrola, Andrew Tulloch, Yangqing Jia, and Kaiming He. Accurate, large minibatch SGD: training imagenet in 1 hour. CoRR, abs/1706.02677, 2017. 4
+[9] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 770–778, 2016. 2
+[10] Tong He, Zhi Zhang, Hang Zhang, Zhongyue Zhang, Junyuan Xie, and Mu Li. Bag of tricks for image classiﬁcation with convolutional neural networks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 558–567, 2019. 2
+[11] Jie Hu, Li Shen, and Gang Sun. Squeeze-and-excitation networks. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 7132–7141, 2018. 2
+[12] Gao Huang, Zhuang Liu, Laurens Van Der Maaten, and Kilian Q Weinberger. Densely connected convolutional networks. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 4700–4708, 2017. 2
+[13] Xin Huang, Xinxin Wang, Wenyu Lv, Xiaying Bai, Xiang Long, Kaipeng Deng, Qingqing Dang, Shumin Han, Qiwen Liu, Xiaoguang Hu, Dianhai Yu, Yanjun Ma, and Osamu Yoshie. Pp-yolov2: A practical object detector, 2021. 1, 2, 5
+[14] Glenn Jocher, Ayush Chaurasia, Alex Stoken, Jirka Borovec, NanoCode012, Yonghye Kwon, TaoXie, Jiacong Fang, imyhxy, Kalen Michael, Lorna, Abhiram V, Diego Montes, Jebastin Nadar, Laughing, tkianai, yxNONG, Piotr Skalski, Zhiqiang Wang, Adam Hogan, Cristi Fati, Lorenzo Mammana, AlexWang1900, Deep Patel, Ding Yiwei, Felix You, Jan Hajek, Laurentiu Diaconu, and Mai Thanh Minh. ultralytics/yolov5: v6.1 - TensorRT, TensorFlow Edge TPU and OpenVINO Export and Inference, Feb. 2022. 1, 2, 4, 5
+[15] Youngwan Lee, Joong-won Hwang, Sangrok Lee, Yuseok Bae, and Jongyoul Park. An energy and gpu-computation efﬁcient backbone network for real-time object detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops, pages 0–0, 2019. 2
+[16] Xiang Li, Wenhai Wang, Lijun Wu, Shuo Chen, Xiaolin Hu, Jun Li, Jinhui Tang, and Jian Yang. Generalized focal loss: Learning qualiﬁed and distributed bounding boxes for dense object detection. arXiv preprint arXiv:2006.04388, 2020. 3, 4
+[17] Songtao Liu, Di Huang, and Yunhong Wang. Learning spatial fusion for single-shot object detection, 2019. 5
+[18] Xiang Long, Kaipeng Deng, Guanzhong Wang, Yang Zhang, Qingqing Dang, Yuan Gao, Hui Shen, Jianguo Ren, Shumin Han, Errui Ding, and Shilei Wen. Pp-yolo: An effective and efﬁcient implementation of object detector. arXiv preprint arXiv:2007.12099, 2020. 1, 5
+
+[19] Fanxu Meng, Hao Cheng, Jiaxin Zhuang, Ke Li, and Xing Sun. Rmnet: Equivalently removing residual connection from networks. arXiv preprint arXiv:2111.00687, 2021. 2
+[20] Lu Rao. Treenet: A lightweight one-shot aggregation convolutional network. arXiv preprint arXiv:2109.12342, 2021. 2
+[21] Joseph Redmon, Santosh Divvala, Ross Girshick, and Ali Farhadi. You only look once: Uniﬁed, real-time object detection. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 779–788, 2016. 1
+[22] Joseph Redmon and Ali Farhadi. Yolo9000: better, faster, stronger. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 7263–7271, 2017. 1
+[23] Joseph Redmon and Ali Farhadi. Yolov3: An incremental improvement. arXiv preprint arXiv:1804.02767, 2018. 1
+[24] Mingxing Tan, Ruoming Pang, and Quoc V. Le. Efﬁcientdet: Scalable and efﬁcient object detection, 2020. 5
+[25] Zhi Tian, Chunhua Shen, Hao Chen, and Tong He. Fcos: Fully convolutional one-stage object detection. In Proceedings of the IEEE/CVF international conference on computer vision, pages 9627–9636, 2019. 2
+[26] Chien-Yao Wang, Alexey Bochkovskiy, and HongYuan Mark Liao. Scaled-yolov4: Scaling cross stage partial network, 2021. 1, 5
+[27] Chien-Yao Wang, Hong-Yuan Mark Liao, Yueh-Hua Wu, Ping-Yang Chen, Jun-Wei Hsieh, and I-Hau Yeh. Cspnet: A new backbone that can enhance learning capability of cnn. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition workshops, pages 390–391, 2020. 2
+[28] Xinlong Wang, Rufeng Zhang, Tao Kong, Lei Li, and Chunhua Shen. Solov2: Dynamic and fast instance segmentation. Advances in Neural information processing systems, 33:17721–17732, 2020. 1
+[29] Saining Xie, Ross Girshick, Piotr Dolla´r, Zhuowen Tu, and Kaiming He. Aggregated residual transformations for deep neural networks. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 1492–1500, 2017. 2
+[30] Yang Yang, Min Li, Bo Meng, Junxing Ren, Degang Sun, and Zihao Huang. Rethinking the aligned and misaligned features in one-stage object detection. 2021. 3
+[31] Guanghua Yu, Qinyao Chang, Wenyu Lv, Chang Xu, Cheng Cui, Wei Ji, Qingqing Dang, Kaipeng Deng, Guanzhong Wang, Yuning Du, Baohua Lai, Qiwen Liu, Xiaoguang Hu, Dianhai Yu, and Yanjun Ma. Pp-picodet: A better real-time object detector on mobile devices. CoRR, abs/2111.00902, 2021. 4
+[32] Haoyang Zhang, Ying Wang, Feras Dayoub, and Niko Sunderhauf. Varifocalnet: An iou-aware dense object detector. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 8514–8523, 2021. 3, 4
+[33] Shifeng Zhang, Cheng Chi, Yongqiang Yao, Zhen Lei, and Stan Z Li. Bridging the gap between anchor-based and anchor-free detection via adaptive training sample selection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pages 9759–9768, 2020. 4
+
+6
+
+[34] Xizhou Zhu, Han Hu, Stephen Lin, and Jifeng Dai. Deformable convnets v2: More deformable. Better Results, 2018. 1, 2
+7
+

@@ -1,0 +1,79 @@
+
+Skip to main content
+Cornell University
+We gratefully acknowledge support from
+the Simons Foundation and member institutions.
+arXiv.org > cs > arXiv:2010.09015
+
+Help | Advanced Search
+Search
+Computer Science > Computer Vision and Pattern Recognition
+(cs)
+[Submitted on 18 Oct 2020 ( v1 ), last revised 19 Nov 2020 (this version, v3)]
+Title: Tracklets Predicting Based Adaptive Graph Tracking
+Authors: Chaobing Shan , Chunbo Wei , Bing Deng , Jianqiang Huang , Xian-Sheng Hua , Xiaoliang Cheng , Kewei Liang
+Download PDF
+
+    Abstract: Most of the existing tracking methods link the detected boxes to the tracklets using a linear combination of feature cosine distances and box overlap. But the problem of inconsistent features of an object in two different frames still exists. In addition, when extracting features, only appearance information is utilized, neither the location relationship nor the information of the tracklets is considered. We present an accurate and end-to-end learning framework for multi-object tracking, namely \textbf{TPAGT}. It re-extracts the features of the tracklets in the current frame based on motion predicting, which is the key to solve the problem of features inconsistent. The adaptive graph neural network in TPAGT is adopted to fuse locations, appearance, and historical information, and plays an important role in distinguishing different objects. In the training phase, we propose the balanced MSE LOSS to successfully overcome the unbalanced samples. Experiments show that our method reaches state-of-the-art performance. It achieves 76.5\% MOTA on the MOT16 challenge and 76.2\% MOTA on the MOT17 challenge. 
+
+Subjects: 	Computer Vision and Pattern Recognition (cs.CV)
+Cite as: 	arXiv:2010.09015 [cs.CV]
+  	(or arXiv:2010.09015v3 [cs.CV] for this version)
+Submission history
+From: Chaobing Shan [ view email ]
+[v1] Sun, 18 Oct 2020 16:16:49 UTC (771 KB)
+[v2] Wed, 4 Nov 2020 19:14:02 UTC (787 KB)
+[v3] Thu, 19 Nov 2020 05:46:35 UTC (745 KB)
+Full-text links:
+Download:
+
+    PDF
+    Other formats 
+
+( license )
+Current browse context:
+cs.CV
+< prev   |   next >
+new | recent | 2010
+Change to browse by:
+cs
+References & Citations
+
+    NASA ADS
+    Google Scholar
+    Semantic Scholar
+
+DBLP - CS Bibliography
+listing | bibtex
+Jianqiang Huang
+Xian-Sheng Hua
+a export bibtex citation Loading...
+Bookmark
+BibSonomy logo Mendeley logo Reddit logo ScienceWISE logo
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer ( What is the Explorer? )
+Litmaps Toggle
+Litmaps ( What is Litmaps? )
+scite.ai Toggle
+scite Smart Citations ( What are Smart Citations? )
+Code & Data
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax ( What is MathJax? )
+
+    About
+    Help
+
+    contact arXiv Click here to contact arXiv Contact
+    subscribe to arXiv mailings Click here to subscribe Subscribe
+
+    Copyright
+    Privacy Policy
+
+    Web Accessibility Assistance
+
+    arXiv Operational Status
+    Get status notifications via email or slack
+

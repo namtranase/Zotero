@@ -1,0 +1,86 @@
+
+Skip to main content
+Cornell University
+We gratefully acknowledge support from
+the Simons Foundation and member institutions.
+arXiv.org > cs > arXiv:1803.01534
+
+Help | Advanced Search
+Search
+Computer Science > Computer Vision and Pattern Recognition
+(cs)
+[Submitted on 5 Mar 2018 ( v1 ), last revised 18 Sep 2018 (this version, v4)]
+Title: Path Aggregation Network for Instance Segmentation
+Authors: Shu Liu , Lu Qi , Haifang Qin , Jianping Shi , Jiaya Jia
+Download PDF
+
+    Abstract: The way that information propagates in neural networks is of great importance. In this paper, we propose Path Aggregation Network (PANet) aiming at boosting information flow in proposal-based instance segmentation framework. Specifically, we enhance the entire feature hierarchy with accurate localization signals in lower layers by bottom-up path augmentation, which shortens the information path between lower layers and topmost feature. We present adaptive feature pooling, which links feature grid and all feature levels to make useful information in each feature level propagate directly to following proposal subnetworks. A complementary branch capturing different views for each proposal is created to further improve mask prediction. These improvements are simple to implement, with subtle extra computational overhead. Our PANet reaches the 1st place in the COCO 2017 Challenge Instance Segmentation task and the 2nd place in Object Detection task without large-batch training. It is also state-of-the-art on MVD and Cityscapes. Code is available at this https URL 
+
+Comments: 	Accepted to CVPR 2018
+Subjects: 	Computer Vision and Pattern Recognition (cs.CV)
+Cite as: 	arXiv:1803.01534 [cs.CV]
+  	(or arXiv:1803.01534v4 [cs.CV] for this version)
+Submission history
+From: Shu Liu [ view email ]
+[v1] Mon, 5 Mar 2018 07:46:36 UTC (6,381 KB)
+[v2] Wed, 5 Sep 2018 02:06:15 UTC (6,381 KB)
+[v3] Thu, 6 Sep 2018 05:50:15 UTC (6,381 KB)
+[v4] Tue, 18 Sep 2018 04:26:54 UTC (6,381 KB)
+Full-text links:
+Download:
+
+    PDF
+    Other formats 
+
+( license )
+Current browse context:
+cs.CV
+< prev   |   next >
+new | recent | 1803
+Change to browse by:
+cs
+References & Citations
+
+    NASA ADS
+    Google Scholar
+    Semantic Scholar
+
+1 blog link
+( what is this? )
+DBLP - CS Bibliography
+listing | bibtex
+Shu Liu
+Lu Qi
+Haifang Qin
+Jianping Shi
+Jiaya Jia
+a export bibtex citation Loading...
+Bookmark
+BibSonomy logo Mendeley logo Reddit logo ScienceWISE logo
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer ( What is the Explorer? )
+Litmaps Toggle
+Litmaps ( What is Litmaps? )
+scite.ai Toggle
+scite Smart Citations ( What are Smart Citations? )
+Code & Data
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax ( What is MathJax? )
+
+    About
+    Help
+
+    contact arXiv Click here to contact arXiv Contact
+    subscribe to arXiv mailings Click here to subscribe Subscribe
+
+    Copyright
+    Privacy Policy
+
+    Web Accessibility Assistance
+
+    arXiv Operational Status
+    Get status notifications via email or slack
+

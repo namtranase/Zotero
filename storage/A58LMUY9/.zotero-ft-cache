@@ -1,0 +1,1435 @@
+Correlation-Aware Deep Tracking
+Fei Xie †*, Chunyu Wang ‡, Guangting Wang ‡, Yue Cao ‡, Wankou Yang †,Wenjun Zeng ‡ † Southeast University, China ‡ Microsoft Research Asia
+jaffe0319@gmail.com, chnuwa@microsoft.com, flylight@mail.ustc.edu.cn yuecao@microsoft.com, wkyang@seu.edu.cn, wezeng@microsoft.com
+
+arXiv:2203.01666v1 [cs.CV] 3 Mar 2022 Average Overlap (%)
+
+Abstract
+Robustness and discrimination power are two fundamental requirements in visual object tracking. In most tracking paradigms, we ﬁnd that the features extracted by the popular Siamese-like networks cannot fully discriminatively model the tracked targets and distractor objects, hindering them from simultaneously meeting these two requirements. While most methods focus on designing robust correlation operations, we propose a novel target-dependent feature network inspired by the self-/cross-attention scheme. In contrast to the Siamese-like feature extraction, our network deeply embeds cross-image feature correlation in multiple layers of the feature network. By extensively matching the features of the two images through multiple layers, it is able to suppress non-target features, resulting in instancevarying feature extraction. The output features of the search image can be directly used for predicting target locations without extra correlation step. Moreover, our model can be ﬂexibly pre-trained on abundant unpaired images, leading to notably faster convergence than the existing methods. Extensive experiments show our method achieves the stateof-the-art results while running at real-time. Our feature networks also can be applied to existing tracking pipelines seamlessly to raise the tracking performance. Code will be available.
+1. Introduction
+Visual object tracking (VOT) is a long-standing topic in computer vision. There are two fundamental yet competing goals in VOT: on one hand, it needs to recognize the target undergoing large appearance variations; on the other hand, it needs to ﬁlter out the distractors in the background which may be very similar to the target.
+Most appearance-based approaches address this challenge in two perspectives: the ﬁrst is to learn a more expres-
+*Work performed when Fei Xie was an intern of MSRA
+
+71
+
+SBT-large
+
+SBT-base
+
+69 STARK-CA
+
+67
+
+SBT-small
+
+TransT STARK-s50
+
+DiMP-CA
+
+65
+
+SiamFCpp-CA
+
+STARK-st101 DualTFR
+
+63
+
+PrDiMP-50
+
+SBT-light 61
+
+DiMP-50
+
+SiamFCpp
+
+Ocean
+
+59
+
+0
+
+5
+
+10
+
+15
+
+20
+
+25
+
+30
+
+35
+
+40
+
+45
+
+50
+
+Model parameter (M)
+
+Figure 1. Comparison with the state-of-the-arts on GOT-10k [19].
+
+We visualize the AO performance with respect to the model size.
+
+All reported trackers follow the ofﬁcial GOT-10k test protocol.
+
+Our SBT tracker achieves superior results while multiple trackers
+
+(with sufﬁx “CA”) can beneﬁt from our correlation-aware features.
+
+sive feature embedding space by Siamese-like extraction network [22,60]; the second is to develop a more robust correlation operation, such as Siamese cropping [23,60], online ﬁlter learning [3, 18] and Transformer-based fusion [5, 52]. Since the modern backbones [17, 35] become the mainstream choice in deep era, most trackers devote to the correlation operation, hoping to discriminate targets from distractors given their features. Despite their great success, few of these tracking paradigms notice that the two competing goals may put the feature network into a target-distractor dilemma, bringing much difﬁculties to the correlation step. The underlying reasons are three folds: 1) The Siamese encoding process is unaware of the template and search images, which weakens the instance-level discrimination of learned embeddings. 2) There is no explicit modelling for the backbone to learn the decision boundary that separates the two competing goals, leading to a sub-optimal embedding space. 3) Each training video only annotates one single object while arbitrary objects including distractors can be tracked during inference. This gap is further enlarged by 2). Our key insight is that feature extraction should have dy-
+
+1
+
+Conv Conv Conv Conv Conv Conv Conv Conv Conv Conv
+
+z
+
+𝑓𝑧
+
+Correlation Operation
+
+𝑓cor
+
+x
+
+𝑓𝑥
+
+Localization
+
+(a1) Siamese-like feature network (b1) Feature correlation 𝑓cor Prediction
+head
+
+(d1)
+
+z
+
+𝑓𝑧
+
+𝑓cor
+
+Size estimation
+
+x
+
+𝑓𝑥
+
+EoC-CA EoC-CA EoC-SA EoC-SA EoC-CA EoC-CA EoC-SA EoC-SA EoC-SA EoC-SA
+
+(a2) Target-dependent feature network (b2) Ours
+
+(c) Prediction
+
+(d2)
+
+Figure 2. (a1) standard Siamese-like feature extraction; (a2) our target-dependent feature extraction; (b1) correlation step, such as Siamese
+
+cropping correlation [23], DCF [11] and Transformer-based correlation [5] ; (b2) our pipeline removes separated correlation step; (c)
+
+prediction stage; (d1)/(d2) are the TSNE [38] visualizations of search features in (a1)/(a2) when feature networks go deeper.
+
+namic instance-varying behaviors to generate “appropriate” embeddings for VOT to ease the dilemma. In more details, it needs to generate cohe(ar)ent features for the same object in all frames of a video in spite of the variations; on the other hand, it needs to generate contrasting features for the target and distractors with similar appearance.
+To this end, we present a novel dynamic feature network on top of the attention scheme [39]. As shown in Fig.2 (a2), our Single Branch Transformer (SBT) network allows the features of the two images to deeply interact with each other at the stage of feature extraction. Intuitively, the cross-attention weights gradually ﬁlter out target-irrelevant features layer by layer while the self-attention weights enrich the feature representations for better matching. Thus, the feature extraction process is target-dependent and asymmetrical for image pair, allowing the network to achieve a win-win scenario: it differentiates the target from similar distractors while preserving the coherent characteristics among dissimilar targets. The effectiveness of features from SBT is validated in Fig. 2 (d2). The features belonging to the target (green) become more and more separated from the background (pink) and distractors (blue) while the search features from Siamese extraction are totally target-unaware.
+The overall framework of SBT is shown in Fig. 3. It has three model stages on top of Extract-or-Correlation (EoC) blocks. The patch embedding produces embeddings for the template and search images. Then the embeddings are fed to the stacked EoC blocks. There are two variants of EoC, i.e. EoC-SA and EoC-CA, which use Self-Attention (SA) and Cross-Attention (CA) as its core operator, respectively. The EoC-SA block fuses features within the same image while the EoC-CA block mixes features across images. The output features of the search image are directly fed to the prediction heads to obtain a spatial score map and a size embedding map. Our key technical innovation is introducing one single stream for template and search image pair processing that jointly extract or correlate through homogeneous attention-based blocks. Thus, SBT can be pre-trained on abundant unpaired images such as ImageNet [34], leading to a fast convergence in the ﬁne-tune on tracking.
+Extensive experiments are conducted to compare dif-
+
+Cls
+
+ferent SBT network designs. Based on the insights, we summarize a number of general principals. Our method achieves superior performance and improves Siamese, DCF and Transformer-based trackers as can be seen in Fig. 10. The main contributions of this work are as follows:
+• We present a novel tracking framework which allows the features of the search and template image to be deeply fused for tracking. It further improves existing popular tracking pipelines. To our best, we are the ﬁrst to propose a specialized target-dependent feature network for VOT.
+• We conduct a systematic study on SBT tracking both experimentally and theoretically, and summarize several general principles for following works.
+The rest of the paper is organized as follows. We discuss related work in Sec. 2. The SBT framework is presented in Sec. 3. Then, we conduct empirical studies and theoretical analysis on SBT in Sec. 4 and Sec. 5, respectively. Finally, we provide extensive experimental results in Sec. 6 and conclude the paper in Sec. 7.
+2. Related Work
+Visual Tracking. The Siamese network [2] based trackers have drawn great attention in recent years. By introducing the powerful backbones [22, 60] and elaborated prediction networks [16, 23, 51], Siamese trackers obtain superior performance. However, the ofﬂine target matching with a shallow correlation structure [2] lacks of discriminative power towards distractors. Then, the dedicated modiﬁcations rise, including attention mechanism [15, 43, 56], online module [61, 63], cascaded frameworks [7, 14, 41], update mechanism [57] and target-aware model ﬁne-tuning [24,40]. Despite the improvements, most of them bring much complexity to the Siamese tracking pipeline. Instead, our targetdependent feature network can upgrade the original network seamlessly. Moreover, our feature network formulates a novel and conceptually simple tracking pipeline by removing the separated correlation step in Siamese trackers.
+Discriminative Correlation Filter (DCF) tracker [18] learns a target model by solving least-squares based regres-
+
+2
+
+MLP LN
+SA/CA LN
+Cls Head Reg Head
+EoC-CA EoC-SA EoC-CA EoC-SA EoC-CA EoC-SA EoC-CA EoC-SA
+PaE EoC-SA
+PaE EoC-SA
+PaE
+
+H× 𝑊 × 3 Z
+Template
+
+𝐻×𝑊×C
+44
+
+𝐻 × 𝑊 × 2C
+88
+
+X Search image
+Stage 1: × 𝑁1 Stage 2: × 𝑁2
+
+𝐻 × 𝑊 × 4C
+88
+(a) Stage 3: × 𝑁3
+
+𝑓𝑥
+
+𝑍𝑖
+
+𝑋𝑖
+
+𝑍𝑖 Q Proj.
+
+𝑄𝑧 SA
+
+𝑍𝑖+1
+
+𝐾𝑧, 𝑉𝑧
+
+K Proj.
+
+𝑋𝑖+1 𝑋𝑖
+
+V Proj.
+
+𝑄𝑥 𝐾𝑥, 𝑉𝑥
+
+Weight sharing
+
+CA
+
+(b)
+
+(c)
+
+Figure 3. (a) architecture of our proposed Single Branch Transformer for tracking. Different from Siamese, DCF and Transformer-based methods, it does not have a standalone module for computing correlation. Instead, it embeds correlation in all Cross-Attention layers which exist at different levels of the networks. The fully fused features of the search image are directly fed to Classiﬁcation Head (Cls Head) and
+
+Regression Head (Reg Head) to obtain localization and size embedding maps. (b) shows the structure of a Extract-or-Correlation (EoC)
+
+block. (c) shows the difference of EoC-SA and EoC-CA. PaE denotes patch embedding. LN denotes layer normalization.
+
+sion online. It is further improved by fast gradient algo- 3.1. Patch Embedding
+
+recoisoftthmfimmepaalt[eut1ixro1en]hs,a[we1nnh,dd5icc-4rthao]f.-mteeHnadodywolleapeactvirkemnroi,inzfDgaiCnt[iso3Ftn,a6i,ns2cah]esi-aglnwehdvleyelCllsNdaeisnNssc-tirhbtiieamvseqienEdutCOaoAaCts: :lCitiEiorhzotxstyneersa-cAt-ttOenr-tCioonrreoxplatblioajn∈OtebelcouctkRirmwm3SPAa×ahE:o:gSiHPeldealeftx-ceAh×lzxtetemtW nbatrieo∈dkexndpie.ngsrReItsnw3e×ongHteismzna×earWlgaaelzr,sgezaarnsidrisengapcieuolntan,trecgironeemrdthpsoeerniassruitcnhbhgeseaitqmatueragemgnee-tt
+
+under challenging scenarios. To improve this, our discrimi-
+
+frame which contains the target. In the Patch Embedding
+
+native target-dependent features can greatly lighten the bur-
+
+(Pa.E) stage, the two images are fed to a convolutional layer
+
+den for the online DCF. Recent rising Transformer-based methods [5, 42, 48, 52,
+
+ϕ0p with kernel size 7 × 7 and stride 4, followed by a layer normalization (LN) layer. It embeds the images into feature
+
+55] exploit the long-range modelling of Transformer to effectively fuse the features. Thus, they can track robustly
+
+maps of fz0 and fx0, respectively.
+
+without online learning. However, the Transformer [39] mainly designed for language processing domain is difﬁcult
+
+fz0, fx0 = LN(ϕ0p(z)), LN(ϕ0p(x)),
+
+(1)
+
+to be initialized properly for vision tasks during training, resulting in enormous costs. Instead of using Transformer as fusion module [5, 52, 54], we leverage the attention scheme to dynamically generate customized features which estab-
+
+where fz0
+
+∈
+
+R , f C0×
+
+Hz 4
+
+×
+
+Wz 4
+
+0 x
+
+∈
+
+RC0×
+
+Hx 4
+
+×
+
+Wx 4
+
+and C0 is
+
+the number of channels.
+
+3.2. Extract-or-Correlation Block
+
+lish the hierarchical ﬁne-grained correspondence between target and search area. Vision Backbone. Modern CNNs [17, 35] generally serve as the backbone network in vision tasks. Recently, Vision Transformer (ViT) [12, 27, 45], guided by the principles from CNN, achieves impressive results as vision backbone. Deeper and more effective architectures are the two pillars of powerful backbones, which boost numerous downstream tasks. Similarly, the improvements brought by powerful backbone in VOT mainly attribute to the more expressive feature embedding [22, 60], which has subtle differences to other tasks, e.g. object detection. However, the dynamic nature of VOT actually requires asymmetrical encoding for template and search image, which has not been given suf-
+
+EoC block which can simultaneously implement SelfAttention (SA) and Cross-Attention (CA) is the main building block. Intuitively, they gradually fuse features from the same and different images, respectively. It is known that computing attention globally among all tokens leads to quadratic complexity [27]. To address this, there are a number of works which attempt to reduce the computation cost. We present a general formulation for different efﬁcient attention methods. On top of the formulation, we describe our SA and CA operations.
+Let χ(.) denote a function that reshapes/arranges a feature maps into the desired form. The function varies for different methods. We compute the q, k, v features as:
+
+ﬁcient attention in most prior works. By considering that, we propose a dynamic instance-varying backbone for VOT, beyond only pursuing an expressive embedding.
+
+qi = [χq(fi)]Tωq, i ∈ {z, x},
+
+ki = [χk(fi)]Tωk, i ∈ {z, x},
+
+(2)
+
+vi = [χv(fi)]Tωv, i ∈ {z, x},
+
+3. Architecture
+
+where {ωq, ωk, ωv} represent linear projections.
+
+This section introduces the overall architecture of our
+
+The Vanilla Global attention (VG) [12] computes atten-
+
+Single Branch Transformer (SBT) (Fig. 3) as well as its tion among all tokens. So {χq, χk, χv} represent iden-
+
+main building block (EoC block). Then, in the next section, tity mapping. The Spatial-Reduction Global attention
+
+we evaluate a number of instantiations of the architecture (SRG) [45, 58] uses a convolution with a stride larger than
+
+followed by a summary of favorable design principals.
+
+one (i.e. {χk, χv}) to reduce the spatial resolution of the
+
+3
+
+Table 1. The left part compares different factors of SBT including attention computation methods (ATTN), position encoding methods (PE), patch embedding methods (PaE), number of model parameters and ﬂops. The right part compares the rest of factors based on A5 (described in the left part) such as the feature dimensions (DIM) and the number of blocks (BLK), as well as the stride of the feature maps in each stage. All models unless explained follow the same setting: training from scratch, interleaved EoC-SA/EoC-CA block in the third stage, 128 × 128 for template image and 256 × 256 search image.
+
+Setting A11 A22 A3 A4 A5 A6
+
+A7
+
+Setting
+
+B1
+
+B2
+
+B3
+
+B4
+
+B5
+
+B6
+
+B7
+
+B8
+
+Refer to ATTN
+PE PaE
+
+[12] [27] [58] [45] [45] [45] [8] VG SL SRG SRG SRG SRG VL/SRG Abs Rel Cond Cond Cond Rel Cond H13 H23 Conv H23 Conv Conv Conv
+
+DIM(1,2) [64, 128] [64, 128] [64, 128] [64, 128][64, 128] [64, 128] [64, 128][32, 64] DIM(3,4) [320] [320,512] [320,512] [512] [320] [320,512] [320] [320]
+BLK [3,4,10] [4,2,6,1] [2,2,6,2] [2,2,4] [3,4,10] [2,4,6,1] [3,4,12] [3,4,10] STR [4,2,1] [4,2,1,1] [4,2,1,1] [4,2,1] [4,1,2] [4,2,1,1] [4,2,2]4 [4,2,1]
+
+Param.(M) 22.5 40.2 23.9 20.1 21.3 21.0 19.6 Param.(M) 21.3 18.6
+
+Flops(G) 35.1 36.5 20.2 18.9 19.6 19.3 17.5 Flops(G) 19.6 19.3
+
+AO
+
+47.5 56.4 63.7 61.7 63.5 63.1 60.1
+
+AO
+
+63.5 57.4
+
+21.1 20.5 20.8 19.3 20.8 15.1 22.5 19.2 24.4 24.7 12.1 14.5 60.9 56.7 63.3 60.6 52.2 56.2
+
+1 A1 does not have hierarchical structure, so we adopt 4 downsampling ratio at the beginning and drops the classiﬁcation token. 2 For A2, we set the same image size (224 × 224) for template and search image for simplicity. 3 H1 denotes the A1 splits an input image into non-overlapping patches (4 × 4). H2 denotes a linear layer to change dimensions after patch split. 4 For model settings with total network stride 16, we increase the search image size to 320 × 320 for a fair comparison.
+
+key and value features. The resolution of the query features is not changed. Then it computes global attention as VG. The method largely reduces the computational overhead. The Vanilla Local window attention (VL) [8] splits feature tokens in groups based on their spatial locations and only computes attention within each group. Swin Transformer [27] further adds a Shift window mechanism to vanilla Local attention (SL) for global modelling.
+Since the target object may appear anywhere in the search image, it is not practical to use local attention methods for CA. In our work, we use SRG to implement SA and CA. More discussions are in Sec. 4. The following equation shows how we compute SA or CA:
+
+f˜ij
+
+=
+
+Softmax(
+
+q√ikjT dh
+
+)vj
+
+,
+
+i, j ∈ {z, x},
+
+(3)
+
+In SA, i and j are from the same source (either z or x) and the resulting feature update is:
+
+fz := fz + f˜zz, fx := fx + f˜xx,
+
+(4)
+
+In CA, it mixes the features from different sources:
+
+fz := fz + f˜zx, fx := fx + f˜xz.
+
+(5)
+
+We can see that the correlation between the two images is deeply embedded in feature extraction seamlessly. EoC block also consists of two LN layers and a 2-layer MLP as shown in Fig 3 (b).
+
+3.3. Position Encoding
+
+For majority methods [4, 12, 27], the encoding is generated by the sinusoidal functions with Absolute coordinates (Abs) or Relative distances (Rel) between tokens. Being much simpler, Conditional positional encoding [9, 45, 58] (Cond) generates dynamic encoding by convolutional layers. In our model, we add a 3 × 3 depth-wise convolutional layer ϕpe to MLP before GELU as conditional PE.
+
+3.4. Direct Prediction
+
+Different from the existing tracking methods, we directly
+add a classiﬁcation head Φcls and regression head Φreg on top of the search feature fˆx from SBT Ω without additional correlation operations:
+
+fˆx = Ω(z, x), yreg = Φreg(fˆx), ycls = Φcls(fˆx), (6)
+where yreg, ycls denote the target regression and classiﬁcation results to estimate the location and shape of the target.
+We implement Φreg and Φcls by stacking multiple MixMLP Blocks (MMB) which can jointly model the depen-
+dency between the spatial and channel dimensions of the input features fˆi−1 in the ith MMB:
+
+fˆi = ϕsp(RS(ϕcn(RS(fˆi−1)))),
+
+(7)
+
+where ϕsp and ϕcn consist of a linear layer followed by RELU activation. RS represents reshape. ϕcn is applied to features along the channel dimension, and the weights are shared for all spatial locations. In contrast, the operator ϕsp is shared for all channels.
+
+4. Empirical Study of SBT Instantiations
+In this section1, we conduct empirical studies on SBT variants by raising a number of questions.
+As efﬁcient attention computing is vital to the SBT, we ﬁrstly ablate other network factors including hierarchical structure, position encoding and patch embedding. As shown in Tab. 1, it is obvious that hierarchical structure performs much better than singe stage because of multi-scale representation (A1 Vs. A2 to A7). Conditional PE only surpasses the relative PE by 0.4 points (A5 Vs. A6). The difference between PE methods is rather small, indicating that PE does not have key impacts on performance. We also
+1All the experiments follow the ofﬁcial GOT-10k [19] test protocol.
+
+4
+
+Stage 3 Stage 2 Stage 1
+
+: EoC-CA block
+
+: EoC-SA block
+
+18 4
+
+6
+
+3
+
+4
+
+4
+
+6
+
+9
+
+8 12 3
+
+1
+
+15
+
+12
+
+9 6
+
+3
+
+1
+
+3
+
+1 3
+
+1
+C1
+
+C2 C3
+
+C4 C5
+
+C6 C7 C8
+
+C9 C10 C11
+
+(a) Model Setting
+30
+
+26.47
+
+25
+
+23.65 23.82 23.91
+
+20
+
+18.59
+
+15
+
+16.12 17.72 14.79 15.21
+
+21.63
+
+10
+Stage1-2 Stage1-2 Stage1-3 Stage3-3 Stage3-4 Stage3-12 Stage3-12 Stage3-13 Stage3-13 Stage3-15
+(b) Position of Earliest EoC-CA
+
+AO (%)
+
+AO (%)
+
+68 66.6
+65 C7
+62.4 62
+C8
+59
+
+56 Stage1-2
+68
+
+65
+
+62
+
+C3
+
+61.1 59
+
+56
+
+2
+
+3
+
+66.1
+C6
+
+65.6
+
+C5
+
+C4 61.6 60.1 C2
+
+56.7 C1
+
+Stage3-3
+
+Stage3-12 Stage3-15
+
+(c) Position of Earliest EoC-CA
+
+66.1 C6 C4
+
+61.6 56.7
+C1
+
+60.1
+C2
+
+4
+
+5
+
+6
+
+7
+
+8
+
+(d) Number of EoC-CA
+
+66.6C7
+
+9
+
+10
+
+AO (%)
+
+AO (%)
+
+Pretrained Parameters (%)
+
+90
+
+92.1
+
+63.6
+
+45
+
+37.6
+
+IoU (%)
+
+0 68
+
+STARK
+
+TransT
+
+SBT
+
+59
+
+Pre-trained
+
+56.7
+
+50
+
+No Pre-trained 50.2
+
+C1
+
+66.1 60.6
+C6
+
+62
+C2
+60 60.1
+
+(e) Model Setting
+61.6 C4
+61.1
+C3
+
+58 C1
+56.7 56
+0
+
+1
+(f) Interval between EoC-CA
+
+Epoch 67.2 60.2
+C9
+59.2
+C10
+2
+
+Speed on Tesla V100 (FPS)
+
+Figure 4. Studies on the number/position of EoC-CA block. (a): different model settings, (b) speed Vs. different model settings,(c): tracking performance Vs. position of earliest EoC-CA block, (d): tracking performance Vs. number of EoC-CA block, (e): tracking performance Vs. pre-trained or not, (f): tracking performance Vs. intervals between EoC-CA block.
+
+ﬁnd that convolutional PaE is more practical and expressive than hand-crafted patch merging (A4 Vs. A5).
+Which attention computation is better for SBT tracker? The main difference between attention computation lies in the operation to reduce complexity (global/local attention). We ﬁnd that local attention (VL/SL) block cannot directly perform Cross-Attention as the inequality of local windows in template and search image. Thus, for SBT constructed by pure local attention blocks, we adopt same image size (224 × 224) for template/search image (A2) to avoid tedious hand-crafted cross strategies. Comparing to the settings with global attention block (VG/SRG) (A3 to A7) which adopt 128 × 128 as template size, the performance of pure local attention (A2) drop at least 3.6 points in AO with more parameters and ﬂops. This is mainly due to the negative impacts of over background information in template which may confuse the search branch. We also investigate the mix setting of SRG and VL block (A7). To be speciﬁc, the VL block is for Self-Attention while SRG block is for Cross-Attention. We observe that the pure SRG block design achieves the better performance (A5 Vs. A7). This illustrates that SBT beneﬁts from uniﬁed block choice. A3 also validates the effectiveness of pure SRG blocks with 63.7% in AO. We conclude that pure SRG block is more practical and efﬁcient for SBT tracker.
+Do earlier and more EoC-CA blocks help to tracking better? With a baseline designed from above principles, it strikes to us that SBT may beneﬁt from earlier and more cross correlation. We ablate different position/number of EoC-CA block in Fig. 4. As shown in Fig. 4 (d), when the number of EoC-CA blocks increases, the performance of model rises consistently with the same EoC-SA/EoC-CA position pattern (C3 vs. C4, C1 vs. C2, C6 vs. C9). It proves that SBT tracker beneﬁts from more comprehensive Cross-Attention between template and search branch. In Fig. 4 (d), when the number of EoC-CA block is the same, earlier cross design has signiﬁcant positive impacts (C4 surpasses C1 by 4.9 points, C6 surpasses C2 by 6.5 points).
+
+The underlying reason is that early-cross generates targetdependent features which help tracker to see better.
+Is tracking performance related to the placement pattern of EoC-CA blocks? As the position and number of EoC-CA block have signiﬁcant impacts on performance, it comes to us which pattern of placement is the optimal choice. So we make attempts to place EoC-SA/EoC-CA block differently. In Fig. 4 (f), we surprisingly ﬁnd that interleaved EoC-SA/EoC-CA pipeline performs better than the separation pattern even with less Cross-Attention and latter earliest cross position (C3 vs. C1). The potential cause is that EoC-SA block can reﬁne the template/search feature after the correlation, resulting in a more expressive feature space for matching. In Fig. 4 (f), model (C9) achieves the best performance 67.2% when the interval is 1. When the interval increases to 2, the performances drops from 61.1% to 59.2% (C3 vs. C10). Thus, we prefer an interleaved EoC-SA/EoC-CA block design for SBT tracker.
+What is the optimal network variants for tracking model? Then, it comes to us a long-standing problem for designing a deep tracker. We ablate different network stride, model stage and model size. As shown in Tab. 1, over parameters and ﬂops in shallow level (stage 1 and 2) is harmful. It is mainly because the low dimension cannot formulate informative representations (57.4 of B2 Vs. 60.6 of B6). We also observe that increasing the head number slightly improves the performance but decreases the speed. With the same total network stride, three-stage model performs better than four-stage model (63.5 of B1 Vs. 57.4 of B2) with comparable parameters and ﬂops. Though setting the network stride to 16 can reduce the ﬂops, the performance drops 11.3 points (B1 Vs. B7), indicating that SBT tracker prefers larger spatial size of features. As the channel dimensions inﬂuence model size a lot, it is vital to achieve a balance between block numbers and channel dimensions (56.7 of B4 Vs. 63.3 of B5).
+Does ﬂexible design of EoC-SA/EoC-CA bring negative/positive effects? We examine the potential negative/-
+
+5
+
+positive effects in SBT. From Fig. 4 (b) and Fig. 4 (c), we observe that early-cross in shallow-level (stage 1 and 2) does not bring much improvements (C2 vs. C8, C6 vs. C7) but lowers the inference speed. It is because the early-cross destroys the one-shot inference. The shallowlevel EoC-SA blocks perform as buffer. So the trade-off between early-cross and speed should be well-considered. In Fig. 4 (e), SBT tracker beneﬁts from more pre-trained weights and converges much faster than Transformer-based trackers, such as TransT [5] and STARK [52].
+
+5. Single Branch Transformer Driven Tracking
+
+Beyond exploring SBT experimentally, we theoretically analyze SBT from the perspective of general VOT. Then, we design four versions of SBT and integrate them into typical trackers to show generality.
+
+5.1. Theoretical Analysis on SBT for Tracking
+
+SBT overcomes the intrinsic restrictions in deep trackers. Deep trackers have an intrinsic requirement for strict translation invariance, f (c, x [∆τj]) = f (c, x) [∆τj] where ∆τj is the shift window operator, c denotes the template/online ﬁlter in Siamese/DCF tracking and f denotes correlation operation. Modern backbones [17, 50] can provide more expressive features while their padding is inevitable to destroy the translation invariance. Thus, deep trackers [22, 60] crop out padding-affected features and adopt spatial-aware sampling training strategy to keep the translation invariance. Theoretically, padding in SBT can be removed completely or only exists in patch embedding for easy implementation. Moreover, the ﬂattened feature tokens has permutation invariance which makes EoC block completely translation invariance. As the EoC block provides global receptive ﬁeld, SBT can enjoy arbitrary size of template/search image and larger search area scale. Thus, we argue that SBT driven tracking can overcome the intrinsic restrictions in classical deep trackers theoretically by using brand-new network modules.
+Cross-Attention is more than twice as effective as depth-wise correlation. We ﬁrst prove that CrossAttention can be decomposed into dynamic convolutions (D-Conv). CA which performs as feature correlation is mathematically equivalent to two D-Convs and a SoftMax layer. For simplicity, we annotate the encoded {q, k, v} features to their original feature as the projection matrix is 1×1 position-wise convolutional ﬁlters. So the CA for query from search feature x to template feature z is:
+
+Inter = RS(z)T x + 0 = W1(z)T x + b1,
+
+Attnxz = Softmax(Inter),
+
+(8)
+
+f˜xz = Attnxzz + x = W2(z, x)T x + b2(x),
+
+where W (a, b), b(a, b) is the weight matrix and bias vector
+
+Light
+
+Small
+
+Base
+
+Large
+
+PaE Conv(7, 32, 4) Conv(7, 64, 4) Conv(7, 64, 4) Conv(7, 64, 4)
+
+EoCA 1 8
+
+EoCA 1 8
+
+EoCA 1 8
+
+Stage1
+
+×2
+
+×2
+
+×3
+
+MLP 32
+
+MLP 64
+
+MLP 64
+
+EoCA 1 8 ×3
+MLP 64
+
+PaE Conv(3, 64, 2) Conv(3, 128, 2) Conv(3, 128, 2) Conv(3, 128, 2)
+
+EoCA 2 4
+
+EoCA 2 4
+
+EoCA 2 4
+
+Stage2
+
+×2
+
+×2
+
+×4
+
+MLP 64
+
+MLP 128
+
+MLP 128
+
+EoCA 2 4 ×4
+MLP 128
+
+PaE Conv(3, 160, 1)Conv(3, 320, 1) Conv(3, 320, 1) Conv(3, 320, 1)
+
+EoCA 5 2
+
+EoCA 5 2
+
+EoCA 5 2
+
+EoCA 5 2
+
+Stage3
+
+×6
+
+×6
+
+× 10
+
+× 18
+
+MLP 160
+
+MLP 320
+
+MLP 320
+
+MLP 320
+
+PaE Conv(3, 256, 2)Conv(3, 512, 2) Conv(3, 512, 2) Conv(3, 512, 2)
+
+stage4 EoCA 8 1 × 2 EoCA 8 1 × 2 EoCA 8 1 × 2
+
+MLP 256
+
+MLP 512
+
+MLP 512
+
+EoCA 8 1 × 2 MLP 512
+
+Head
+
+Classiﬁcation: MMB × 2 Regression: MMB × 2
+
+EoC-CA
+
+[2, 4, 6]
+
+[2, 4, 6]
+
+[2, 4, 6, 8, 10] [6, 8, 10, 12, 14, 16, 18]
+
+Params
+
+3.03 M
+
+13.80 M
+
+21.27 M
+
+35.20 M
+
+FLOPs
+
+3.81 G
+
+11.92 G
+
+19.27 G
+
+31.46 G
+
+Speed
+
+62 FPS
+
+50 FPS
+
+37 FPS
+
+24 FPS
+
+Table 2. Model settings of SBT in four scales. “Conv(k, c, s)” means convolution layers with kernel size k, output channel c and stride s. “MLP c” is the MLP with hidden channel 4c and output channel c. “EoCA n r” is the EoC attention computation with the number of heads n and down-sampling ratio r. EoC-CA blocks are in the third stage. We report the speed in single Tesla V100 GPU.
+
+of dynamic ﬁlters generated by {a, b} and RS denotes reshape. To obtain the correlation feature f˜xz, the search feature x goes through a D-Conv layer generated by z, a SoftMax layer and another D-Conv layer generated by z and x. Two D-Conv layers come from the reshape of z along channel and spatial dimension. The depth-wise correlation (DW-Corr) or pixel-wise correlation (Pix-Corr) [53] is only equivalent to one D-Conv layer. Thus, CA is twice as effective as DW-Corr or Pix-Corr with the same template feature as dynamic parameters.
+Hierarchical feature utilization is embedded in serial pipeline. Siamese trackers [6, 22] perform correlation for each hand-selected feature pair and feed them into parallel prediction heads. Then, prediction results are aggregated by a weighted sum. Comparing to the hand-craft layer-wise aggregation, SBT structure explores multi-level feature correlation intrinsically. We take three-level feature utilization as an example:
+
+xi, zi = φica(x˜i, z˜i), i ∈ {0, 1, 2}
+
+x2, z2 = φ2ca(φ1ca(φ0ca(x0, z0))),
+
+(9)
+
+Ssbt = ϕp(x2),
+
+where {0, 1, 2} represents shallow, intermediate and deep
+level, {x˜, z˜} are the previous layer features of {x, z}, {φca, ϕp} denote EoC-CA block and prediction head. Though in a serial pipeline, the prediction result Ssbt naturally contains hierarchical feature correlation results.
+
+5.2. Four Versions of SBT network
+
+Following the guidelines from Sec. 4, our four versions of SBT is described in Tab. 2. For pre-training, we add extra fourth model stage and modify the network stride as [27]. For ﬁne-tune on tracking, we only use three-stage model and replace the prediction head.
+
+6
+
+Tr
+
+Stark Stark SBT SBT SBT SBT
+
+SiamRPN++ ATOM DiMP SAMN AutoMatch Siam TransT s50 st101 light small base large
+
+[22]
+
+[11] [3] [49] [59] [42] [5] [52] [52]
+
+AO ↑
+
+51.8
+
+SR50 ↑ 61.6
+
+SR75 ↑ 32.5
+
+55.6 61.1 61.5 63.4 71.7 69.7 40.2 49.2 52.2
+
+65.2 66.0 67.1 67.2 68.8 60.2 66.8 69.9 70.4 76.6 76.6 76.8 76.1 78.1 68.5 77.3 80.4 80.8 54.3 57.1 60.9 61.2 64.1 53.0 59.2 63.6 64.7
+
+Table 3. Comparison on the GOT-10k [20] test set.
+
+Tr
+
+Stark SBT SBT SBT SBT
+
+SiamRPN++ ATOM DiMP AutoMatch DualTFR Siam TransT DTT s50 light small base large
+
+[22]
+
+[11] [3] [59]
+
+[48] [42] [5] [54] [52]
+
+AUC ↑ 49.6
+
+Prec↑
+
+49.1
+
+51.5 56.9 58.3 50.5 56.7 59.9
+
+63.5 62.4 64.9 60.1 65.8 56.5 61.1 65.9 66.7 66.5 60.0 69.0 - 69.7 57.1 63.8 70.0 71.1
+
+Table 4. Comparison on the LaSOT [13] test set.
+
+Stark Stark SBT SBT SBT SBT
+
+Ocean ATOM SiamMask SuperDiMP STM DET50 AlphaRef s50 st101 light small base large
+
+[61] [11] [44]
+
+[1] [31] [21] [53] [52] [52]
+
+Acc.↑ 0.693 0.462 Rob.↑ 0.754 0.734 EAO↑ 0.430 0.271
+
+0.624 0.648 0.321
+
+0.492 0.745 0.305
+
+0.751 0.679 0.574 0.787 0.308 0.441
+
+0.754 0.761 0.763 0.742 0.750 0.752 0.753 0.777 0.749 0.789 0.712 0.775 0.825 0.834 0.482 0.462 0.497 0.415 0.477 0.515 0.529
+
+Table 5. Results on VOT2020. We use AlphaReﬁne [53] to generate mask for VOT benchmark.
+
+Figure 5. Comparisons on (a) OTB-100 [47] and (b) GOT-10k [19] test set in terms of success plot.
+5.3. Correlation-Aware Feature for Other Trackers
+We replace the backbone in four typical trackers with SBT, which are named as Correlation-Aware Trackers (CAT). The four trackers are: SiamFCpp-CA. DiMP-CA. STARK-CA. STM-CA. Details are in supplement.
+6. Experiments
+This section describes the implement details, comparisons to the state-of-the-art (sota) trackers and improvements in CATs. Exploration studies are also provided.
+6.1. Implementation Details
+ImageNet pre-training. We ﬁrstly train 4-stage SBT with classiﬁcation head on the ImageNet [34]. Similar to the network for image classiﬁcation, our model structure and data ﬂow is one-stream. The setting mostly follows [36] and [45]. We employ the AdamW [28] optimizer for 300 epochs. The input image is resized to 224×224 and the augmentation and regularization strategies of [36] are adopted.
+Finetune on tracking. Next, the pre-trained weights are to initialize our tracking model. By arranging EoCSA/EoC-CA blocks, the model is still one-stream in structure but two-stream in data ﬂow. For each image pair, We compute standard cross-entropy loss for the classiﬁcation and GIoU [33] loss and L1 loss for the regression. We use 8 tesla V100 GPUs and set the batch size to be 160. The template and search image size are set to 128 × 128 and
+
+Box-level Tracker
+SiamFCpp SiamFCpp-CA
+DiMP DiMP-CA STARK STARK-CA
+Pixel-level Tracker
+STM STM-CA
+
+Params(M) Flops(G) SR50
+
+SR75 AO
+
+13.9
+
+19.8
+
+69.5
+
+47.9
+
+59.5
+
+16.3 14.1(5.7↓) 74.8(5.3↑) 54.5(6.6↑) 64.7(5.2↑)
+
+26.1
+
+-
+
+71.7
+
+49.2
+
+61.1
+
+26.3
+
+- 74.1(2.4↑) 56.8(7.2↑) 65.2(4.1↑)
+
+23.3
+
+11.5
+
+76.1
+
+61.2
+
+67.2
+
+23.6
+
+8.7(2.8↓) 77.8(1.7↑) 62.7(1.5↑) 68.3(1.1↑)
+
+Params(M) Flops(G) J
+
+F
+
+Mean
+
+24.5
+
+-
+
+69.2
+
+74.0
+
+71.6
+
+25.1
+
+- 72.8(3.6↑) 75.6(1.6↑) 74.2(2.6↑)
+
+Table 6. Improvements of CATs over baselines on GOT-10k [19] and DAVIS17 [32] benchmarks. J /F denotes the mean of the region similarity/contour accuracy.
+
+256 × 256. The sample pairs of each epoch is 50, 000 and the total epoch is 600. The learning rate is set to be 10−4 for the head, and 10−5 for the rest and it decays by a factor of 10 at the 200th, 400th epoch. The training datasets
+include the train subsets of LaSOT [13], GOT-10K [19],
+COCO2017 [26], and TrackingNet [30]. Other settings are
+the same with [5, 48]. Details are in supplement.
+
+Testing. For SBT/Siamese, we adopt ﬁxed template as [48]. For DCF/STM, the target is cropped as template. The inputs are ﬁrstly fused with template by SBT.
+
+6.2. Comparison to State-of-the-Art Trackers
+
+GOT-10K. GOT-10K [19] is a large-scale benchmark which has the zero overlap of object classes between training and testing. We follow the ofﬁcial policy without extra training data. As shown in Tab. 3 and Fig. 5, in a fair comparison scenario, our base and large version outperform other top-performing trackers such as STARK-st101, TransT, TrSiam, and DiMP, verifying the strong generalization to unseen objects. Our light and small version also achieve competitive results with much smaller size.
+
+OTB100/VOT2020/LaSOT. We refer the reader to [13, 21, 47] for detailed descriptions of datasets. In challenging short-term benchmarks (VOT2020 and OTB100), Tab. 5 shows that SBT-small achieves competitive result, which is better than SuperDiMP. After increasing the model variants, SBT-base obtains an EAO of 0.515, being superior to other top-performing trackers. With a much simpler pipeline, our SBT-large is even closed to the winner of VOT2020 challenge RPT [29] (0.530 EAO). Fig. 5 shows our base and large version achieves sota results in OTB. In long-term benchmark LaSOT, with the comparable model size and no online update, SBT-base outperforms the recent strong Transformer-based methods (STARK-s50 and TransT).
+6.3. Improvement over Baselines
+Box-Level tracking. In Tab. 6, our correlation-aware features improve other tracking pipelines with comparable model size and less computation burden. It validates the generality of our feature network.
+Pixel-Level tracking. In multi-object video object segmentation (VOS) benchmark DAVIS17 [32], STM-CA im-
+
+7
+
+Setting Fea.Ext Corr.Emd Fea.Corr Low Mid High
+
+AO
+
+x ResNet-50 
+
+DW-Cor S2 S3 S4
+
+56.2
+
+y ResNet-50 
+
+CA S2 S3 S4
+
+57.5
+
+z ResNet-50 
+
+DCF1 -
+
+-
+
+S4
+
+30.3
+
+{ SBT-base
+
+
+
+DW-Corr S3B6 S3B8 S3B10 60.1 (3.9↑)
+
+| SBT-base
+
+
+
+CA S3B6 S3B8 S3B10 61.5 (4.0↑)
+
+} SBT-base
+
+
+
+DCF - - S3B10 31.5 (1.2↑)
+
+~ SBT-base
+
+
+
+- S3B6 S3B8 S3B10 65.0 (3.5↑/7.5↑)
+
+ SBT-base
+
+
+
+DW-Cor S3B6 S3B8 S3B10 65.9 (4.8↑/9.7↑)
+
+ SBT-base
+
+
+
+DCF S3B6 S3B8 S3B10 35.2 (3.7↑/4.9↑)
+
+Table 7. Ablation studies on GOT-10k [19]. S3B6 denotes the third stage 6th block. Fea.Ext denotes the feature extraction network. Corr.Emd denotes whether network embeds correlation into extraction layers. Fea.Cor denotes the feature correlation method. For DCF, we integrate SBT-base to ECO [10].
+
+0.8
+(a) 0.4
+
+TP
+
+1/Neg
+
+0
+TP 1/Neg
+0.8
+
+(b) 0.4
+
+0 0.8
+(c) 0.4
+
+TP 1/Neg
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+Figure 6. (a), (b), (c) denote three trackers (refer to Sec. 6.4). The ﬁrst sub-ﬁgure indicates the average true positive rate and average negative numbers of negative objects. The other sub-ﬁgures denote the T-SNE and classiﬁcation maps.
+
+proves STM by 3.6% in terms of J , proving that VOS methods can beneﬁt from our discriminative embeddings.
+
+6.4. Exploration Study
+We further explore the characteristics of our SBT feature by training it on the GOT-10k [19] training split.
+
+Correlation-embedded structure. As shown in Tab. 7, correlation-embedded SBT (~, , ) signiﬁcantly improves the tracking performance on all correlation cases ({, |, }). Comparing to the layer-wise aggregation, correlation-embedded trackers outperform the CNN-based trackers or attention-based trackers (65.9% of  Vs. 60.1% of {, 65.0% of ~ Vs. 61.5% of |, 39.2% of  Vs. 30.3% of z). It clearly veriﬁes that SBT structure is more effective on multi-level feature utilization. We also prove that CA works better than DW-Corr in feature correlation (60.1% of { Vs. 61.5% of | ). Fig. 7 also shows the superiority of correlation-embedded structure.
+
+Target-dependent feature embedding. We further explore the features of three different settings in two folds: one is to maintain spatial location information while another is to classify the target from distractor objects. We begin by training three models with Cls head only to localize the target: (a) Correlation-embedded tracker. (b) Siamese correlation with SBT. (c) Siamese correlation with ResNet-50. We select the ﬁve hard videos from OTB [46] benchmark.
+
+(a)
+
+(b)
+
+(c)
+
+Figure 7. Visualization of classiﬁcation (Cls) map ons SBT-base tracker with three different settings. (a): layer-wise aggregation with DW-Corr; (b): layer-wise aggregation with EoC-CA block; (c): correlation-embedded.
+
+AO (%) AO (%) Top-1 ACC.
+IoU (%)
+
+70 68 66 64 62
+0 1 2 3 4 5 6 7 8 9 10
+(a) Pretrained blocks in third stage
+
+83
+
+82
+
+81 70
+69
+68 (3, 4,110, 3) (3, 4, 212, 3) (3, 4, 314, 3) (3, 4, 146, 3) (3, 4, 158, 3) Epoch
+
+10 pretrained blocks 6 pretrained blocks 2 pretrained blocks
+
+(b) ImageNet pretrained settings (c) IoU curve during training
+
+Figure 8. Tracking performance of SBT with various pretrained settings. (a) denotes the pretrained block number. In (b), different models are to initialize the tracking model. (c) denotes the IoU curves during training epochs.
+
+The search image randomly jitters around target. We only evaluate the Cls map for localization. In Fig. 6, the true positive rate of target ground-truth indicates that (a), (b) can preserve more spatial information than CNN (c). The TSNE/Cls map also show the target-dependent characteristic of (a) features. The average negative objects (largest connected components) of (a) is higher than (b) which indicates that correlation-embedded is critical to ﬁlter out distractors.
+
+Beneﬁts from pre-training. Comparing to the existing trackers [5, 48, 52], our tracking model except prediction heads can be directly beneﬁt from the ImageNet [34] pretrained weights. As shown in Fig. 8 (a), there is a signiﬁcant correlation between the number of pre-trained blocks and tracking performance. We also investigate the impacts of model variants of SBT. In Fig. 8 (b), the SBT tracking model prefers consistent block numbers for pre-training. We also observe that SBT converges faster and the stabilized IoU value rises with more pre-trained model weights.
+
+7. Conclusion
+In this work, we are the ﬁrst to propose a targetdependent feature network for VOT. Our SBT greatly simpliﬁes the tracking pipeline and converges much faster than recent Transformer-based trackers. Then, we conduct a systematic study on SBT tracking both experimentally and theoretically. Moreover, we implement four versions of SBT network which can improve other popular VOT and VOS trackers. Extensive experiments demonstrate that our method achieves sota results and can be applied to other tracking pipelines as dynamic feature network.
+
+8
+
+8. Appendix
+In this supplementary material, we ﬁrst provide some details mentioned in main text in Sec.A. We then report more exploration studies of our method in Sec.B and provide some visualizations in Sec.C.
+A. Experiment Details
+A.1. Training Details
+ImageNet Pre-training. We follow DeiT [37, 45] and apply random cropping, random horizontal ﬂipping, labelsmoothing regularization, mixup, CutMix, and random erasing as data augmentations. We initialize the weights with a truncated normal distribution. During training, we employ AdamW with a momentum of 0.9, a mini-batch size of 128, and a weight decay of 5 e-2 to optimize models. The initial learning rate is set to 1 e-3 and decreases following the cosine schedule. All models are trained for 300 epochs from scratch on 8 V100 GPUs. For test in ImageNet [34], we apply a center crop on the validation set, where a 224 × 224 patch is cropped to evaluate the classiﬁcation accuracy. Finetune on Tracking. We ﬁnetune the whole model on the tracking datasets. In particular, for each pair of search/template images from the training dataset, we compute the losses based on the classiﬁcation and regression outputs from the prediction head. We use standard cross-entropy loss for the classiﬁcation loss: all pixels within the groundtruth box are regarded as positive samples and the rest are negative. We use GIoU [33] loss and L1 loss for the regression loss. We load the pre-trained SBT parameters. We use 8 tesla V100 GPUs and set the batch size to be 20 for each GPU. Since our model does not have batch normalization, it is not sensitive to the batch size. The batch size can be ﬂexibly adjusted based on the hardware. The search area factor of template and search image is set to 2 and 4, respectively. For GOT-10k training set, the sample pairs of each epoch is 50, 000. The learning rate is set to be 10−4 for the feature extraction network, and 10−3 for the rest. The learning rate decays at the 30th, 50th epoch. We ﬁnetune the model for 100 epochs. For full-dataset training, it includes the train subsets of LaSOT [13], GOT-10K [19], COCO2017 [26], and TrackingNet [30]. All the forbidden sequences deﬁned by the VOT2019 challenge are abandoned. The pairs of training images in each iteration are sampled from one video sequence or constructed by a static image. On static images, we also construct an image pair by applying data augmentation like ﬂip, brightness jittering and target center jittering. Training loss. To validate the generality of our framework, we adopt a vanilla anchor-free prediction head following [5] which employs the standard binary cross-entropy loss for
+
+channel maps
+
+Conv.
+
+weighted sum C correlation A multi-head attention
+
+C
+
+C
+
+C
+
+C
+
+A
+
+A
+
+A
+
+(a)
+
+(b)
+
+(c)
+
+Figure 9. (a): a simple Siamese tracking baseline; (b): Siamese tracking baseline with layer-wise aggregation; (c): correlationembedded structure in SBT.
+
+classiﬁcation, which is deﬁned as
+
+Lcls = − [yjlog(pj) + (1 − yj)log(1 − pj)], (10)
+j
+
+where yj denotes the ground-truth label of the j-th feature token, yj = 1 denotes foreground, and pj denotes the predicted conﬁdence value belong to the foreground. For regression, we apply two kinds of loss: 1-norm loss L1(., .) and the generalized IoU loss LGIoU (., .) [33]. The regression loss is as follows:
+
+Lreg =
+
+1{yj=1}[λGLGIoU (bj , ˆb) + λ1L1(bj , ˆb)],
+
+j
+
+(11)
+
+where yj = 1 denotes the positive sample, bj denotes the j-th predicted bounding box, and ˆb denotes the normalized ground-truth bounding box. We set λG = 5 and λ1 = 7 and 12 for classiﬁcation loss in our experiments.
+Inference Details. For SBT tracker, during inference, the regression head and classiﬁcation head generate two response maps which embed estimated size shapes and location conﬁdence values, respectively. The maximum conﬁdence value and its bounding box size are chosen to be ﬁnal predicted target. The template and search image size are chosen to 128 × 128 and 256 × 256, respectively. To validate the effectiveness of our feature network, no other tricks such as template update and online module are adopted.
+Ablation Details. In Fig. 9, It shows the difference among a simple Siamese tracking baseline, Siamese tracking baseline with layer-wise aggregation and correlation-embedded structure in SBT. For the Siamese pipeline, the template features are center-cropped with he spatial size of 7 × 7, and then perform correlation with the search features. For cross attention, the template features dose not need to be cropped for the strong global modelling of attention scheme. The channel dimension of the template and search features are adjusted to 256 by a convolutional layer, which is the same with SiamRPNpp [22].
+
+9
+
+Average Overlap (%)
+
+SBT-large
+71.0
+SBT-base
+
+69.0
+STARK-CA
+
+STARK-ST101
+
+67.0
+STARK-s50 TransT
+
+DualTFR
+65.0
+
+DiMP-CA SiamFCpp-CA
+
+63.0
+
+10G
+
+5G
+
+PrDiMP-50
+
+high
+low
+SBT-small
+
+61.0
+
+DiMP-50
+
+SBT-light
+
+Ocean
+
+SiamFCpp
+
+59.0
+
+30G
+
+20G
+
+42.0
+
+37.0
+
+32.0
+
+27.0
+
+22.0
+
+17.0
+
+12.0
+
+7.0
+
+2.0
+
+Model parameter (M)
+
+Figure 10. Comparison to the state-of-the-art methods on the GOT10k dataset. The radius of a circle represents the number of FLOPs of the model. Multiple trackers (with sufﬁx “CA”) can beneﬁt from our correlation-aware features. We do not show the Flops of DCF methods because of the online learning.
+
+A.2. Correlation-Aware Trackers
+SiamFCpp-CA: SiamFCpp [51] is a recent typical Siamese tracker. We replace the GoogLeNet [35] with the modiﬁed SBT-small version. DiMP-CA: DiMP [3] is a modern DCF tracker.. For training and inference, we feed the search and template image pair to modiﬁed SBT-base to obtain the correlation-aware search features, then it replaces the original search features extracted by ResNet [17]. STARK-CA: STARK [52] is a recent strong Transformerbased tracker. We replace the ResNet-50 [17] in STARK with modiﬁed SBT-small. STM-CA: STM [25, 31] is a video object segmentation method. We replace the original ResNet-50 [17] to prove that our network can also be used in pixel-wise tracking.
+A.3. Performance, Model Size and Flops
+As shown in Fig. 10, we provide a comprehensive comparison in GOT-10k in terms of AO, model size and computation Flops between our methods and other trackers.
+B. More Studies on Model Variants
+We further choose the base version of SBT to explore the impacts of model variants on tracking performance.
+B.1. Position Pattern.
+In Tab. 8, we set the total number of EoC-CA block to be 3 and ablate their position pattern during inference. When the last two correlation operation are set to the 9th and 10th block, moving the ﬁrst correlation block to the earlier position achieves better results (63.2% of A3 vs. 64.6% of A4 vs. 65.7% of A5). It clearly validates that there is a strong correlation between earliest EoC-CA position and tracking performance. It also points out our key insight
+
+Setting model Pre. Low Mid High SR50 SR75 AO
+A1 SBT-base  B6 B8 B10 75.3 58.6 65.0 A2 SBT-base  B8 B9 B10 70.8 52.9 61.0 A3 SBT-base  B6 B9 B10 73.1 53.9 63.2 A4 SBT-base  B4 B9 B10 75.2 58.0 64.6 A5 SBT-base  B2 B9 B10 75.7 59.3 65.7
+Table 8. Position pattern studies on SBT-base model. Results are from GOT-10k test set. B6 denotes the 6th block in third stage. Pre. denotes whether use pre-trained weights or not.
+
+Setting model Pre. N1 N2 N3 SR50 SR75 AO
+
+B1 SBT-base B2 SBT-base B3 SBT-base B4 SBT-base B5 SBT-base
+
+    
+
+4 4 12 4 4 14 2 2 10 2 2 13 2 2 15
+
+72.3 74.4 72.4 72.3 73.4
+
+54.9 62.3 57.3 64.0 52.4 61.5 54.1 62.0 55.7 63.1
+
+Table 9. Block pattern studies on GOT-10k test set. N1 denotes the block number in the ﬁrst model stage. other settings including interleaved CA block and channel dimension are the same.
+
+Setting model Pre. C1 C2 C3 SR50 SR75 AO
+
+C1 SBT-base C2 SBT-base C3 SBT-base C4 SBT-base C5 SBT-base C6 SBT-base C7 SBT-base
+
+      
+
+64 128 256 32 64 128 96 192 384 128 256 512 32 64 512 64 128 512 128 256 512
+
+74.8 69.8 74.3 73.0 72.0 72.8 74.1
+
+55.1 63.6 46.5 58.7 55.3 63.7 55.2 62.8 51.1 61.1 52.7 61.8 55.8 63.6
+
+Table 10. Channel dimension studies on GOT-10k. C1 denotes the channel dimension in the ﬁrst model stage. other settings including interleaved CA block and block number are the same.
+
+that early-cross generates target-dependent features which help tracker to see better. From the comparison among 65.0% of A1, 61.0% of A2 and 63.2% of A3, the interleaved EoC-SA/EoC-CA pattern outperforms the Siamesestyle and earlier-cross design. It also enlighten us to choose a interleaved design pattern of SBT tracking. The underlying reason is related to the feature representation: EoC-SA block can reﬁne the template/search feature after the correlation, resulting in a more expressive feature space for matching. We also point out that the position pattern can be ﬂexibly designed based on the requirements from future researcher/engineer.
+B.2. Block Number.
+In Tab. 9, we keep other network factors be the same and ablate their block numbers in different stage. 64.0% of B2 achieves the best tracking performance which has moderate number of blocks (4/4) in the shallow model stage and the second large number of blocks (14) in the deep stage. It indicates that a moderate size of blocks in shallow stage is necessary. Putting the most of blocks in the third stage is more practical since the spatial size of features is reduced. Obviously, the tracking performance is highly related the size of overall model. Finally, it enlightens us that we can design different versions of SBT trackers to meet the re-
+
+10
+
+Cross 1_2 ant1
+
+Cross 2_2
+
+Cross 2_4
+
+Cross 3_2
+
+Cross 3_4
+
+Cross 3_6
+
+Cross 3_8 Cross 3_10
+
+bag
+
+butterfly
+
+car1 crab
+
+Figure 11. Cross attention map in each stage of SBT tracker.
+quirements on speed and model size. It is also quite practical and easy to be implemented by stack different number of EoC blocks.
+B.3. Channel Dimension.
+In Tab. 9, we keep other network factors be the same and ablate their channel dimension in different stage. Since the channel dimension is quite essential to the model size of SBT, it is vital to investigate their impacts on tracking performance. It is natural that larger dimension in each stage can achieve a better performance which also increases the model size (63.6% of C1, 63.7% of C3 and 63.6% of C7). It is quite interesting to observe that the gap between shallow stage and deep stage is harmful to the performance. When the shallow stage is set to have 64 and 128 channel dimension, then the third stage with 512 dimension performs worse than that with 256 dimension(63.6% of C1 vs. 61.8% of C6). It indicates that we should adopt a progressive increment design for the channel dimension in SBT. Moreover, too much channels for the shallow stage encoding seems not helpful but increases the model size a lot (63.6% of C1 vs.63.6% of C7). In summary, it is more practical to choose some channel dimension numbers which are widely seen in CNN networks. We can also modify the channel dimensions based on the requirements on different speed and performance.
+C. Visualization Result
+C.1. Attention Visualization
+As shown in Fig. 11, the attention weights focus on the background context of the search area in the shallow stage. We also vividly observe that it effectively suppresses nontarget features in the search image layer by layer. It clearly illustrates that our attention block can discriminate the distractors to some extent. In the last block, the attention weight is changed to an uniform distribution which indicates that the search features are ready to the prediction networks. Our Single Branch Transformer (SBT) network allows the features of the two images to deeply interact with
+
+template
+(a)
+T=2 template
+(b)
+T=214 template
+
+time index
+
+(c)
+
+T=464
+
+Cro-Attn
+
+multi Cro-Attn
+
+multi DW-XCor
+
+multi Pix-XCorr
+
+Figure 12. Visualization of classiﬁcation map on three cases. (a)
+
+denotes suitable template with distractors. (b) denotes template
+
+drift with closely attached distractors. (c) denotes template drift
+
+with distractors on the edge.
+
+Figure 13. Failure case. SBT tracker (base) fails on the case of occluded target/out of search region.
+each other at the stage of feature extraction which can have dynamic instance-varying behaviors.
+C.2. Response Visualization
+As shown in Fig. 12, we visualize the hard case (basketball video) with numerous distractor objects. Our correlation-aware features can discriminate the distractors in a ﬁne-grained level. When the template drifts, our SBT tracker can also tend to make a more reasonable choices. When time index is 214, the man with white clothes are suppressed in SBT while has higher reponse value in other three models. The distractor object with green clothes is almost the same the target which cannot be identiﬁed by human. Thus, it is reasonable to have high response values for the tracker. The other three models perform worse than SBT. When the time index is 464, though the distractor object with green clothes is similar to the target, but can be
+
+11
+
+Figure 14. TSNE [38] visualizations of search features in correlation-embedded SBT tracker when feature networks go deeper.
+
+Figure 15. TSNE [38] visualizations of search features in SBT tracker with Siamese-like extraction when feature networks go deeper.
+
+identiﬁed by the white number on the clothes. SBT identifys this case successfully while other three fails. It clearly indicates that SBT can have more ﬁne-grained discriminative ability among those appearance-based methods.
+C.3. Failure Case
+When the target object is occluded with distractor objects, together with appearance changes, the pairwise tracking pipeline is hard to ﬁgure out the target. It is also commonly seen in many Siamese trackers. Therefore, our framework struggles to handle the heavy occlusion (e.g., Fig 13) or out-of-view. Another potential limitation of our work is that modern scientiﬁc computation packages are not friendly to fast attention computation.
+
+C.4. TSNE Visualization of Features
+In Fig. 14 and Fig. 15, we visualize the TSNE of features from our target-dependent network and standard targetunaware Siamese extraction network. When the our SBT network goes deeper, the features belonging to the target (green) become more and more separated from the background and distractors (pink). In the meantime, the search features from the Siamese extraction are totally targetunaware which heavily rely on the separated correlation step to discriminate the targets from background.
+C.5. Visualization of Correlation-Aware Trackers
+In Fig. 16, we visualize the tracking results of SiamFCpp (ﬁrst row), SiamFCpp-CA (second row), our SBT tracker (third row) on the challenging sequences from OTB100.
+
+12
+
+Figure 16. Visualization tracking results of SiamFCpp (ﬁrst row), SiamFCpp-CA (second row), our SBT tracker (third row) on the challenging sequences from OTB100. We can see that SBT shows stronger generalization ability and better accuracy throughout tracking. SiamFCpp-CA has more stronger discriminative ability than original SiamFCpp with standard Siamese extraction network towards distractor objects and background clutters. Best viewed with zooming in.
+
+We can see that SBT shows stronger discriminative ability and better accuracy throughout tracking. The reponse map of SBT is more centralized and much higher comparing to the background pixels which shows the tracker preserves more spatial information and more discriminative towards the disctractor objects. We can also observe that SiamFCppCA has more stronger discriminative ability than original SiamFCpp with standard Siamese extraction network towards distractor objects and background clutters. The response map from our correlation-aware features are more discriminative towards background clutters and more suitable for a instance-level task.
+References
+[1] https://github.com/visionml/pytracking. 3, 7 [2] Luca Bertinetto, Jack Valmadre, Joa˜o F Henriques, Andrea
+Vedaldi, and Philip H S Torr. Fully-convolutional siamese
+
+networks for object tracking. In ECCVW, 2016. 2 [3] Goutam Bhat, Martin Danelljan, Luc Van Gool, and Radu
+Timofte. Learning discriminative model prediction for tracking. In ICCV, 2019. 1, 3, 7, 10 [4] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-toend object detection with transformers. In ECCV, 2020. 4 [5] Xin Chen, Bin Yan, Jiawen Zhu, Dong Wang, Xiaoyun Yang, and Huchuan Lu. Transformer tracking. In CVPR, pages 8126–8135, 2021. 1, 2, 3, 6, 7, 8, 9 [6] Zedu Chen, Bineng Zhong, Guorong Li, Shengping Zhang, and Rongrong Ji. Siamese box adaptive network for visual tracking. In CVPR, 2020. 6 [7] Siyuan Cheng, Bineng Zhong, Guorong Li, Xin Liu, Zhenjun Tang, Xianxian Li, and Jing Wang. Learning to ﬁlter: Siamese relation network for robust tracking. In CVPR, pages 4421–4431, 2021. 2 [8] Xiangxiang Chu, Zhi Tian, Yuqing Wang, Bo Zhang, Haibing Ren, Xiaolin Wei, Huaxia Xia, and Chunhua Shen.
+
+13
+
+Twins: Revisiting the design of spatial attention in vision transformers. arXiv preprint arXiv:2104.13840, 2021. 4 [9] Xiangxiang Chu, Zhi Tian, Bo Zhang, Xinlong Wang, Xiaolin Wei, Huaxia Xia, and Chunhua Shen. Conditional positional encodings for vision transformers. arXiv preprint arXiv:2102.10882, 2021. 4 [10] Martin Danelljan, Goutam Bhat, Fahad Shahbaz Khan, and Michael Felsberg. ECO: Efﬁcient convolution operators for tracking. In CVPR, 2017. 8 [11] Martin Danelljan, Goutam Bhat, Fahad Shahbaz Khan, and Michael Felsberg. Atom: Accurate tracking by overlap maximization. In CVPR, 2019. 2, 3, 7 [12] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit, and Neil Houlsby. An image is worth 16x16 words: Transformers for image recognition at scale, 2020. 3, 4 [13] Heng Fan, Liting Lin, Fan Yang, Peng Chu, Ge Deng, Sijia Yu, Hexin Bai, Yong Xu, Chunyuan Liao, and Haibin Ling. LaSOT: A high-quality benchmark for large-scale single object tracking. In CVPR, 2019. 7, 9 [14] Heng Fan and Haibin Ling. Siamese cascaded region proposal networks for real-time visual tracking. In CVPR, 2019. 2 [15] Dongyan Guo, Yanyan Shao, Ying Cui, Zhenhua Wang, Liyan Zhang, and Chunhua Shen. Graph attention tracking. In CVPR, pages 9543–9552, 2021. 2 [16] Dongyan Guo, Jun Wang, Ying Cui, Zhenhua Wang, and Shengyong Chen. SiamCAR: Siamese fully convolutional classiﬁcation and regression for visual tracking. In CVPR, 2020. 2 [17] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In CVPR, 2016. 1, 3, 6, 10 [18] Joa˜o F Henriques, Rui Caseiro, Pedro Martins, and Jorge Batista. High-speed tracking with kernelized correlation ﬁlters. In ICVS, 2008. 1, 2 [19] Lianghua Huang, Xin Zhao, and Kaiqi Huang. GOT-10k: A large high-diversity benchmark for generic object tracking in the wild. TPAMI, 2019. 1, 4, 7, 8, 9 [20] Lianghua Huang, Xin Zhao, and Kaiqi Huang. Got-10k: A large high-diversity benchmark for generic object tracking in the wild. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2019. 7 [21] Matej Kristan, Alesˇ Leonardis, Jiˇr´ı Matas, Michael Felsberg, Roman Pﬂugfelder, Joni-Kristian Ka¨ma¨ra¨inen, Martin Danelljan, Luka Cˇ ehovin Zajc, Alan Lukezˇicˇ, Ondrej Drbohlav, et al. The eighth visual object tracking vot2020 challenge results. In ECCVW, 2020. 7 [22] Bo Li, Wei Wu, Qiang Wang, Fangyi Zhang, Junliang Xing, and Junjie Yan. Siamrpn++: Evolution of siamese visual tracking with very deep networks. In CVPR, 2019. 1, 2, 3, 6, 7, 9 [23] Bo Li, Junjie Yan, Wei Wu, Zheng Zhu, and Xiaolin Hu. High performance visual tracking with siamese region proposal network. In CVPR, pages 8971–8980, 2018. 1, 2
+
+[24] Xin Li, Chao Ma, Baoyuan Wu, Zhenyu He, and MingHsuan Yang. Target-aware deep tracking. In CVPR, pages 1369–1378, 2019. 2
+[25] Yongqing Liang, Xin Li, Navid Jafari, and Qin Chen. Video object segmentation with adaptive feature bank and uncertain-region reﬁnement. NIPS, 2020. 10
+[26] Tsung-Yi Lin, Michael Maire, Serge J. Belongie, Lubomir D. Bourdev, Ross B. Girshick, James Hays, Pietro Perona, Deva Ramanan, Piotr Dolla´r, and C. Lawrence Zitnick. Microsoft COCO: Common objects in context. In ECCV, 2014. 7, 9
+[27] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng Zhang, Stephen Lin, and Baining Guo. Swin transformer: Hierarchical vision transformer using shifted windows. arXiv preprint arXiv:2103.14030, 2021. 3, 4, 6
+[28] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101, 2017. 7
+[29] Ziang Ma, Linyuan Wang, Haitao Zhang, Wei Lu, and Jun Yin. Rpt: Learning point set representation for siamese visual tracking. arXiv preprint arXiv:2008.03467, 2020. 7
+[30] Matthias Muller, Adel Bibi, Silvio Giancola, Salman Alsubaihi, and Bernard Ghanem. Trackingnet: A large-scale dataset and benchmark for object tracking in the wild. In ECCV, 2018. 7, 9
+[31] Seoung Wug Oh, Joon-Young Lee, Ning Xu, and Seon Joo Kim. Video object segmentation using space-time memory networks. In ICCV, 2019. 7, 10
+[32] Federico Perazzi, Jordi Pont-Tuset, Brian McWilliams, Luc Van Gool, Markus Gross, and Alexander Sorkine-Hornung. A benchmark dataset and evaluation methodology for video object segmentation. In CVPR, pages 724–732, 2016. 7
+[33] Hamid Rezatoﬁghi, Nathan Tsoi, JunYoung Gwak, Amir Sadeghian, Ian Reid, and Silvio Savarese. Generalized intersection over union: A metric and a loss for bounding box regression. In CVPR, 2019. 7, 9
+[34] Olga Russakovsky, Jia Deng, Hao Su, Jonathan Krause, Sanjeev Satheesh, Sean Ma, Zhiheng Huang, Andrej Karpathy, Aditya Khosla, and Michael Bernstein. ImageNet Large scale visual recognition challenge. IJCV, 2015. 2, 7, 8, 9
+[35] Christian Szegedy, Wei Liu, Yangqing Jia, Pierre Sermanet, Scott Reed, Dragomir Anguelov, Dumitru Erhan, Vincent Vanhoucke, and Andrew Rabinovich. Going deeper with convolutions. In CVPR, 2015. 1, 3, 10
+[36] Hugo Touvron, Matthieu Cord, Matthijs Douze, Francisco Massa, Alexandre Sablayrolles, and Herve´ Je´gou. Training data-efﬁcient image transformers & distillation through attention. In International Conference on Machine Learning, pages 10347–10357. PMLR, 2021. 7
+[37] Hugo Touvron, Matthieu Cord, Matthijs Douze, Francisco Massa, Alexandre Sablayrolles, and Herve´ Je´gou. Training data-efﬁcient image transformers & distillation through attention. In International Conference on Machine Learning, pages 10347–10357. PMLR, 2021. 9
+[38] Laurens Van der Maaten and Geoffrey Hinton. Visualizing data using t-sne. Journal of machine learning research, 9(11), 2008. 2, 12
+[39] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. In NIPS, 2017. 2, 3
+
+14
+
+[40] Guangting Wang, Chong Luo, Xiaoyan Sun, Zhiwei Xiong, and Wenjun Zeng. Tracking by instance detection: A metalearning approach. In CVPR, 2020. 2
+[41] Guangting Wang, Chong Luo, Zhiwei Xiong, and Wenjun Zeng. Spm-tracker: Series-parallel matching for real-time visual object tracking. In CVPR, 2019. 2
+[42] Ning Wang, Wengang Zhou, Jie Wang, and Houqiang Li. Transformer meets tracker: Exploiting temporal context for robust visual tracking. In CVPR, pages 1571–1580, 2021. 3, 7
+[43] Qiang Wang, Zhu Teng, Junliang Xing, Jin Gao, Weiming Hu, and Stephen Maybank. Learning attentions: residual attentional siamese network for high performance online visual tracking. In CVPR, pages 4854–4863, 2018. 2
+[44] Qiang Wang, Li Zhang, Luca Bertinetto, Weiming Hu, and Philip H. S. Torr. Fast online object tracking and segmentation: A unifying approach. In CVPR, 2019. 7
+[45] Wenhai Wang, Enze Xie, Xiang Li, Deng-Ping Fan, Kaitao Song, Ding Liang, Tong Lu, Ping Luo, and Ling Shao. Pyramid vision transformer: A versatile backbone for dense prediction without convolutions, 2021. 3, 4, 7, 9
+[46] Yi Wu, Jongwoo Lim, and Ming-Hsuan Yang. Online object tracking: A benchmark. In CVPR, 2013. 8
+[47] Yi Wu, Jongwoo Lim, and Ming Hsuan Yang. Object tracking benchmark. IEEE Transactions on Pattern Analysis and Machine Intelligence, 37(9):1834–1848, 2015. 7
+[48] Fei Xie, Chunyu Wang, Guangting Wang, Yang Wankou, and Wenjun Zeng. Learning tracking representations via dualbranch fully transformer networks. In ICCVW, 2021. 3, 7, 8
+[49] Fei Xie, Wankou Yang, Bo Liu, Kaihua Zhang, Guangting Wang, and Wangmeng Zuo. Learning spatio-appearance memory network for high-performance visual tracking. ICCVW, 2021. 7
+[50] Saining Xie, Ross Girshick, Piotr Dolla´r, Zhuowen Tu, and Kaiming He. Aggregated residual transformations for deep neural networks. In CVPR, 2017. 6
+[51] Yinda Xu, Zeyu Wang, Zuoxin Li, Ye Yuan, and Gang Yu. SiamFC++: towards robust and accurate visual tracking with target estimation guidelines. In AAAI, 2020. 2, 10
+[52] Bin Yan, Houwen Peng, Jianlong Fu, Dong Wang, and Huchuan Lu. Learning spatio-temporal transformer for visual tracking. ICCV, 2021. 1, 3, 6, 7, 8, 10
+[53] Bin Yan, Xinyu Zhang, Dong Wang, Huchuan Lu, and Xiaoyun Yang. Alpha-reﬁne: Boosting tracking performance by precise bounding box estimation. CVPR, 2021. 6, 7
+[54] Bin Yu, Ming Tang, Linyu Zheng, Guibo Zhu, Jinqiao Wang, Hao Feng, Xuetao Feng, and Hanqing Lu. High-performance discriminative tracking with transformers. In ICCV, 2021. 3, 7
+[55] Bin Yu, Ming Tang, Linyu Zheng, Guibo Zhu, Jinqiao Wang, Hao Feng, Xuetao Feng, and Hanqing Lu. High-performance discriminative tracking with transformers. In ICCV, pages 9856–9865, 2021. 3
+[56] Yuechen Yu, Yilei Xiong, Weilin Huang, and Matthew R Scott. Deformable siamese attention networks for visual object tracking. In CVPR, pages 6728–6737, 2020. 2
+
+[57] Lichao Zhang, Abel Gonzalez-Garcia, Joost van de Weijer, Martin Danelljan, and Fahad Shahbaz Khan. Learning the model update for siamese trackers. In ICCV, 2019. 2
+[58] Qinglong Zhang and Yubin Yang. Rest: An efﬁcient transformer for visual recognition. arXiv preprint arXiv:2105.13677, 2021. 3, 4
+[59] Zhipeng Zhang, Yihao Liu, Xiao Wang, Bing Li, and Weiming Hu. Learn to match: Automatic matching network design for visual tracking. 2021. 7
+[60] Zhipeng Zhang and Houwen Peng. Deeper and wider siamese networks for real-time visual tracking. In CVPR, 2019. 1, 2, 3, 6
+[61] Zhipeng Zhang, Houwen Peng, Jianlong Fu, Bing Li, and Weiming Hu. Ocean: Object-aware anchor-free tracking. In ECCV, 2020. 2, 7
+[62] Linyu Zheng, Ming Tang, Yingying Chen, Jinqiao Wang, and Hanqing Lu. Learning feature embeddings for discriminant model based tracking. In ECCV, 2020. 3
+[63] Jinghao Zhou, Peng Wang, and Haoyang Sun. Discriminative and robust online learning for siamese visual tracking. In AAAI, volume 34, pages 13017–13024, 2020. 2
+
+15
+

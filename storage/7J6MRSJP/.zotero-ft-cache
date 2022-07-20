@@ -1,0 +1,754 @@
+One More Check: Making “Fake Background” Be Tracked Again
+Chao Liang1 *, Zhipeng Zhang2 *, Xue Zhou1, 3†, Bing Li2, Weiming Hu2
+1School of Automation Engineering, University of Electronic Science and Technology of China (UESTC) 2 NLPR, Institute of Automation, Chinese Academy of Sciences (CASIA)
+3 Shenzhen Institute for Advanced Study, University of Electronic Science and Technology of China (UESTC) chaoliang1996@gmail.com, zhangzhipeng2017@ia.ac.cn, zhouxue@uestc.edu.cn
+
+arXiv:2104.09441v2 [cs.CV] 12 Dec 2021
+
+Abstract
+The one-shot multi-object tracking, which integrates object detection and ID embedding extraction into a uniﬁed network, has achieved groundbreaking results in recent years. However, current one-shot trackers solely rely on singleframe detections to predict candidate bounding boxes, which may be unreliable when facing disastrous visual degradation, e.g., motion blur, occlusions. Once a target bounding box is mistakenly classiﬁed as background by the detector, the temporal consistency of its corresponding tracklet will be no longer maintained. In this paper, we set out to restore the bounding boxes misclassiﬁed as “fake background” by proposing a re-check network. The re-check network innovatively expands the role of ID embedding from data association to motion forecasting by effectively propagating previous tracklets to the current frame with a small overhead. Note that the propagation results are yielded by an independent and efﬁcient embedding search, preventing the model from overrelying on detection results. Eventually, it helps to reload the “fake background” and repair the broken tracklets. Building on a strong baseline CSTrack, we construct a new one-shot tracker and achieve favorable gains by 70.7 → 76.4, 70.6 → 76.3 MOTA on MOT16 and MOT17, respectively. It also reaches a new state-of-the-art MOTA and IDF1 performance. Code is released at https://github.com/JudasDie/SOTS.
+Introduction
+Multi-object tracking (MOT), aiming to estimate the trajectory of each target in a video sequence, is one of the most fundamental yet challenging tasks in computer vision (Luo et al. 2020). The related technique underpins signiﬁcant applications from video surveillance to autonomous driving.
+The current MOT methods are categorized into two-step and one-shot frameworks. The two-step framework (Bewley et al. 2016; Wojke, Bewley, and Paulus 2017; Yu et al. 2016; Tang et al. 2017; Xu et al. 2019), following the trackingby-detection paradigm (or more precisely, tracking-afterdetection), disentangles MOT into candidate boxes prediction and tracklet association. Though favored in astonishing performance, they suffer from massive computation cost brought by separately extracting ID (identity) embedding of each candidate box through an isolated ReID (Re-
+*Equally Contribute. † Corresponding Author. Copyright © 2022, Association for the Advancement of Artiﬁcial Intelligence (www.aaai.org). All rights reserved.
+
+0.2 0.2 0.5 0.1 0.5 0.5 0.7
+
+0.6
+
+0.2
+
+0.6
+
+0.7
+
+0.3
+
+0.5
+
+0.6
+
+0.5 0.3
+
+0.2
+
+0.5
+
+0.9
+
+0.8
+
+0.6
+
+Figure 1: Illustration of tracklets generated from CSTrack on two clips. Wherein, “fake background” is represented by red box. The blue arrow indicates the motion direction of the target. Best viewed in color and zoom in.
+identiﬁcation) network (Wojke, Bewley, and Paulus 2017; Zheng et al. 2017). Recently, the one-shot methods (Xiao et al. 2017; Wang et al. 2019; Zhang et al. 2020a; Liang et al. 2020), which integrate detection and ID embedding extraction into a uniﬁed network, have drawn great attention because of their balanced speed and accuracy. By sharing features and conducting multi-task learning, they are capable of running at quasi real-time speed. We observed that most existing one-shot trackers work under a strong complete detection assumption, in other words, all targets are presumed to be correctly localized by the detector. However, various real-world challenges may break such assumption and cause these approaches to fail. Fig. 1 shows typical failure cases of the one-shot trackers (e.g., CSTrack (Liang et al. 2020)), where targets (red boxes) are considered as the background in some frames due to small foreground probabilities. The missed targets will break temporal consistency of a tracklet.
+Revisiting the failures of one-shot trackers, we ﬁnd that the integrated detector solely considers single-frame visual cues. Nevertheless, the challenging scenes in practical tracking, e.g., occlusion, motion blur, background clutter, will cause visual feature degradation, which may eventually mislead the detector to classify the targets as background. Hence, heavily relying on single frame detections is not reliable. In contrast, human vision has a dynamic view of tar-
+
+gets, not only taking current visual cues into consideration, but also being continuously aware of the temporal consistency of moving targets. This inspires us that exploring temporal cues might be a potential solution for reloading the misclassiﬁed targets of the detector.
+In this work, motivated by inheriting the merits of oneshot models and mining temporal cues to make missed targets be tracked again, we propose a double-check mechanism to construct a new one-shot tracker. As an auxiliary to initial detections, a re-check network is delicately designed to learn the transduction of previous tracklets to the current frame. Given a target that appeared in previous frames, the propagation results re-check the entire scene in the current frame to make a candidate box prediction. If a groundtruth target box does not exist in the ﬁrst-check predictions (i.e., the results of object detector), as a potential misclassiﬁed target, it has a chance to be restored. Technically tracklet propagation is achieved by ID embedding search across frames, which is inspired by cross-correlation operation from Siamese trackers (Bertinetto et al. 2016; Zhang and Peng 2019; Zhang et al. 2020b). Some previous MOT methods (Chu and Ling 2019; Yin et al. 2020) attempt to introduce a separate Siamese network to learn additional clues of all targets for motion search, which are tedious and complex. Differently, we innovatively expand the role of ID embeddings from data association to motion forecasting. By reusing ID embeddings for propagation, the overhead of modeling temporal cues is minimized. Even with multiple tracklets, our re-check network can still propagate with one forward pass by a simple matrix multiplication.
+Finally, we propose our new one-shot tracker, namely OMC (the initials of One More Check), which is built on a baseline model CSTrack (Liang et al. 2020). It’s worth noted that our proposed tracker efﬁciently integrates detection, embedding extraction and temporal cues mining into a uniﬁed framework. We evaluate the proposed OMC on three MOT Challenge 1 benchmarks: MOT16 (Milan et al. 2016), MOT17 (Milan et al. 2016) and MOT20 (Dendorfer et al. 2020). Our method achieves new state-of-the-art MOTA and IDF1 on all three benchmarks. Furthermore, compared with other trackers using temporal cues under the same public detection protocol (Milan et al. 2016), our method still achieves better tracking performance on MOTA and IDF1.
+The main contributions of our work are as follows:
+• We propose a simple yet effective double-check mechanism to restore the misclassiﬁed targets induced by the imperfect detection in MOT task. Our proposed re-check network ﬂexibly expands ID embeddings from data association to motion forecasting, propagating previous tracklets to the current frame with a small overhead.
+• Our proposed re-check network is a “plug-and-play” module that can work well with other one-shot trackers. We build it on a strong baseline CSTrack and construct a new one-shot tracker. The experimental results demonstrate that our tracker OMC not only outperforms CSTrack largely, but also achieves new state-of-the-art MOTA and IDF1 scores on all three benchmarks.
+1https://motchallenge.net
+
+Related Work
+Detection-based Tracking
+Recent MOT trackers can be summarized into two streams, i.e., two-step and one-shot structures. The former one follows the tracking-by-detection paradigm, where object bounding boxes are ﬁrst predicted by a detector and then linked into tracklets by an association network (Bewley et al. 2016; Wojke, Bewley, and Paulus 2017; Yu et al. 2016; Tang et al. 2017; Xu et al. 2019). These methods mainly focus on improving association accuracy. Though favored in good tracking performance, they suffer from computation cost brought by extracting ID embeddings for all bounding boxes with an additional ReID network (Wojke, Bewley, and Paulus 2017; Zheng et al. 2017). Alternatively, the one-shot paradigm which integrates detection and ID embedding extraction into a uniﬁed network, is a new trend in MOT (Xiao et al. 2017; Wang et al. 2019; Zhang et al. 2020a; Liang et al. 2020). Tong et al. (Xiao et al. 2017) ﬁrst propose an end-to-end framework to jointly handle detection and ReID tasks. By adding extra fully connected layers to a two-stage detector (Faster RCNN (Ren et al. 2016)), the model can simultaneously generate detection boxes and the corresponding ID embeddings. Recent proposed JDE (Wang et al. 2019) converts the one-stage detector YOLOv3 (Redmon and Farhadi 2018) to a one-shot tracker by redesigning the prediction head. The follow-up CSTrack (Liang et al. 2020) further eases the competition between detection and ID embeddings learning by applying a cross-attention network to JDE (Wang et al. 2019). However, detection-based methods assume that all the targets can be precisely localized by the detector, which is not valid in practical tracking. When challenging scenes degrade the visual cues, the detector may miss some targets. In this work, we exploit crossframe temporal cues to alleviate this issue. Below, we brieﬂy review other methods that utilize temporal features to improve MOT trackers and discuss the differences between us.
+Temporal Cues Mining
+Some previous works attempt to utilize extra information, e.g., motion (Chen et al. 2018; Hornakova et al. 2020), temporal visual features (Chu and Ling 2019), to improve detection performance in MOT task. Early works (Dehghan et al. 2015; Ristani and Tomasi 2018; Chen et al. 2018; Hornakova et al. 2020) consider MOT as a global optimization problem and obtains auxiliary candidates generated by Kalman ﬁlter, spatial interpolation, or visual extrapolation. Albeit efﬁcient and straightforward, these methods leverage both past and future frames for batch processing that is not suitable for causal applications. For the aim of online tracking, recent works apply off-the-shelf SOT trackers, e.g., SiamFC (Bertinetto et al. 2016), to estimate target motion. In the literature, there are two major branches of inserting SOT trackers into the MOT system. The ﬁrst one (Chu and Ling 2019; Yin et al. 2020; Chu et al. 2020) aims to modify SOT networks and integrate them into an isolated association network for joint learning. In this regard, it’s essential to equip an extra afﬁnity learning model for handling drift. The other one (Chu et al. 2017; Sadeghian, Alahi, and Savarese 2017;
+
+JDE/CSTrack
+Backbone Neck
+
+R de
+
+t
+
+Pt de Btde
+
+Head
+
+Detection
+
+ID Embedding
+
+Ft id
+
+Dbase
+
+Etid
+
+E id t −1
+
+Re-check Network
+
+
+
+M p Btde
+Dtrans ∪
+
+D final
+
+Frame x
+
+Ft
+
+∪ Union by IOU metric
+
+Figure 2: Overview of the proposed OMC. It consists of the baseline CStrack tracker and a re-check network. The CStrack tracker ﬁrst generates detection result Rtde and candidate embeddings Ftid. Then, re-check network improves temporal consistency by reloading the misclassiﬁed targets induced by the detector.
+
+Zhu et al. 2018; Zhang et al. 2021) exploits separate SOT trackers to create auxiliary clues for handling complex MOT scenes. Despite the performance gains, they are not suitable for real-time applications because of the massive computation brought by applying a SOT network to learn auxiliary clues for all targets. In our work, instead of assigning an extra and complex SOT network, we expand the role of ID embeddings from data association to motion forecasting by similarity matching. It makes our tracker capable of tracking multiple targets with only a simple forward pass.
+
+Methodology
+In this section, we describe the proposed tracking framework, as illustrated in Fig. 2.
+
+Overview
+The proposed model is conducted on a recent MOT tracker, namely CSTrack (Liang et al. 2020), which is a variant of the recent JDE framework (Wang et al. 2019). In this section, we ﬁrstly describe the reasoning procedure of JDE and CSTrack. Then we elaborate on the details of integrating our proposed model into the baseline tracker.
+Baseline Tracker. JDE (Wang et al. 2019) devotes effort to building a real-time one-shot MOT framework by allowing object detection and ID embedding extraction to be learned in a shared model, as shown in Fig. 2. Given a frame x, it is ﬁrstly processed by a feature extractor Ψ (e.g., Backbone and Neck), which generates the feature Ft,
+
+Ft = Ψ(x).
+
+(1)
+
+Then Ft is fed into the Head network Φ to simultaneously predict detection results and ID embeddings,
+
+[Rtde, Ftid] = Φ(Ft),
+
+(2)
+
+where Rtde is the detection results (including one map Ptde ∈ RH×W ×1 for foreground probabilities and the others Btde ∈ RH×W ×4 for raw boxes). Ftid ∈ RH×W ×C (C=512) denotes ID embeddings. The detection results Rtde are processed by greedy-NMS (Ren et al. 2016) to generate the ba-
+sic detections Dbase. Each box in Dbase corresponds to a
+
+1×1×C embedding in Ftid. We denote Etid as a set that contains embeddings of all boxes in Dbase. Finally, the boxes Dbase and the ID embeddings Etid are utilized to associate with the prior tracklets by greedy bipartite matching. The re-
+cent CSTrack (Liang et al. 2020) introduces cross-attention
+to ease the competition between detection and ReID, which
+signiﬁcantly improves the JDE with small overhead. Here,
+we use CSTrack as our baseline tracker.
+
+OMC. In this work, we propose a re-check network to repair
+the “fake background” induced by the detector in JDE and
+CSTrack. As shown in Fig. 2, we reuse the ID embeddings from previous targets (Eti−d 1) as temporal cues. The re-check network Π transfers the prior tracklets by measuring the similarity between Eti−d 1 and Ftid. Speciﬁcally, we modify the cross-correlation layer, that is used by Siamese method in
+single object tracking (Bertinetto et al. 2016), to make it ca-
+pable of tracking multiple targets in a single forward pass.
+We experimentally observed that if one target disappears in
+the current frame, it tends to introduce a false-positive re-
+sponse in the similarity map. To alleviate this issue, we fuse the visual feature Ft with the similarity map, and then reﬁne them to a ﬁner guidance map. For simplicity, we omit the
+operation of the re-check network as,
+
+Mp = Π Ftid, Eti−d 1, Ft ,
+
+(3)
+
+where the ﬁnal prediction Mp represents the transduction of prior tracklets to the current frame. We consider Mp as the foreground probability, and send it to greedy-NMS with original bounding boxes Btde (red response maps). The outputs of NMS, namely transductive detections Dtrans, are combined with basic detections Dbase through the proposed IOU vote mechanism to generate the ﬁnal candidate bound-
+ing boxes Dfinal. Dfinal and the corresponding ID embeddings extracted from Ftid are used for latter association. When the basic detections mistakenly classify the targets
+as background, the transductive detections can recheck the
+“fake background” and restore the missed boxes.
+
+Re-check Network
+To improve the temporal consistency broken by “fake background”, we propose a lightweight re-check network to re-
+
+Frame t-1
+
+Transductive Detection Module
+Binary Masks
+
+E id t −1
+
+n
+Re-check
+
+11C(C = 512)
+
+Ft id
+
+*
+
+H W C(C = 512)
+
+···
+···
+n
+
+Ms
+Sum
+
+Refinement Module Ft
+
+H W C(C = 256)
+Inverted Bottleneck
+M s Fˆ
+
+Mp
+
+1conv.(C = 256) +1conv.(C =1)
+
+2conv.(C = 256) +1conv.(C =1)
+3conv.(C:=ch2a5n6n)el number
+
+* Cross-correlation
+
+Element-wise Multiplication
+
+Frame t
+
+Figure 3: The architecture of the proposed re-check network. Re-check network consists of two major components: the transductive detection module and the reﬁnement module. More details are described in section “Methodology”.
+
+Algorithm 1: Modiﬁed Cross-correlation, PyTorch-like
+def D (Eti−d 1, Ftid): E = torch.Tensor(Eti−d 1).view(n, c) # convert list to matrix
+F = Ftid.view(c, h ∗ w) # reshape tensor to matrix M = torch.matmul(E, F) # matrix multiplication return M.view(h, w, n) # reshape matrix to tensor
+
+store the missed targets induced by the detector. Precisely, re-check network consists of two modules, i.e., the transductive detection module for tracklets propagation and the reﬁnement module for false positives ﬁltering.
+
+Transductive Detection Module The transductive detec-
+tion module aims to propagate previous tracklets to cur-
+rent frame, in other words, predict locations of existing tar-
+gets. Concretely, target locations are predicted by measur-
+ing the similarities between previous tracklet embeddings Eti−d 1 = e1t−1, · · · , ent−1 and current candidate embeddings Ftid, where n indicates the number of previous tracklets (include all active tracklets in the inference stage, not just the last frame). We get a location response map mi for each target through a cross-correlation operator ∗,
+
+mi = (eit−1 ∗ Ftid)|ni=1.
+
+(4)
+
+Wherein, location with the maximum value in mi indicates the predicted state of a previous tracklet. Eq. 4 yields a set of similarity maps M = {m1, · · · , mn}, in which each denotes the transductive detection result of a previous tracklet. Notably, the modiﬁed cross-correlation in our model can be implemented with a simple matrix multiplication. We attach the PyTorch codes in Alg. 1.
+We then discretize mi to a binary mask mˆ i by shrinking the scope of high responses. The underlying reason for this operation is that objects with similar appearance may bring high response. Thus, shrinking the scope of high responses can reduce ambiguous predictions. More formally,
+
+the binary mask mˆ i is obtained by,
+
+mˆ xi y =
+
+1 if x − cx ≤ r, y − cy ≤ r 0 otherwise
+
+(5)
+
+where mˆ xi y denotes the value at (x, y) of mˆ i, and cx, cy indicate the locations of maximum value in mi. r is the shrinking radius. The region within and outside the square is set to 1 and 0, respectively. Afterwards, we multiply the binary mask mˆ i to the original similarity map mi to reduce ambiguous responses. Finally, we aggregate the response maps by element-wise summation along channel dimension,
+
+n
+
+Ms = (mˆ i · mi).
+
+(6)
+
+i=1
+
+The aggregated similarity map Ms reveals the probability of a location in the current frame that contains a bounding box associated with previous tracklets.
+
+Reﬁnement Module We observed that objects disappear-
+ing in the current frame tend to bring false positives during
+tracklet transduction. To alleviate this issue, we arrange the
+reﬁnement module to introduce the original visual feature Ft ∈ RH×W ×C (C=256) to provide informative semantics for ﬁner localization. We ﬁrstly encode the similarity map Ms with an inverted bottleneck module (Sandler et al. 2018). Concretely, a 3 × 3 convolution layer maps Ms to high dimensional space, i.e., the channels of 256. Then another 3 × 3 convolution layer follows to down-sample the channel to 1, as Ms ∈ RH×W ×1. The reﬁned similarity map Ms is multiplied by the visual feature Ft to get the enhanced feature Fˆ ∈ RH×W ×C (C=256),
+
+Fˆ = Ft · Ms.
+
+(7)
+
+Later, the enhanced feature Fˆ passes through several convolution layers to obtain the ﬁnal prediction Mp.
+
+Optimization Besides the loss for the baseline tracker CSTrack (Liang et al. 2020), we introduce a supervised function to train the re-check network. The ground-truth for
+
+the similarity map Mp is deﬁned as a combination of multiple Gaussian distributions. Speciﬁcally, for each target, its supervised signal is a Gaussian-like mask,
+
+ti = exp
+
+−
+
+(x
+
+−
+
+cxi )2 + (y 2σi2
+
+−
+
+cyi
+
+)2
+
+(8)
+
+where ci = (cxi , cyi ) denotes the center location of a target and σi is the object size-adaptive standard deviation (Law and Deng 2018). Eq. 8 generates a set of ground-truth masks
+t = {t1, ..., tn}. Then we sum all elements in t along channel dimension to get the supervised signal T for Mp. To reduce the overlap between two Gaussian distributions, we
+set an upper limit of σi to 1. We employ the Logistic−MSE Loss (Allen 1971) to train re-check network,
+
+1
+
+Lg
+
+=
+
+− n
+
+xy
+
+1 − Mpxy log Mpxy , if T xy = 1 (1 − T xy) Mpxy log 1 − Mpxy , else
+
+(9)
+
+where M xy and T xy indicate the value of a location in Mp
+
+and T , respectively.
+
+Fusing Basic and Transductive Detections
+In this section, we detail how to fuse the transductive detections Dtrans and basic detections Dbase to get the ﬁnal candidate boxes Dfinal for association. We ﬁrstly calculate the targetness score s for each bounding box bi in Dtrans by IOU metric, as
+
+s = 1 − max (IOU (bi, Dbase)) ,
+
+(10)
+
+where a higher s indicates the box bi does not appear in the basic detections, which is a probable missed bounding box. Then, the boxes with a score above threshold are retrained as complement of basic detections. We set to 0.5. When the basic detections miss some targets, the transductive detections can restore them to keep the temporal consistency of tracklets.
+
+Comparisons with Related Works
+In this section, we further discuss the differences with other works which share similar spirit with our method. OMC vs. UMA (Yin et al. 2020) and DASOT (Chu et al. 2020). Recent works UMA and DASOT also adopt SOT trackers or mechanism in MOT tracking. However, our method differs from them in two fundamental ways. 1) Local or Global search. UMA and DASOT only consider a small neighborhood region when searching a target. However, local search is not effective when fast motion happens. Conversely, in our work, the tracklet transduction is accomplished with global search, which is more robust for fast motion cases. 2) Uniﬁed or Separated Framework. UMA and DASOT only integrate temporal cues mining and data association into a model, which is separated with the object detector. This is obviously tedious and time-consuming since the raw image input needs to be performed forward inference two or even more times. Differently, in our work, detection-transduction-association are uniﬁed in a tracking framework, which obtains all outputs with only one single pass and enjoys easier implementation.
+
+OMC vs. Tracktor (Bergmann, Meinhardt, and LealTaixe 2019). Both OMC and Tracktor attempt to propagate previous tracklets to the current frame in a simple one-shot framework. Tracktor considers the bounding boxes in the last frame as regions of interest (ROIs) in the current frame, and then extracts features inside the ROIs. The locations of existing targets are predicted by directly regressing the ROI features. However, the tracklet transduction of Tracktor still relies on the single-frame visual cues. Differently, OMC transfers the previous tracklets by measuring ID embedding similarities between the last frame and the current frame. By reusing the object ID embeddings of the last frame as temporal cues, OMC can restore missed targets more effectively.
+
+Experiments
+Implementation Details
+Baseline Tracker Modiﬁcation. In the vanilla JDE (Wang et al. 2019) and CSTrack (Liang et al. 2020), the offset between an anchor center a = (ax, ay) and the center of corresponding bounding box b = (bx, by) is restricted to 0 ∼ 1 (on the feature map) by the sigmoid function,
+
+∆ = b − a = Sigmoid(r)
+
+(11)
+
+where r indicates the network’s regression output and ∆ = (∆x, ∆y) denotes the predicted offset. However, at the boundary of an image, the offset is often larger than 1. As shown in Fig. 4, the centers of groundtruth boxes (green) are outside the image boundary. However, due to the hard restriction of Sigmoid, the predicted boxes (red) hardly cover the whole objects. When an object appears with only partbody, the incomplete box prediction will be considered as false positive because of the large differences between the ground-truth bounding box and the incomplete box, which eventually degrades tracking performance. To alleviate this issue, we modify the regression mechanism to a boundaryaware regression (BAR) as,
+
+∆ = b − a = (Sigmoid (r) − 0.5) × h, (12)
+
+where h is the learnable scale parameter. The scale parameter allows the network to predict offsets larger than 1. As shown in Fig. 4 (c), BAR is capable of predicting invisible part of the objects based on the visible part.
+Training and Testing. We build our tracker by integrating the proposed re-check network into CSTrack (Liang et al. 2020). For the sake of fairness, we use the same training data as CSTrack, including ETH (Ess et al. 2008), CityPerson (Zhang, Benenson, and Schiele 2017), CalTech (Dolla´r et al. 2009), MOT17 (Milan et al. 2016), CUDK-SYSU (Xiao et al. 2017), PRW (Zheng et al. 2017) and CrowdHuman (Shao et al. 2018). The training procedure consists of two stages, i.e., basic tracker training and re-check network optimization. In the ﬁrst stage, we equip CSTrack with the Boundary-Aware Regression (basic tracker) and train it following the standard settings of CSTrack. Concretely, the network is trained with a SGD optimizer for 30 epochs. The batch size is 8. The initial learning rate is 5 × 10−4, and it decays to 5 × 10−5 at the
+
+(a) Ground Truth
+
+(b) Without BAR
+
+(c) With BAR
+
+Figure 4: Visualization detection results at the boundary. (a) Ground-truth bounding boxes. (b) The incomplete bounding box prediction. (c) The bounding box prediction with boundary-aware regression (BAR). The red points represent the anchor centers and green/yellow points represent centers of the bounding boxes.
+
+Table 1: Component-wise analysis of the proposed model.
+
+#NUM R BAR MOTA↑ IDF1↑ MT↑ ML↓ FP↓ FN↓ FPS↑ Param
+
+x
+
+70.6 71.6 37.5 18.7 24804 137832 15.8 74.6M
+
+y
+
+75.5 72.9 42.0 15.5 27334 107284 13.3 77.5M
+
+z
+
+73.1 72.4 39.9 16.4 19772 128184 15.2 74.6M
+
+{
+
+76.3 73.8 44.7 13.6 28894 101022 12.8 77.5M
+
+20th epoch. In the second stage, we train the proposed recheck network while ﬁxing the basic tracker’s parameters on MOT17 (Milan et al. 2016) training set. During training, we randomly sample image pairs from adjacent frames in the same video sequence, one for generating exemplar embeddings Eti−d 1 and the other for generating candidate embeddings Ftid. Each iteration contains 8 pairs. Other training schedules follow the settings in the ﬁrst training stage. We set r in Eq. 5 to 3 and initialize the scale parameter h in Eq. 12 to 10. Other hyperparameters and testing stage follow settings in CSTrack without other speciﬁcations.
+Our tracker is implemented using Python 3.7 and PyTorch 1.6.0. The experiments are conducted on a single RTX 2080Ti GPU and Xeon Gold 5218 2.30GHz CPU.
+Evaluation Datasets and Metrics. We evaluate our tracker on three MOT Challenge benchmarks, i.e., MOT16 (Milan et al. 2016), MOT17 (Milan et al. 2016) and the recent released MOT20 (Dendorfer et al. 2020). Following the common practices in MOT Challenge (Milan et al. 2016), we employ the CLEAR metric (Bernardin and Stiefelhagen 2008), particularly MOTA (the primary metric of MOT) and IDF1 (Ristani et al. 2016) to evaluate the overall performance. We also report other common metrics for evaluation, which include the ratio of Most Tracked targets (MT), the ratio of Most Lost targets (ML) , False Positives (FP), False Negatives (FN) and running speed (FPS).
+Analysis of the Proposed Method
+Component-wise Analysis. To verify the efﬁcacy of the proposed method, we perform a component-wise analysis on MOT17 testing set, as presented in Tab. 1. When equipping the baseline tracker (x) with the proposed re-check network (R), it signiﬁcantly decreases FN from 137832 to 107284 (y vs. x), which achieves favorable 4.9 points gains on MOTA and 4.5 points gains on MT. This conﬁrms the ef-
+
+Table 2: Analysis of re-check network on MOT17 testing set. x indicates our baseline (CSTrack) with BAR. While with “w/o” means that the method discards this module.
+
+#NUM Method MOTA↑ IDF1↑ MT↑ ML↓ FP↓ FN↓
+
+x Baseline-BAR 73.1 72.4 39.9 16.4 19772 128184
+
+y + R w/o Global 75.4 73.2 43.4 15.4 31013 103766
+
+z + R w/o Shrink 73.6 72.6 47.8 11.2 48915 95829
+
+{ + R w/o Ft 69.3 70.7 45.2 13.5 67885 100793
+
+| + R w/o IBM 75.7 73.4 45.1 13.5 32005 100590
+
+}
+
++R
+
+76.3 73.8 44.7 13.6 28894 101022
+
+(a)
+
+(b)
+
+(c)
+
+Figure 5: Visualization of the response maps with (c) and without (b) shrinking on MOT17 dataset. To make it clear, we show the corresponding original image in (a).
+
+fectiveness of the re-check network on restoring “fake background”. The introduced boundary-aware regression (BAR) aims to reason the invisible part of objects when they appear at the boundary of image. Tab. 1 shows that the BAR brings gains of 2.5 points on MOTA and 0.8 points on IDF1 (z vs. x), respectively. Overall (x vs. {), compared with the baseline tracker, our model signiﬁcantly improves tracking performance, i.e., MOTA +5.7 points, IDF1 +2.2 points and MT +7.2 points, with a small overhead, i.e., 12.8 FPS vs. 15.8 FPS and model parameters 77.5M vs. 74.6M.
+Understanding the Re-check Network. To understand the impact of the re-check network, we evaluate the tracker (Baseline-BAR) with different variants of the re-check network, as shown in Tab. 2. Firstly, we replace the global search with the standard local search, i.e., considering the neighborhood region of previous targets in the last frame (Chu et al. 2020). Comparing the results of y and }, we ﬁnd that with a global view, our tracker can more accurately propagate previous tracklets to current frame, which achieves better tracking performance on FP, FN, MOTA and IDF1 scores. Secondly, we discard the shrinking operation in Eq. 5. As the result shown in z, without shrinking, the FP number dramatically increases, which eventually causes the decrease of MOTA score. We visualize the shrinking and non-shrinking response maps in Fig. 5, which shows that the shrinking operation can ﬁlter most false-positive responses and effectively keep the transductions of previous targets. Furthermore, we conduct two ablation experiments to prove
+
+Table 3: Comparison with the state-of-the-art online MOT systems under private detection protocol. We report the corresponding ofﬁcial metrics. ↑/↓ indicate that higher/lower is better, respectively. For a fair comparison, we obtain FPS of each method under the same experimental conditions. The best scores of methods are marked in red.
+
+Method
+POI (Yu et al. 2016) DeepSORT-2 (Wojke, Bewley, and Paulus 2017)
+HOGM (Zhou et al. 2018) RAR16wVGG (Fang et al. 2018)
+TubeTK (Pang et al. 2020) CTracker (Peng et al. 2020) QDTrack (Pang et al. 2021)
+TraDeS (Wu et al. 2021) FairMOT (Zhang et al. 2020a)
+JDE (Wang et al. 2019) CSTrack (Liang et al. 2020)
+OMC
+TubeTK (Pang et al. 2020) CTracker (Peng et al. 2020) CenterTrack (Zhou, Koltun, and Kra¨henbu¨hl 2020) QDTrack (Pang et al. 2021)
+TraDeS (Wu et al. 2021) FairMOT (Zhang et al. 2020a) CSTrack (Liang et al. 2020)
+OMC
+FairMOT (Zhang et al. 2020a) OMC
+
+Published MOTA↑
+
+MOT16
+
+ECCV16 66.1
+
+ICIP17
+
+61.4
+
+ICPR18 64.8
+
+WACV18 63.0
+
+CVPR20 64.0
+
+ECCV20 67.6
+
+CVPR21 69.8
+
+CVPR21 70.1
+
+IJCV21 74.9
+
+ECCV20 64.4
+
+Arxiv20 70.7
+
+Ours
+
+76.4
+
+MOT17
+
+CVPR20 63.0
+
+ECCV20 66.6
+
+ECCV20 67.8
+
+CVPR21 68.7
+
+CVPR21 69.1
+
+IJCV21 73.7
+
+Arxiv20 70.6
+
+Ours
+
+76.3
+
+MOT20
+
+IJCV21 61.8
+
+Ours
+
+70.7
+
+IDF1↑
+65.1 62.2 73.5 63.8 59.4 57.2 67.1 64.7 72.8 55.8 71.8 74.1
+58.6 57.4 64.7 66.3 63.9 72.3 71.6 73.8
+67.3 67.8
+
+MT↑
+34.0 32.8 40.6 39.9 33.5 32.9 41.7 37.3 44.7 35.4 38.2 46.1
+31.2 32.2 34.6 40.6 36.4 43.2 37.5 44.7
+68.8 56.6
+
+ML↓
+21.3 18.2 22.0 22.1 19.4 23.1 19.8 20.0 15.9 20.0 17.8 13.3
+19.9 24.2 24.6 21.8 21.5 17.3 18.7 13.6
+7.6 13.3
+
+FP↓
+5061 12852 13470 13663 11544 8934 9861 8091 10163 10642 10286 10821
+27060 22284 18498 26589 20892 27507 24804 28894
+103440 22689
+
+FN↓
+55914 56668 49927 53248 47502 48305 44050 45210 34484 52523 41974 31044
+177483 160491 160332 146643 150060 117477 137832 101022
+88901 125039
+
+FPS↑
+<5.2 <6.7 <8.0 <1.5 1.0 6.8 14∼30
+15 18.9 18.5 15.8 12.8
+3.0 6.8 22.0 14∼30 15 18.9 15.8 12.8
+8.4 6.7
+
+(a) MOTA vs. Speed on MOT17
+
+(b) IDF1 vs. Speed on MOT17
+
+Figure 6: Tracking performance (MOTA and IDF1) and tracking speed (FPS) of the proposed method and other MOT methods on MOT17 benchmark.
+
+the rationality of the reﬁnement module design, as shown in { and |. During calculating the similarity map Mp, we involve visual feature Ft to mitigate false-positive transduction. The result of { veriﬁes that introducing Ft can effectively decrease FP number, i.e., 67885 → 28894. When we discard the inverted bottleneck module (IBM), the MOTA score decreases from 76.3 to 75.7 (| vs. }). It conﬁrms that the precoding of similarity map and the semantic information in visual feature can complement each other for better tracking performance.
+Comparison on MOT Benchmarks
+State-of-the-art Comparison. We compare OMC with other state-of-the-art MOT methods on the testing sets of MOT16, MOT17 and MOT20. For evaluating on the MOT20 benchmark, we ﬁne-tune it on the training set of MOT20 following the same training procedure. As shown in Tab. 5,
+
+our tracker achieves new state-of-the-art MOTA and IDF1 scores on all three benchmarks. Speciﬁcally, the proposed OMC outperforms the recent state-of-the-art tracker FairMOT (Zhang et al. 2020a) by 1.5 ∼ 8.9 points on MOTA. Methods with Temporal Cues Mining. To better illustrate the effectiveness of the proposed method, we compare our tracker with the advanced MOT methods using temporal cues under the same public detection protocol (Milan et al. 2016). The compared methods are divided into two categories, i.e., one using SOT trackers which include DMAN (Zhu et al. 2018), FAMNet (Chu and Ling 2019), UMA (Yin et al. 2020) and DASOT (Chu et al. 2020), and the other directly propagating previous tracklets by predicting the offset of bounding boxes in the last frame, i.e., Tracktor (Bergmann, Meinhardt, and Leal-Taixe 2019) and CenterTrack (Zhou, Koltun, and Kra¨henbu¨hl 2020). As shown in Fig. 6, our method runs faster (14.6 FPS vs. 0.3 ∼ 9.1 FPS) and achieves better tracking performance compared with other methods using SOT trackers. Moreover, comparing our tracker with methods directly propagating previous tracklets, our method still gains best tracking performance on MOTA and IDF1.
+Conclusion
+This work has presented a novel double-check approach for MOT, to reload the “fake background” that is caused by the detector’s over-reliance on the single-frame visual cues. Unlike prior attempts, we propose a novel re-check network, which can mining temporal cues with a small overhead. Concretely, we expand the role of ID embeddings from data association to motion forecasting and propagate the previous tracklets to the current frame using global em-
+
+bedding search. Based on this, we construct a new oneshot MOT tracker, namely OMC, which integrates detection, embedding extraction and temporal cues mining into a uniﬁed framework. The quantitative experimental results have shown that the re-check network can restore the targets missed by the detector more effectively than the prior methods. OMC is simple, efﬁcient, and achieves new stateof-the-art performance on MOT16, MOT17, and MOT20.
+References
+Allen, D. M. 1971. Mean square error of prediction as a criterion for selecting variables. Technometrics, 13(3): 469–475.
+Bergmann, P.; Meinhardt, T.; and Leal-Taixe, L. 2019. Tracking without bells and whistles. In Proceedings of the IEEE/CVF International Conference on Computer Vision, 941–951.
+Bernardin, K.; and Stiefelhagen, R. 2008. Evaluating multiple object tracking performance: the clear mot metrics. EURASIP Journal on Image and Video Processing, 2008: 1–10.
+Bertinetto, L.; Valmadre, J.; Henriques, J. F.; Vedaldi, A.; and Torr, P. H. 2016. Fully-convolutional siamese networks for object tracking. In European conference on computer vision, 850–865. Springer.
+Bewley, A.; Ge, Z.; Ott, L.; Ramos, F.; and Upcroft, B. 2016. Simple online and realtime tracking. In 2016 IEEE international conference on image processing (ICIP), 3464–3468. IEEE.
+Chen, L.; Ai, H.; Zhuang, Z.; and Shang, C. 2018. Real-time multiple people tracking with deeply learned candidate selection and person re-identiﬁcation. In 2018 IEEE International Conference on Multimedia and Expo (ICME), 1–6. IEEE.
+Chu, P.; and Ling, H. 2019. Famnet: Joint learning of feature, afﬁnity and multi-dimensional assignment for online multiple object tracking. In Proceedings of the IEEE/CVF International Conference on Computer Vision, 6172–6181.
+Chu, Q.; Ouyang, W.; Li, H.; Wang, X.; Liu, B.; and Yu, N. 2017. Online multi-object tracking using CNN-based single object tracker with spatial-temporal attention mechanism. In Proceedings of the IEEE International Conference on Computer Vision, 4836– 4845.
+Chu, Q.; Ouyang, W.; Liu, B.; Zhu, F.; and Yu, N. 2020. Dasot: A uniﬁed framework integrating data association and single object tracking for online multi-object tracking. In Proceedings of the AAAI Conference on Artiﬁcial Intelligence, volume 34, 10672– 10679.
+Dehghan, A.; Tian, Y.; Torr, P. H.; and Shah, M. 2015. Target identity-aware network ﬂow for online multiple target tracking. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 1146–1154.
+Dendorfer, P.; Rezatoﬁghi, H.; Milan, A.; Shi, J.; Cremers, D.; Reid, I.; Roth, S.; Schindler, K.; and Leal-Taixe´, L. 2020. Mot20: A benchmark for multi object tracking in crowded scenes. arXiv preprint arXiv:2003.09003.
+Dolla´r, P.; Wojek, C.; Schiele, B.; and Perona, P. 2009. Pedestrian detection: A benchmark. In 2009 IEEE Conference on Computer Vision and Pattern Recognition, 304–311. IEEE.
+Ess, A.; Leibe, B.; Schindler, K.; and Van Gool, L. 2008. A mobile vision system for robust multi-person tracking. In 2008 IEEE Conference on Computer Vision and Pattern Recognition, 1–8. IEEE.
+Fang, K.; Xiang, Y.; Li, X.; and Savarese, S. 2018. Recurrent autoregressive networks for online multi-object tracking. In 2018 IEEE Winter Conference on Applications of Computer Vision (WACV), 466–475. IEEE.
+
+Hornakova, A.; Henschel, R.; Rosenhahn, B.; and Swoboda, P. 2020. Lifted disjoint paths with application in multiple object tracking. In International Conference on Machine Learning, 4364– 4375. PMLR.
+Keuper, M.; Tang, S.; Andres, B.; Brox, T.; and Schiele, B. 2018. Motion segmentation & multiple object tracking by correlation coclustering. IEEE transactions on pattern analysis and machine intelligence, 42(1): 140–153.
+Law, H.; and Deng, J. 2018. Cornernet: Detecting objects as paired keypoints. In Proceedings of the European conference on computer vision (ECCV), 734–750.
+Leal-Taixe´, L.; Milan, A.; Reid, I.; Roth, S.; and Schindler, K. 2015. Motchallenge 2015: Towards a benchmark for multi-target tracking. arXiv preprint arXiv:1504.01942.
+Liang, C.; Zhang, Z.; Lu, Y.; Zhou, X.; Li, B.; Ye, X.; and Zou, J. 2020. Rethinking the competition between detection and ReID in Multi-Object Tracking. arXiv preprint arXiv:2010.12138.
+Luo, W.; Xing, J.; Milan, A.; Zhang, X.; Liu, W.; and Kim, T.K. 2020. Multiple object tracking: A literature review. Artiﬁcial Intelligence, 103448.
+Milan, A.; Leal-Taixe´, L.; Reid, I.; Roth, S.; and Schindler, K. 2016. MOT16: A benchmark for multi-object tracking. arXiv preprint arXiv:1603.00831.
+Pang, B.; Li, Y.; Zhang, Y.; Li, M.; and Lu, C. 2020. TubeTK: Adopting tubes to track multi-object in a one-step training model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 6308–6318.
+Pang, J.; Qiu, L.; Li, X.; Chen, H.; Li, Q.; Darrell, T.; and Yu, F. 2021. Quasi-dense similarity learning for multiple object tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 164–173.
+Peng, J.; Wang, C.; Wan, F.; Wu, Y.; Wang, Y.; Tai, Y.; Wang, C.; Li, J.; Huang, F.; and Fu, Y. 2020. Chained-tracker: Chaining paired attentive regression results for end-to-end joint multipleobject detection and tracking. In European Conference on Computer Vision, 145–161. Springer.
+Redmon, J.; and Farhadi, A. 2018. Yolov3: An incremental improvement. arXiv preprint arXiv:1804.02767.
+Ren, S.; He, K.; Girshick, R.; and Sun, J. 2016. Faster R-CNN: towards real-time object detection with region proposal networks. IEEE transactions on pattern analysis and machine intelligence, 39(6): 1137–1149.
+Ristani, E.; Solera, F.; Zou, R.; Cucchiara, R.; and Tomasi, C. 2016. Performance measures and a data set for multi-target, multicamera tracking. In European conference on computer vision, 17– 35. Springer.
+Ristani, E.; and Tomasi, C. 2018. Features for multi-target multicamera tracking and re-identiﬁcation. In Proceedings of the IEEE conference on computer vision and pattern recognition, 6036– 6046.
+Sadeghian, A.; Alahi, A.; and Savarese, S. 2017. Tracking the untrackable: Learning to track multiple cues with long-term dependencies. In Proceedings of the IEEE International Conference on Computer Vision, 300–311.
+Sandler, M.; Howard, A.; Zhu, M.; Zhmoginov, A.; and Chen, L.C. 2018. Mobilenetv2: Inverted residuals and linear bottlenecks. In Proceedings of the IEEE conference on computer vision and pattern recognition, 4510–4520.
+Shao, S.; Zhao, Z.; Li, B.; Xiao, T.; Yu, G.; Zhang, X.; and Sun, J. 2018. Crowdhuman: A benchmark for detecting human in a crowd. arXiv preprint arXiv:1805.00123.
+
+Tang, S.; Andriluka, M.; Andres, B.; and Schiele, B. 2017. Multiple people tracking by lifted multicut and person re-identiﬁcation. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 3539–3548.
+Wang, Z.; Zheng, L.; Liu, Y.; and Wang, S. 2019. Towards realtime multi-object tracking. arXiv preprint arXiv:1909.12605, 2(3): 4.
+Wojke, N.; Bewley, A.; and Paulus, D. 2017. Simple online and realtime tracking with a deep association metric. In 2017 IEEE international conference on image processing (ICIP), 3645–3649. IEEE.
+Wu, J.; Cao, J.; Song, L.; Wang, Y.; Yang, M.; and Yuan, J. 2021. Track to Detect and Segment: An Online Multi-Object Tracker. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 12352–12361.
+Xiao, T.; Li, S.; Wang, B.; Lin, L.; and Wang, X. 2017. Joint detection and identiﬁcation feature learning for person search. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 3415–3424.
+Xu, J.; Cao, Y.; Zhang, Z.; and Hu, H. 2019. Spatial-temporal relation networks for multi-object tracking. In Proceedings of the IEEE/CVF International Conference on Computer Vision, 3988– 3998.
+Yin, J.; Wang, W.; Meng, Q.; Yang, R.; and Shen, J. 2020. A uniﬁed object motion and afﬁnity model for online multi-object tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 6768–6777.
+Yu, F.; Li, W.; Li, Q.; Liu, Y.; Shi, X.; and Yan, J. 2016. Poi: Multiple object tracking with high performance detection and appearance feature. In European Conference on Computer Vision, 36–42. Springer.
+Zhang, S.; Benenson, R.; and Schiele, B. 2017. Citypersons: A diverse dataset for pedestrian detection. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 3213– 3221.
+Zhang, Y.; Wang, C.; Wang, X.; Zeng, W.; and Liu, W. 2020a. FairMOT: On the fairness of detection and re-identiﬁcation in multiple object tracking. arXiv e-prints, arXiv–2004.
+Zhang, Z.; Liu, Y.; Wang, X.; Li, B.; and Hu, W. 2021. Learn to match: Automatic matching network design for visual tracking. arXiv preprint arXiv:2108.00803.
+Zhang, Z.; and Peng, H. 2019. Deeper and wider siamese networks for real-time visual tracking. In CVPR, 4591–4600.
+Zhang, Z.; Peng, H.; Fu, J.; Li, B.; and Hu, W. 2020b. Ocean: Object-aware Anchor-free Tracking. In ECCV.
+Zheng, L.; Zhang, H.; Sun, S.; Chandraker, M.; Yang, Y.; and Tian, Q. 2017. Person re-identiﬁcation in the wild. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 1367–1376.
+Zhou, X.; Koltun, V.; and Kra¨henbu¨hl, P. 2020. Tracking objects as points. In European Conference on Computer Vision, 474–490. Springer.
+Zhou, Z.; Xing, J.; Zhang, M.; and Hu, W. 2018. Online multi-target tracking with tensor-based high-order graph matching. In 2018 24th International Conference on Pattern Recognition (ICPR), 1809–1814. IEEE.
+Zhu, J.; Yang, H.; Liu, N.; Kim, M.; Zhang, W.; and Yang, M.-H. 2018. Online multi-object tracking with dual matching attention networks. In Proceedings of the European Conference on Computer Vision (ECCV), 366–382.
+
+One More Check: Making “Fake Background” Be Tracked Again ——Supplementary Material——
+
+In the supplementary material, we provide additional experiments and the qualitative results on MOT17 (Milan et al. 2016) and MOT20 (Dendorfer et al. 2020) testing set. Furthermore, an additional section (Discussion) is presented to explain some questions for readers.
+Experiments
+Restored Results of Re-check Network. In this section, we further list the number of restored bounding boxes (conﬁdence threshold < 0.5) in Tab. 4. The experimental results show that the re-check network can efﬁciently repair the misclassiﬁed targets, even they have very low conﬁdence. Furthermore, we visualize several samples in Fig. 7. Tracking under Public Detection. For a fair comparison with other MOT methods using temporal cues, we compare all trackers on the MOT17 benchmark under the same public detection protocol (Milan et al. 2016). Speciﬁcally, we replace the detection results of our tracker (i.e., Dbase) with the same ofﬁcial detection results. We only use public detection to initialize a new trajectory if it is not near tracked boxes in the current frame. All the other bounding boxes in our results are from the tracking boxes of the re-check network. Note that this strategy is allowed and is commonly used by the online methods using temporal cues (Bergmann, Meinhardt, and Leal-Taixe 2019; Zhou, Koltun, and Kra¨henbu¨hl 2020; Keuper et al. 2018; Chen et al. 2018). We report more metrics of quantitative tracking results in Tab. 5. Compared with other online trackers using temporal cues, our tracker can signiﬁcantly decrease FN and achieve better tracking performance on all four metrics. “Plug-and-Play” Module. In this section, we present the proposed re-check network is a “plug-and-play” module that can work well with other one-shot trackers, e.g., FairMOT (Zhang et al. 2020a). We integrate the recheck network (R) into FairMOT as the same protocol as CSTrack (Liang et al. 2020) without any special modiﬁcations and hyper-parameter tuning. As shown in Tab. 6, the re-check network can efﬁciently restore the “fake background”, decreasing FP from 117447 to 108556. Although the performance of FairMOT is high enough, the re-check network brings obvious gains (MOTA +1 point and IDF1 +1.5 points). This again proves the effectiveness and generality of re-check network.
+Due to the limited submissions of the MOT Challenge (4 times per model on each benchmark), the following ablation experiments are conducted on MOT15, i.e., training on MOT17 training set and testing on MOT15 training set. For a fair comparison, the overlapped videos are discarded. Impact of Response Region Shrinking. We shrink the high response region after attaining similarity map M , as in Eq. 5. In Tab. 7, we present the inﬂuence of different shrinking radius. Compared } with x∼|, without shrinking, the false positives (FP) would dramatically increase,
+
+Table 4: Restored results on MOT17 testing set.
+Conf. 0.4∼0.5 0.3∼0.4 0.2∼0.3 0.1∼0.2 <0.1 All Restored Number 6093 7794 6794 9855 2439 32975 Ratio 18.5% 23.6% 20.6% 29.9% 7.4% 100%
+
+0.13
+
+0.88
+
+0.28
+
+0.70
+
+Figure 7: Several examples of the restored results.
+which eventually causes the decrease of the MOTA score. We set the radius to 3, as it provides the best MOTA score. Inﬂuence of Fusion Threshold. For fusing the transductive detections Dtrans and basic detections Dbase, we calculate the targetness score s for each bounding box bi in Dtrans, and retrain the score above threshold as complement of basic detections Dbase. To study the impact of fusion threshold in our tracker, we perform an ablation experiment on MOT15 (Leal-Taixe´ et al. 2015), as shown in Tab. 8. {∼ demonstrate the robustness of our tracker with respect to fusion threshold , when ∈ [0.4, 1]. Comparing x∼z with {∼, we observe that low fusion thresholds degrade tracking performance. The possible reason is that some targets would be assigned with two boxes and one of them will be considered as false positive. We set to 0.5 considering its best MOTA and IDF1 score.
+Impact of ID Embedding Generation. During tracking, ID embeddings of previous tracklets are linearly updated (Liang et al. 2020). Alternatively, we can simply use embeddings of their ﬁrst or last occurrence as the temporal cues. We compare their inﬂuence on tracking performance in Tab. 9. Comparing x with z, we obverse that when using ID embedding of the ﬁrst appearance, the false positives (FP) would dramatically increase. In contrast, using the ID embedding from the last frame achieves better tracking performance, i.e., 77.4 MOTA score, but it is still inferior to that of using the updated ID embedding (y vs. z). Visualization of Transductive Results. We present the aggregated similarity map Ms and the ﬁnal prediction of recheck network Mp in Fig. 8 (b) and (c), respectively. The former indicates that our method is effective in transferring previous tracklets to the current frame. The latter represents the proposed reﬁnement module in the re-check network can effectively ﬁlter false positives in the similarity map Ms. Concretely, in Fig. 8 (a), the red boxes denote ones missed by the basic detections and restored by the transductive detections. It exhibits the efﬁcacy of the proposed re-check network on restoring “fake background” and making the missed targets be tracked again. As illustrated by the MOT17-03
+
+Table 5: Comparison with the state-of-the-art online MOT systems using temporal cues under public detection on MOT17 benchmark (Milan et al. 2016). We report the corresponding ofﬁcial metrics. ↑ indicates that higher is better, ↓ indicates that lower is better. The best scores of methods are marked in red.
+
+Method
+
+Published MOTA↑ IDF1↑ MT↑ ML↓ FP↓ FN↓ FPS↑
+
+DMAN (Zhu et al. 2018)
+
+ECCV18 48.2 55.7 19.3 38.3 26218 263608 0.3
+
+FAMNet (Chu and Ling 2019)
+
+ICCV19 52.0 48.7 19.1 33.4 14138 253616 0.6
+
+Tracktor++ (Bergmann, Meinhardt, and Leal-Taixe 2019) ICCV19 53.5 52.3 19.5 36.6 12201 248047 <5.0
+
+DASOT (Chu et al. 2020)
+
+AAAI20 48.0 51.3 19.9 34.9 38830 250533 9.1
+
+UMA (Yin et al. 2020)
+
+CVPR20 53.1 54.4 21.5 31.8 22893 239534 5.0
+
+CenterTrack (Zhou, Koltun, and Kra¨henbu¨hl 2020) ECCV20 61.5 59.6 26.4 31.9 14076 200672 17.5
+
+OMC (Ours)
+
+Ours
+
+65.1 63.1 27.4 23.2 22320 179772 14.6
+
+Table 6: Results of FairMOT with re-check network (R) on MOT17.
+Method MOTA↑ IDF1↑ MT↑ ML↓ FP↓ FN↓ FairMOT 73.7 72.3 43.2 17.3 27507 117477 FairMOT+R 74.7 73.8 44.3 15.4 30162 108556
+
+Table 7: Impact of shrinking high response region.
+
+#NUM r MOTA↑ IDF1↑ MT↑ ML↓ FP↓ FN↓
+
+x
+
+1
+
+77.3 73.8 75.3 11.7 2395 1480
+
+y
+
+3
+
+77.6 73.6 73.9 12.0 2288 1527
+
+z
+
+5
+
+77.3 73.4 73.9 12.0 2331 1547
+
+{
+
+7
+
+77.0 73.4 73.9 12.0 2424 1501
+
+|
+
+9
+
+76.4 73.4 75.1 11.7 2543 1483
+
+} w/o shrink 75.9 73.8 74.8 10.9 2651 1470
+
+Table 8: Impact of fusion threshold in our tracker.
+
+#NUM
+
+MOTA↑ IDF1↑ MT↑ ML↓ FP↓ FN↓
+
+x 0.1 47.4 59.4 74.8 11.1 6787 1746
+
+y 0.2 72.1 70.3 75.1 11.4 3116 1525
+
+z 0.3 76.6 73.8 74.8 11.7 2454 1496
+
+{ 0.4 77.4 73.5 73.9 12.0 2330 1506
+
+| 0.5 77.6 73.6 73.9 12.3 2289 1526
+
+} 0.6 77.6 73.4 73.9 12.0 2284 1542
+
+~ 0.7 77.5 73.5 73.9 12.3 2276 1565
+
+ 0.8 77.3 73.1 73.0 12.3 2261 1605
+
+ 0.9 77.3 73.1 72.7 13.2 2223 1643
+
+ 1.0 77.6 73.2 71.8 13.2 2161 1645
+
+Table 9: Impact of ID embedding generation in our tracker.
+
+#NUM Generation MOTA↑ IDF1↑ MT↑ ML↓ FP↓ FN↓
+
+x
+
+First
+
+76.4 73.1 75.1 12.0 2501 1529
+
+y
+
+Last
+
+77.4 73.4 76.2 11.4 2377 1492
+
+z Updated 77.6 73.6 73.9 12.3 2289 1526
+
+Table 10: Hard mask vs. soft mask.
+
+#NUM
+
+MOTA↑ IDF1↑ MT↑ ML↓ FP↓ FN↓
+
+x hard mask 76.3 73.8 44.7 13.6 28894 101022
+
+y soft mask 76.0 73.0 45.1 13.2 29993 101447
+
+Moreover, our method can perform robust tracking under occlusion scenes (see MOT17-07 and MOT17-08) and facing small targets (see MOT17-14).
+Qualitative Tracking Results. In this section, we visualize qualitative tracking results of each sequence in MOT17 and MOT20 test set, as shown in Fig. 9 and Fig. 10. From the results of MOT17-03, we can see that our method performs well at the boundary. The results of MOT17-07 show that our method can detect small objects accurately. Note, our tracker can perform robust tracking under occlusion scenes (see MOT20), where targets are heavily occluded.
+Discussion
+Q1: When the targets are not detected for several frames, how does the re-check network deal with those targets? R1: During tracking inference, a tracklet will be reserved unless there is no matched bounding box for K successive frames (K=30, following CSTrack). The re-check network uses ID embeddings of all previous tracklets for propagation rather than that only in the last frame. In other words, all targets appearing in the previous 30 frames are considered for tracklets propagation. Therefore, even the targets are not detected for several frames, the re-check network can still handle them by using their appearance feature in the previous correctly detection frames. Q2: whether the soft mask will improve the performance of re-check network? R2: We try to replace the hard mask with a Gaussian-like soft mask to shrink the scope of high responses. As shown in Tab. 10, it achieves comparable performance with the hard mask version. However, considering the MOTA score, the release version still uses hard mask.
+
+and MOT17-06 sequence, the false positives (in the red dotted box) are successfully ﬁltered by the reﬁnement network.
+
+MOT17-01
+
+MOT17-03
+
+MOT17-06
+
+MOT17-07
+
+MOT17-08
+
+MOT17-12
+
+MOT17-14
+
+（a）
+
+（b）
+
+（c）
+
+Figure 8: Visualization about transductive results of re-check network on MOT17 testing set: (a) ﬁnal candidate bounding boxes, where the green boxes indicate basic detections and red boxes indicate auxiliary boxes from transductive detections. (b) the aggregated similarity map Ms. (c) the ﬁnal prediction from re-check network Mp. Best viewed in color and zoom in.
+
+MOT17-03 MOT17-01
+
+MOT17-06
+
+MOT17-07
+
+MOT17-08
+
+MOT17-12
+
+MOT17-14
+
+Figure 9: The qualitative results of our method on sequences from MOT17 test set. Bounding boxes, identities and trajectories are marked in the images, where bounding boxes with different colors represent different targets. Best viewed in color.
+
+MOT20-06 MOT20-04
+
+MOT20-07
+
+MOT20-08
+
+Figure 10: The qualitative results of our method on sequences from MOT20 test set. Bounding boxes, identities and trajectories are marked in the images, where bounding boxes with different colors represent different targets. Best viewed in color.
+

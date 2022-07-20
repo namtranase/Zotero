@@ -1,0 +1,81 @@
+
+Skip to main content
+Cornell University
+We gratefully acknowledge support from
+the Simons Foundation and member institutions.
+arXiv.org > cs > arXiv:2008.12052
+
+Help | Advanced Search
+Search
+Computer Science > Computer Vision and Pattern Recognition
+(cs)
+[Submitted on 27 Aug 2020 ( v1 ), last revised 12 Jan 2021 (this version, v3)]
+Title: Compensation Tracker: Reprocessing for Lost Object
+Authors: Zhibo Zou , Junjie Huang , Ping Luo
+Download PDF
+
+    Abstract: At present, the main research direction of multi-object tracking framework is tracking by detection. Although the detection-based tracking framework can achieve good results, it is very dependent on the performance of the detector. The tracking results will be affected to a certain extent when the detector has the behaviors of omission and error detection. Therefore, in order to solve the problem of missing detection, we designs a compensation tracker based on motion compensation and objects selection. Besides the tracker can be embedded into other non-end-to-end tracking frameworks. Experiments show that after using the compensation tracker designed in this paper, evaluation indicators have improved in varying degrees on MOT Challenge datasets. With limit cost, the compensation tracker haves reached 66% MOTA and 67% IDF1 in the 2020 datasets of dense scenarios. This shows that the proposed method can effectively improve the tracking performance of the model. 
+
+Subjects: 	Computer Vision and Pattern Recognition (cs.CV) ; Image and Video Processing (eess.IV)
+Cite as: 	arXiv:2008.12052 [cs.CV]
+  	(or arXiv:2008.12052v3 [cs.CV] for this version)
+Submission history
+From: Junjie Huang [ view email ]
+[v1] Thu, 27 Aug 2020 10:59:54 UTC (624 KB)
+[v2] Mon, 31 Aug 2020 04:48:44 UTC (621 KB)
+[v3] Tue, 12 Jan 2021 13:29:01 UTC (1,012 KB)
+Full-text links:
+Download:
+
+    PDF
+    Other formats 
+
+( license )
+Current browse context:
+cs.CV
+< prev   |   next >
+new | recent | 2008
+Change to browse by:
+cs
+eess
+eess.IV
+References & Citations
+
+    NASA ADS
+    Google Scholar
+    Semantic Scholar
+
+DBLP - CS Bibliography
+listing | bibtex
+Junjie Huang
+Ping Luo
+a export bibtex citation Loading...
+Bookmark
+BibSonomy logo Mendeley logo Reddit logo ScienceWISE logo
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer ( What is the Explorer? )
+Litmaps Toggle
+Litmaps ( What is Litmaps? )
+scite.ai Toggle
+scite Smart Citations ( What are Smart Citations? )
+Code & Data
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax ( What is MathJax? )
+
+    About
+    Help
+
+    contact arXiv Click here to contact arXiv Contact
+    subscribe to arXiv mailings Click here to subscribe Subscribe
+
+    Copyright
+    Privacy Policy
+
+    Web Accessibility Assistance
+
+    arXiv Operational Status
+    Get status notifications via email or slack
+

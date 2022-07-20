@@ -1,0 +1,248 @@
+On the Unreasonable Effectiveness of Centroids in Image Retrieval
+
+arXiv:2104.13643v1 [cs.CV] 28 Apr 2021
+
+Mikolaj Wieczorek∗
+Synerise Warsaw University of Technology
+Poland
+
+Barbara Rychalska∗
+Synerise Warsaw University of Technology
+Poland
+
+Jacek Dabrowski
+Synerise Poland
+
+ABSTRACT
+Image retrieval task consists of finding similar images to a query image from a set of gallery (database) images. Such systems are used in various applications e.g. person re-identification (ReID) or visual product search. Despite active development of retrieval models it still remains a challenging task mainly due to large intra-class variance caused by changes in view angle, lighting, background clutter or occlusion, while inter-class variance may be relatively low. A large portion of current research focuses on creating more robust features and modifying objective functions, usually based on Triplet Loss. Some works experiment with using centroid/proxy representation of a class to alleviate problems with computing speed and hard samples mining used with Triplet Loss. However, these approaches are used for training alone and discarded during the retrieval stage. In this paper we propose to use the mean centroid representation both during training and retrieval. Such an aggregated representation is more robust to outliers and assures more stable features. As each class is represented by a single embedding the class centroid - both retrieval time and storage requirements are reduced significantly. Aggregating multiple embeddings results in a significant reduction of the search space due to lowering the number of candidate target vectors, which makes the method especially suitable for production deployments. Comprehensive experiments conducted on two ReID and Fashion Retrieval datasets demonstrate effectiveness of our method, which outperforms the current stateof-the-art. We propose centroid training and retrieval as a viable method for both Fashion Retrieval and ReID applications.
+1 INTRODUCTION
+Instance retrieval is a problem of matching an object from a query image to objects represented by images from a gallery set. Applications of retrieval systems span person/vehicle re-identification, face recognition, video surveillance, explicit content filtering, medical diagnosis and fashion retrieval.
+Most existing instance retrieval solutions use Deep Metric Learning methodology [1, 3, 6, 7, 13, 16], in which a deep learning model is trained to transform images to a vector representation, so that samples from the same class are close to each other. At the retrieval stage, the query embedding is scored against all gallery embeddings and the most similar ones are returned. Until recently, a lot of works used classification loss for the training of retrieval models [8, 14, 15, 17, 20]. Currently most works use comparative/ranking losses and the Triplet Loss is one of the most widely used approaches. However, state-of-the-art solutions often combine a comparative loss with auxiliary losses such as classification or center loss [5, 7, 12, 13, 16].
+∗Both authors contributed equally to this research.
+
+(a) Centroid-based retrieval
+
+(b) Instance-based retrieval
+
+Figure 1: Comparison of centroid-based and instance-based retrieval. Dashed lines indicate distance between the query image (coloured frame) and the nearest neighbour from each class. a) The centroid is calculated as the mean of all samples (shaded images) belonging to each class. The query is assigned the class of the nearest centroid, which is the correct "gold" class. b) The distance is calculated between all samples and the query. It is erroneously assigned the "blue" class, as the blue-class sample is its nearest neighbour.
+
+Even though Triplet Loss is superior to most other approaches, it has problems that were indicated by numerous works [2, 16, 18, 21]: 1) Hard negative sampling is the dominant approach in creating training batches containing only informative triplets in a batch, but it may lead to bad local minima and prevent the model from achieving top performance [2, 18]; 2) Hard negative sampling is computationally expensive, as the distance needs to be calculated between all samples in the batch [2, 16]; 3) Triplet Loss is prone to outliers and noisy labels due to hard negative sampling and the nature of point-to-point losses [16, 18]
+To alleviate problems stemming from the point-to-point nature of Triplet Loss, changes to point-to-set/point-to-centroid formulations were proposed, where the distances are measured between a sample and a prototype/centroid representing a class. Centroids are aggregations of each item’s multiple representations. A centroid approach results in one embedding per item, decreasing both memory and storage requirements. There are a number of approaches investigating the prototype/centroid formulation and their main advantages are as follows: 1) Lower computational cost [2, 16], of even linear complexity instead of cubic [2]; 2) Higher robustness to outliers and noisy labels [16, 18]; 3) Faster training [11]; 4) Comparable or better performance than the standard point-to-point triplet loss [5, 11, 16].
+We propose to go a step further and use the centroid-based approach for both training and inference, with applications to fashion retrieval and person re-identification. We implement our centroidbased model by augmenting the current state-of-the-art model in fashion retrieval [13] with a new loss function we call Centroid
+
+M. Wieczorek et al.
+
+Figure 2: Architecture of our CTL-Model. Parts added over [13] are marked in red.
+
+Triplet Loss. The baseline model has a number of losses optimized simultaneously, which account for various aspects of the retrieval problem. An additional centroid-based loss can thus be easily added in order to amend one of the recurring problems: lack of robustness against variability in object galleries. Centroids are computed with simple averaging of image representations. We show that this straightforward model amendment allows to lower the latency of requests and decrease infrastructure costs, at the same time producing new state-of-the-art results in various evaluation protocols, datasets and domains. We also discuss why such formulation of the retrieval problem is viable and advantageous compared to standard image-based approaches.
+The contributions of this work are fourfold:
+• We introduce the Centroid Triplet Loss - a new loss function for instance retrieval tasks
+• We propose to use class centroids as representations during retrieval.
+• We show through thorough experiments that the centroidbased approach establishes new state-of-the-art results across different datasets and domains (fashion retrieval and person re-identification).
+• We show that the centroid-based approach for retrieval tasks brings significant inference speed-ups and storage savings compared to the standard instance-level approach.
+2 PROPOSED METHOD
+The image retrieval task aims to find the most similar object to the query image. In both fashion retrieval and person re-identification it is usually done on an instance-level basis: each query image is scored against all images from the gallery. If an object has several images assigned (e.g. photos from multiple viewpoints, under variable lighting conditions), then each image is treated separately. As a result, the same object may occur multiple times in the ranking result. Such a protocol can be beneficial as it allows to match images that were taken in similar circumstances, with similar angle, depicting the same part of the object or a close-up detail. On the other hand, the advantage can easily turn disadvantageous as a photo of a detail of a completely different object may be similar to the details in the query image, causing a false match.
+
+We propose to use an aggregated item representation using all available samples. This approach results in a robust representation which is less susceptible to a single-image false matches. Using aggregated representations, each item is represented by a single embedding, leading to a significantly reduced search space saving memory and reducing retrieval times significantly. Apart from being more computationally efficient during retrieval, the centroid-based approach also improves retrieval results compared to non-centroid-based approaches.Note that training the model in a centroid-based setting does not restrict the evaluation protocol to centroid-only evaluation, but also improves results in the typical setting of instance-level evaluation.
+
+2.1 Centroid Triplet Loss
+Triplet Loss originally works on an anchor image 𝐴, a positive (same class) example 𝑃 and a negative example belonging to another class 𝑁 . The objective is to minimize the distance between 𝐴 − 𝑃, while push away the 𝑁 sample. The loss function is formulated as follows:
+
+L𝑡𝑟𝑖𝑝𝑙𝑒𝑡 = ∥ 𝑓 (𝐴) − 𝑓 (𝑃) ∥22 − ∥ 𝑓 (𝐴) − 𝑓 (𝑁 ) ∥22 + 𝛼 + (1)
+
+where [𝑧]+ = 𝑚𝑎𝑥 (𝑧, 0), 𝑓 denotes embedding function learned during training stage and 𝛼 is a margin parameter.
+We propose the Centroid Triplet Loss (CTL). Instead of comparing the distance of an anchor image 𝐴 to positive and negative instances, CTL measures the distance between 𝐴 and class centroids 𝑐𝑃 and 𝑐𝑁 representing either the same class as the anchor or a different class respectively. CTL is therefore formulated as:
+
+L𝑡𝑟𝑖𝑝𝑙𝑒𝑡 = ∥ 𝑓 (𝐴) − 𝑐𝑃 ∥22 − ∥ 𝑓 (𝐴) − 𝑐𝑁 ) ∥22 + 𝛼𝑐 +
+
+(2)
+
+2.2 Aggregating item representations
+
+During training stage each mini-batch contains 𝑃 distinct item
+
+classes with 𝑀 samples per class, resulting in batch size of 𝑃 × 𝑀.
+
+Let 𝑆𝑘 denote a set of samples for class 𝑘 in the mini-batch such
+
+that S𝑘 = {𝑥1, ..., 𝑥𝑀 } where 𝑥𝑖 represents an embedding of i-th
+
+sample,
+
+such
+
+that
+
+𝑥𝑖
+
+∈
+
+𝐷
+𝑅
+
+,
+
+with 𝐷
+
+being
+
+the
+
+sample
+
+representation
+
+size. For effective training, each sample from S𝑘 is used as a query 𝑞𝑘 and the rest 𝑀 − 1 samples are used to build a prototype centroid
+
+𝑐𝑘𝑝 , which can be expressed as:
+
+On the Unreasonable Effectiveness of Centroids in Image Retrieval
+
+1
+
+∑︁
+
+𝑐𝑘𝑝
+
+=
+
+|S𝑘
+
+\ {𝑞𝑘 }|
+
+𝑓 (𝑥𝑖 )
+𝑥𝑖 ∈S𝑘 \{𝑞𝑘 }
+
+(3)
+
+where 𝑓 represents the neural network encoding images to 𝐷 dimensional embedding space.
+During evaluation query images are supplied from the query set Q, and centroids for each class 𝑘 are precalculated before the retrieval takes place. To construct these centroids we use all embeddings from the gallery set G𝑘 for class 𝑘. The centroid of each class 𝑐𝑘 ∈ 𝑅𝐷 is calculated as the mean of all embeddings belonging to the given class:
+
+1 ∑︁
+
+𝑐𝑘 = |G𝑘 | 𝑥𝑖 ∈G𝑘 𝑓 (𝑥𝑖 )
+
+(4)
+
+We apply centroid computation and CTL to the fashion retrieval
+
+state-of-the-art model described in [13]. This model embeds im-
+
+ages with a baseline CNN model (using variations of the ResNet
+
+architecture) and passes them through a simple feed-forward ar-
+
+chitecture with average pooling and batch normalization. Three
+
+separate loss functions are computed at various stages of forward
+
+propagation. We add centroid computation for training just after
+
+embedding with the CNN. Centroids for inference are computed in
+
+the next step (after batch normalization) for consistency with the
+
+original model. The resulting architecture is displayed in Figure 2.
+
+Note that our centroid-based training and evaluation method can
+
+be also transplanted to other models, as CTL can be computed next
+
+to other existing loss functions.
+
+Table 1: Fashion Retrieval Results. S or L in the model name indicates input image size, either Small (256x128) or Large (320x320). R50 or R50IBN suffix indicates which backbone CNN was used, Resnet50 or Resnet50-IBN-A respectively. ’CE’ at the end of model name denotes Centroid-based Evaluation.
+
+Street2Shop DeepFashion
+
+Dataset
+
+Model SOTA (S-R50) [13] CTL-S-R50 CTL-S-R50 CE SOTA (L-R50IBN) [13] CTL-L-R50IBN CTL-L-R50IBN CE SOTA (S-R50) [13] CTL-S-R50 CTL-S-R50 CE SOTA (L-R50IBN) [13] CTL-L-R50IBN CTL-L-R50IBN CE
+
+mAP 0.324 0.344 0.404 0.430 0.431 0.492 0.320 0.353 0.498 0.468 0.459 0.598
+
+Acc@1 0.281 0.298 0.294 0.378 0.376 0.373 0.366 0.418 0.432 0.537 0.533 0.537
+
+Acc@10 0.583 0.612 0.613 0.711 0.711 0.712 0.611 0.594 0.619 0.698 0.689 0.709
+
+Acc@20 0.655 0.685 0.689 0.772 0.776 0.777 0.606 0.643 0.660 0.736 0.728 0.750
+
+Acc@50 0.742 0.770 0.774 0.841 0.847 0.850 0.702 0.721 0.782 0.792
+
+3 EXPERIMENTS
+3.1 Datasets
+DeepFashion (Fashion Retrieval). The dataset was introduced by [6] an contains over 800,000 images, which are spread across several fashion related tasks. The data we used is a Consumer-to-shop Clothes Retrieval subset that contains 33,881 unique clothing products and 239,557 images.
+
+Street2Shop (Fashion Retrieval). The dataset contains over 400,000 shop photos and 20,357 street photos. In total there are 204,795 distinct clothing items in the dataset. It is one of the first modern large-scale fashion dataset and was introduced by [4].
+Market1501 (Person Re-identification). Introduced in [19] in 2015, it contains 1501 classes/ identities scattered across 32,668 bounding boxes and captured by 6 cameras at Tsinghua University. 751 classes are used for training, and 750 with distractors are used for evaluation.
+DukeMTMC-reID (Person Re-identification). It is a subset of DukeMTMC dataset [9]. It contains 1,404 classes/identities, 702 are used for training and 702 along with 408 distractor identities are used for evaluation.
+3.2 Implementation Details
+We implement our centroid-based solution on top of the current fashion retrieval state-of-the-art model [13], which itself is based on a top-scoring ReID model [7]. We train our model on various Resnet-based backbones pretrained on ImageNet, and report results for Fashion Retrieval and Person Re-Identification tasks. We evaluate the model both in centroid-based and instance-based setting. Instance-based setting means that pairs of images are evaluated, identically as in the evaluation setting of [13]. We use the same training protocol presented in the aforementioned papers (e.g. random erasing augmentation, label smoothing), without introducing any additional steps.
+Feature extractor. We test two CNNs: Resnet-50 and Resnet50IBN-A to compare our results on those two networks. Like [7, 13], we use 𝑠𝑡𝑟𝑖𝑑𝑒 = 1 for the last convolutional layer and Resnet-50 native 2048 dimensional embedding size.
+Loss functions. [7, 13] use a loss function consisting of three parts: (1) Triplet loss calculated on the raw embeddings, (2) Center Loss [12] as an auxiliary loss, (3) classification loss computed on batchnormalized embeddings. To train our model based on centroids we use the same three losses and add CTL, which is computed between query vectors and class centroids. Center Loss was weighted by a factor of 5𝑒−4, all other losses were assigned a weight of 1.
+Our Fashion Retrieval parameter configuration is identical as in [13]. We use Adam optimizer with base learning rate of 1𝑒−4 and multistep learning rate scheduler, decreasing the learning rate by a factor of 10 after 40th and 70th epoch. Like in [7, 13] the Center Loss was optimized separately by SGD optimizer with 𝑙𝑟 = 0.5. Each model was trained 3 times, for 120 epochs each. For Person Re-Identification, the configuration is identical as in [7]. The base learning rate is 3.5𝑒−4, decayed at 40th and 70th epoch. The models were trained for 120 epochs each.
+Resampling. For Triplet Loss it is important to have enough positive samples per class, but some classes may have few samples. Therefore it is a common practice to define a target sample size 𝑀 and resample class instances if |S𝑘 | < 𝑀, resulting in repeated images in the mini-batch. We empirically verify that in our scenario it is beneficial to omit the resampling procedure. As resampling introduces noise to class centroids, we use only the unique class instances which are available.
+
+Retrieval procedure. We follow [7] and [13] in utilizing batchnormalized vectors during inference stage. Likewise, we use cosine similarity as the distance measure. For the ReID datasets we use a cross-view matching setting, which is used in other ReID papers [7, 10]. This protocol ensures that for each query its gallery samples that were captured by the same camera are excluded during retrieval.
+
+Table 2: Comparison of storage and time requirements between instance and centroid-based models across tested datasets
+
+Dataset Deep Fashion Street2Shop Market1501 Duke-MTMC
+
+Mode
+Instances Centroids Instances Centroids Instances Centroids Instances Centroids
+
+# in gallery
+22k 16k 350k 190k 16k 0.75k 17k 1.1k
+
+Embeddings filesize (MB)
+175 130 2700 1500 120 6 140 9
+
+Total eval time (s) 81.35 59.83 512.30 146.28
+4.75 0.26 3.61 0.37
+
+Table 3: Person Re-Identification Results
+
+Dataset Market1501 Duke-MTMC-ReID
+
+Model SOTA [10] CTL-S-R50 SOTA [10] CTL-S-R50
+
+mAP 0.955 0.983 0.927 0.961
+
+Acc@1 0.980 0.980 0.945 0.956
+
+Acc@5 0.989 0.986 0.968 0.962
+
+Acc@10 0.991 0.995 0.971 0.979
+
+3.3 Fashion Retrieval Results
+We present the evaluation results for fashion retrieval in Table 1. We evaluate two models: SOTA denotes the model presented in [13], and CTL - our centroid-based model. Each model was evaluated in two modes: 1) standard instance-level evaluation on per-image basis (for both SOTA and CTL models), and 2) centroid-based evaluation, (denoted by CE in Table 1): evaluation of CTL model on per-object basis, where all images from each class were used to build the class centorid and retrieval was done in centroid domain.
+Our CTL model performs better than the current state-of-theart in most metrics across all tested datasets. Especially noticeable is the surge in mAP metric, which can be explained by the fact that usage of centroids reduces the search space. The reduction of the search space with centroid-based evaluation is coupled with reduction of the number of positive instances (from several to just one). Accuracy@K metrics on the other hand are not influenced by the change of search space.
+3.4 Person ReID Results
+We present the evaluation results for person re-identification in Table 3. Similarly as in fashion retrieval, we evaluate the following models: SOTA denotes the current state-of-the-art in ReID [10], and CTL - our centroid-based model. We only report centroid-based
+
+M. Wieczorek et al.
+evaluation results for CTL-model, as previous methods often restrict the search space arbitrarily. For example, [10] (the current SOTA on both ReID test datasets) reduce the search space during retrieval with spatial and temporal constraints to decrease the number of candidates by eliminating cases where the person could not have possibly moved by a certain distance in the given time. Their approach requires extra information in the dataset and world knowledge necessary to construct the filtering rules, apart from just image understanding. Despite reliance on image matching alone, our centroid-based search space reduction achieves nearly the same or even better results across all metric on both datasets, outperforming [10] across most metrics and establishing the new state-of-the-art results.
+3.5 Memory Usage and Inference Times
+To test memory and computation efficiency of our centroid-based method compared to standard image-based retrieval, we compare the wall-clock time taken for evaluating all test datasets and the storage required for saving all embeddings. Table 2 shows the statistics for all datasets for instance-level and centroid-based scenarios. It can be seen that the centroid-based approach significantly reduces both retrieval time and the disk space required to store the embeddings. The reduction is caused by the fact that there are often several images per class, thus representing a whole group of object images with a centroid reduces the number of vectors necessary for a successful retrieval to one.
+4 CONCLUSIONS
+We introduce Centroid Triplet Loss - a new loss function for instance retrieval tasks. We empirically confirm that it significantly improves the accuracy of retrieval models. In addition to the new loss function, we propose the usage of class centroids during retrieval inference, further improving the accuracy metrics on retrieval tasks. Our methods are evaluated on four datasets from two different domains: Person Re-identification and Fashion Retrieval, and establish new state-of-the-art results on all datasets. In addition to accuracy improvements, we show that centroid-based inference leads to very significant computation speedups and lowering of memory requirements. The combination of increased accuracy with faster inference and lower resource requirements make our method especially useful in applied industrial settings for instance retrieval.
+REFERENCES
+[1] Haiwen Diao, Ying Zhang, Lin Ma, and Huchuan Lu. 2021. Similarity Reasoning and Filtration for Image-Text Matching. Technical Report. arXiv:2101.01368 http://arxiv.org/abs/2101.01368
+[2] Thanh Toan Do, Toan Tran, Ian Reid, Vijay Kumar, Tuan Hoang, and Gustavo Carneiro. 2019. A theoretically sound upper bound on the triplet loss for improving the efficiency of deep distance metric learning. Technical Report.
+[3] Hee Jae Jun, Byung Soo Ko, Youngjoon Kim, Insik Kim, and Jongtack Kim. 2019. Combination of multiple global descriptors for image retrieval. Technical Report. arXiv:1903.10663 https://github.com/naver/cgd
+[4] M. Hadi Kiapour, Xufeng Han, Svetlana Lazebnik, Alexander C. Berg, and Tamara L. Berg. 2015. Where to buy it: Matching street clothing photos in online shops. Technical Report. 3343–3351 pages. https://doi.org/10.1109/ICCV.2015.382
+[5] Miguel Lagunes-Fortiz, Dima Damen, and Walterio Mayol-Cuevas. [n.d.]. Centroids Triplet Network and Temporally-Consistent Embeddings for In-Situ Object Recognition.
+[6] Ziwei Liu, Ping Luo, Shi Qiu, Xiaogang Wang, and Xiaoou Tang. 2016. DeepFashion: Powering Robust Clothes Recognition and Retrieval with Rich Annotations. Technical Report. 1096–1104 pages. https://doi.org/10.1109/CVPR.2016.124
+
+On the Unreasonable Effectiveness of Centroids in Image Retrieval
+[7] Hao Luo, Wei Jiang, Youzhi Gu, Fuxu Liu, Xingyu Liao, Shenqi Lai, and Jianyang Gu. 2019. A Strong Baseline and Batch Normalization Neck for Deep Person Reidentification. Technical Report. https://github.com/michuanhaohao/reid-strongbaseline
+[8] Hyeonwoo Noh, Andre Araujo, Jack Sim, Tobias Weyand, and Bohyung Han. 2017. Large-Scale Image Retrieval with Attentive Deep Local Features. In Proceedings of the IEEE International Conference on Computer Vision, Vol. 2017-Octob. 3476–3485. https://doi.org/10.1109/ICCV.2017.374 arXiv:1612.06321
+[9] Ergys Ristani, Francesco Solera, Roger Zou, Rita Cucchiara, and Carlo Tomasi. 2016. Performance measures and a data set for multi-target, multi-camera tracking. In Lecture Notes in Computer Science (including subseries Lecture Notes in Artificial Intelligence and Lecture Notes in Bioinformatics), Vol. 9914 LNCS. Springer Verlag, 17–35. https://doi.org/10.1007/978-3-319-48881-3_2 arXiv:1609.01775
+[10] Guangcong Wang, Jianhuang Lai, Peigen Huang, and Xiaohua Xie. 2019. Spatialtemporal person re-identification. In 33rd AAAI Conference on Artificial Intelligence, AAAI 2019, 31st Innovative Applications of Artificial Intelligence Conference, IAAI 2019 and the 9th AAAI Symposium on Educational Advances in Artificial Intelligence, EAAI 2019. AAAI Press, 8933–8940. https://doi.org/10.1609/aaai. v33i01.33018933 arXiv:1812.03282
+[11] Jixuan Wang, Kuan Chieh Wang, Marc T. Law, Frank Rudzicz, and Michael Brudno. 2019. Centroid-based Deep Metric Learning for Speaker Recognition. Technical Report. 3652–3656 pages. https://doi.org/10.1109/ICASSP.2019.8683393 arXiv:1902.02375
+[12] Yandong Wen, Kaipeng Zhang, Zhifeng Li, and Yu Qiao. 2016. A discriminative feature learning approach for deep face recognition. In Lecture Notes in Computer Science (including subseries Lecture Notes in Artificial Intelligence and Lecture Notes in Bioinformatics), Vol. 9911 LNCS. Springer Verlag, 499–515. https://doi.org/10. 1007/978- 3- 319- 46478- 7_31
+[13] Mikolaj Wieczorek, Andrzej Michalowski, Anna Wroblewska, and Jacek Dabrowski. 2020. A Strong Baseline for Fashion Retrieval with Person Reidentification Models. In Communications in Computer and Information Science, Vol. 1332. Springer Science and Business Media Deutschland GmbH, 294–301.
+
+https://doi.org/10.1007/978-3-030-63820-7_33 arXiv:2003.04094 [14] Tong Xiao, Hongsheng Li, Wanli Ouyang, and Xiaogang Wang. 2016. Learn-
+ing deep feature representations with domain guided dropout for person reidentification. In Proceedings of the IEEE Computer Society Conference on Computer Vision and Pattern Recognition, Vol. 2016-Decem. arXiv, 1249–1258. https: //doi.org/10.1109/CVPR.2016.140 arXiv:1604.07528 [15] Tong Xiao, Hongsheng Li, Wanli Ouyang, and Xiaogang Wang. 2016. Learning deep feature representations with domain guided dropout for person reidentification. In Proceedings of the IEEE Computer Society Conference on Computer Vision and Pattern Recognition, Vol. 2016-Decem. 1249–1258. https: //doi.org/10.1109/CVPR.2016.140 arXiv:1604.07528 [16] Ye Yuan, Wuyang Chen, Yang Yang, and Zhangyang Wang. 2019. In defense of the triplet loss again: Learning robust person re-identification with fast approximated triplet loss and label distillation. Technical Report. https://github.com/TAMUVITA/FAT [17] Andrew Zhai and Hao Yu Wu. 2018. Classification is a Strong Baseline for Deep Metric Learning g 2019. arXiv:1811.12649v2 [18] Zhizheng Zhang, Cuiling Lan, Wenjun Zeng, Zhibo Chen, and Shih Fu Chang. 2020. Rethinking Classification Loss Designs for Person Re-identification with a Unified View. Technical Report. arXiv:2006.04991 [19] Liang Zheng, Liyue Shen, Lu Tian, Shengjin Wang, Jingdong Wang, and Qi Tian. 2015. Scalable person re-identification: A benchmark. Technical Report. 1116–1124 pages. https://doi.org/10.1109/ICCV.2015.133 [20] Kaiyang Zhou, Yongxin Yang, Andrea Cavallaro, and Tao Xiang. 2019. Omni-scale feature learning for person re-identification. In Proceedings of the IEEE International Conference on Computer Vision, Vol. 2019-Octob. Institute of Electrical and Electronics Engineers Inc., 3701–3711. https://doi.org/10.1109/ICCV.2019.00380 arXiv:1905.00953 [21] Sanping Zhou, Jinjun Wang, Jiayun Wang, Yihong Gong, and Nanning Zheng. 2017. Point to set similarity based deep feature learning for person re-identification. Technical Report. 5028–5037 pages. https://doi.org/10.1109/CVPR.2017.534
+

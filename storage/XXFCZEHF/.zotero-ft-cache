@@ -1,0 +1,1065 @@
+Tracklets Predicting Based Adaptive Graph Tracking
+Chaobing Shan1,2, Chunbo Wei2, Bing Deng2, Jianqiang Huang2, Xian-Sheng Hua2 Xiaoliang Cheng1, Kewei Liang1,*
+1,∗ School of Mathematical Sciences, Zhejiang University 2DAMO Academy, Alibaba Group chaobing s@zju.edu.cn, chunbo.wcb@alibaba-inc.com, dengbing.db@alibaba-inc.com
+jianqiang.hjq@alibaba-inc.com, huaxiansheng@gmail.com, xiaoliangcheng@zju.edu.cn, matlkw@zju.edu.cn
+
+arXiv:2010.09015v3 [cs.CV] 19 Nov 2020
+
+Abstract
+Most of the existing tracking methods link the detected boxes to the tracklets using a linear combination of feature cosine distances and box overlap. But the problem of inconsistent features of an object in two different frames still exists. In addition, when extracting features, only appearance information is utilized, neither the location relationship nor the information of the tracklets is considered. We present an accurate and end-to-end learning framework for multiobject tracking, namely TPAGT. It re-extracts the features of the tracklets in the current frame based on motion predicting, which is the key to solve the problem of features inconsistent. The adaptive graph neural network in TPAGT is adopted to fuse locations, appearance, and historical information, and plays an important role in distinguishing different objects. In the training phase, we propose the balanced MSE LOSS to successfully overcome the unbalanced samples. Experiments show that our method reaches stateof-the-art performance. It achieves 76.5% MOTA on the MOT16 challenge and 76.2% MOTA on the MOT17 challenge.
+1. Introduction
+Object tracking is a very important task in computer vision. It has many applications in autonomous driving, video surveillance, behavior prediction, trafﬁc management, and accident prevention[17, 16]. The multi-object tracking (MOT) always deals with various objects, such as pedestrians, vehicles, athletes, animals, and so on. Each object is given a unique id (identity) and the trajectory is formed. A new object will be given a new id, while a disappearing objects need to be removed from the tracklets. Compared with single-object tracking, MOT is more complicated, which is mainly used in video scenes. Many videos cover different scenes, such as sharpness range from clear to blurry,
+*Corresponding Author
+
+light intensity range from the day to the night, viewing angle range from high to low, and camera lenses range from static to moving. In addition, many objects in the video are occluded, or often reﬂected in mirrors or windows, or will only be visible at the edge of the camera. The appearance of different objects is often similar, and they may be deformed, too small in size or very densely located, etc. What is more, when an object is in motion, its posture, video shooting angle and even the light intensity may change. All of these problems are more complicated for multi-object tracking[4].
+A common practice in [20, 21, 22, 23, 24, 25, 26] is using the Kalman ﬁlter[39] to predict the locations of the tracklets in the current frame, then the Hungarian algorithm[19] is adopted for matching. In some existing methods [1, 27, 28, 29, 30, 31, 33, 32], CNN or variational method is selected to estimate the optical ﬂow of the tracklets from the previous frame to the current frame, and the greedy algorithm is adopted to complete the matching. In the literature [2, 34, 35], a more reﬁned feature vector is extracted by an adding re-id branch, a similarity matrix is formed by a linear combination of feature similarity and IOU(Intersection over Union), and the matching is completed by the Hungarian algorithm. Although these methods have made great progress in multi-object tracking, there are still the following limitations.
+1. The feature of the tracklets is not from the current frame. During the movement, an object may change its posture. The light intensity and video shooting angle may change too. These lead to inconsistent features of an object extracted from different frames. The tracking accuracy is severely reduced during matching.
+2. In extracting feature, only appearance information is utilized. Neither the location relationship nor the information of the tracklets is considered.
+3. There exist a drawback of unbalanced samples. A tracklet can only match a detected bbox(bounding box)
+
+1
+
+that is a continuous positive sample. The rest unmatched tracklets belong to continuous negative samples. Obviously, the number of continuous positive samples is less than that of continuous negative samples. More worsely, few new objects and disappearing objects are observed. Therefore, the sample numbers of the different types are unbalanced.
+To solve the above problems, we need to extract the features of the tracklets in the current frame. But, we cannot use the bboxes of the tracklets directly, because they are not aligned with the detected bboxes. We predict the motion of the tracklets and re-extract their features in the current frame. Note that the connection between different objects look like a graph network. Each object is as a node, and the information can be spread through the connection between nodes. This motivates us to adopt the graph neural networks (GNN)[15] to integrate more information of tracklets and obtain better features of objects. In order to further maintain the global spatiotemporal location, appearance information, and historical information of each object, our GNN, termed adaptive graph neural networks (AGNN), needs to learn itself adaptive weights.
+Consequently, in this paper, we present an end-to-end learning framework based on GNN, termed TPAGT tracker. TPAGT uses the sparse optical ﬂow method to calculate the center location of tracklets in the current frame. ROI Align[67] and fully connected layers are adopted to extract the initial appearance feature vectors of the tracklets and the detected objects. We input the feature vector into the graph neural network and get the similarity matrix of the detected objects. Moreover, in the training phase, we propose the balanced MSE LOSS to successfully overcome the unbalanced samples. Experiments show that our method reaches state-of-the-art performance. It achieves 76.5% MOTA on the MOT16 challenge and 76.2% MOTA on the MOT17 challenge.
+The main contributions of our method are:
+1. Trackle prediting based feature re-extraction. We predict the motion of tracklets, and re-extract their features in the current frame so that the features of the tracklets can be aligned with the features of the detected objects in the current frame. This causes in high probability to get the consistent features of an object from different frames.
+2. AGNN. Through integrating the locations and appearance information of tracklets and the detections, AGNN can update features and re-identify occluded objects.
+3. BMSE. The balanced MSE Loss is proposed to overcome the challenge of unbalanced samples.
+
+4. SOTA. TPAGT signiﬁcantly outperforms existing state-of-the-art methods both on public and private detections of MOT Challenges.
+The following contents in this article are organized as follows: Section 2 reviews the related work about the tracking. In Section 3, we introduce the TPAGT tracker. Section 4 shows the main results and ablation experiments. The summary is listed in Section 5.
+2. Related Work
+This paper divides existing work into two categories according to whether feature matching is adopted.
+Featureless matching: SORT[20] detects the objects’ locations and categories by Faster-RCNN[18], uses the Kalman ﬁlter[39] to predict the tracklets’ location in the current frame, and calculates the IOU, ﬁnally applies the Hungarian algorithm to link detected boxes to the tracklets. CenterTrack[1] inherits the network structure of CenterNet[37]. It has four more channels on the input than CenterNet: the 3-channel RGB image of the previous frame and the heatmap after the maximum pooling on the category channel. The output has one more branch: the optical ﬂow prediction branch, which is used to predict the objects’ displacement from the previous frame to the current frame. Finally, the distance between the tracklets and the detected objects is calculated, and a simple greedy algorithm is used to complete the matching.
+Feature matching: featureless matching actually looks at the location relationship between the tracklets and the detected objects. In addition to the important factor of location, the appearance of the object is also a very important factor, such as black clothes, white clothes, fat, thin, front, back, and so on are all important feature that distinguish different objects. RetinaTrack[35] corrects the shortcoming that the structure of RetinaNet[38] is not suitable for capturing the features of each instance. The more speciﬁc instance features corresponding to the anchor shape are captured before the classiﬁcation and border regression, and then add a feature embedding branch, which is used for calculating feature distance, then track. FairMOT[2] proposed the reasons why the features captured by the anchor-based model are not good. However, the Re-id output of FairMOT is a one-hot vector, When the actual number of objects is much more than the output dimension, it will not be able to track. For the ﬁrst time, Wang[36] et al. proposed a framework for joint detection and tracking using GNN. The detected objects and tracklets are divided into bipartite graphs. There is a problem here, in the graph neural network, the weights of the edges between the detected objects and the tracklets are the same. This may result in the failure to learn good features, or the ﬁnal feature vectors are averaged, that is, all the feature vectors of the objects are almost the same.
+
+2
+
+In addition to tracking based on detection, there is also tracking to facilitate detection. Zhang[34] et al. proposed the Tracklet-Conditioned formula. Based on the detection results of Faster-Rcnn and the known historical trajectories, the bayesian formula is fully utilized to update the probability of the detection category. One more feature embedding branch is added to Faster-Rcnn architecture to calculate the cosine similarity between objects’ feature vectors, and then matching. But this method also has drawbacks, because the Tracklet-Conditioned formula may only improve the accuracy of the classiﬁcation, but not the accuracy of the bounding box coordinates.
+In order to obtain a good tracking result, it makes sense that the location, appearance, and tracklets information is fully utilized. Although some of the above work predicts the location of the tracklets in the current frame, it does not use the predicted location to update the tracklets’ feature vectors. And when an object is occluded, a small part of the occluded object will obviously not be occluded, we need give that small part a large weight to get a more reﬁned Reid feature vector. Besides, an object reappears after being occluded, it is necessary to aggregate the global spatiotemporal information to update the Re-id feature vector. In addition, all these work ignored the unbalanced distribution of four types of samples.
+3. The TPAGT Architecture
+As shown in Figure 1, the TPAGT is an end-to-end tracking method, which consists of two main steps. The ﬁrst step is tracklets predicting based feature re-extracting. It extracts features of detected objects and re-extracts features of tracklets in the current frame. The second step is updating features in adaptive graph tracking. The adaptive graph neural network is adopted with integrating all temporal and spatial information of the tracklets. Obviously, this is better than extracting only with the appearance information. We also introduce the balanced MSE Loss in training time for balancing sample distribution. Finally, we adopt the Hungarian algorithm in an augmented similarity matrix to complete matching in inference time.
+3.1. Tracklets predicting based feature reextracting
+As mentioned in Section 1, we use the sparse optical ﬂow method, cause we only need to predict the motion of bboxes’ center points. In some cases, the speed of an object is very large, we must choose the suitable method of optical ﬂow for large motion estimation, so we apply the pyramid LK algorithm [7]. As shown in the ﬁgure2, even if the object has a large motion between the previous and current frames, it can still align the tracklet bbox with the detected bbox well when using the pyramid LK algorithm.
+
+The current frame It is transformed into feature maps by backone, the detected M bboxes use ROI Align to extract region features. These features are transformed into feature vectors through fully connected layers. At the same time, the pyramid-LK algorithm predicts the locations of tracklets(from the It−1 frame) in the current frame, with the bboxes of the previous k frames (except for the It−1 frame), a total of N historical bboxes are also transformed into feature vectors. The bboxes and feature vectors are the input of the adaptive graph neural network introduced in the next subsection. Here we re-extract the features of tracklets in the current frame, this can solve the problem of dissimilar features due to the large movement of the same object between different frames
+
+3.2. Adapted Graph Neural Network
+
+We treat detected objects and tracklets as a bipartite graph. Each object or tracklet is as a node. Each detected object has a connection with all tracklets, but there is no connection between any two detected objects, nor two tracklets. The learning goal of GNN is obtaining the perception information of each node v’s (perception is relative to compression, using existing information features and weights to reconstruct more complete information features) hiding state hv(state embedding). For each node, its hidden state contains information of the neighboring nodes. We use the update formula:
+
+hid,c+1 = f hid,c, {hjt,c, eid,,jc}Nj=1 , i = 1, 2, · · · , M, hjt,c+1 = f hjt,c, {hid,c, ejt,,ci }M i=1 j = 1, 2, · · · , N.
+
+(1)
+
+Here f is the neural network, hid,c is the hidden feature vector of the i-th detected object in the c-th layer, and hjt,c is the hidden feature vector of the j-th tracklet in the c-th layer. When c = 0, hid,0 = fdi, hit,0 = ftj . eid,,jc represents the weight of the edge between the i-th detected object and the j-th tracklet in the c layer. In this paper, we use the GNN
+of one hidden layer and add an adaptive part that will be
+introduced in the following.
+When using AGNN(Adaptive Graph Neural Network) to
+update the feature vectors of all objects, we use the existing
+location and feature prior information as the weight of the edge E = [ei,j] to aggregate feature vectors then updating
+them, instead of simply setting some unknown parameters
+to update the features. The speciﬁc aggregation steps are as
+follows:
+
+1) Calculate the initial feature similarity matrix
+
+1
+
+si,j =
+
+,
+
+fdi − ftj
+
++ 1 × 10−16
+2
+
+(2)
+
+si,j =
+
+si,j
+
+, (3)
+
+s2i,1 + s2i,2 + · · · s2i,j + · · · + s2i,N
+
+3
+
+Current frame 𝐼𝑡 𝑏𝑑𝑖 ∈ 𝑅1×4
+backbone
+
+c channels
+
+Previous k frames
+
+Feature maps 𝑏𝑡𝑗 ∈ 𝑅1×4
+
+ROI Align +2×FC
+
+ROI Align +2×FC
+
+𝑓𝑑𝑖 ∈ 𝑅1×1024, 𝑖 = 1, ⋯ 𝑀 FC 𝑓𝑡𝑗 ∈ 𝑅1×1024, 𝑗 = 1, ⋯ 𝑁
+
+AGNN
+
+⋯ 𝐼𝑡−𝑘
+
+𝐼𝑡−2
+
+𝐼𝑡−1
+
+Pyramidal LK
+
+ s11  s1,N 1
+
+s1,N 
+
+S = out
+
+ 
+
+
+
+ssMM,11,1
+
+  
+
+ sM 1,N 1 sM ,N 1
+
+
+
+ 
+
+sM sM
+
+1, ,N
+
+  
+
+Figure 1. TPAGT Frame-work.
+
+Sout
+
+(a) bbox from It−1
+
+(b) predicted bbox
+
+(c) ground truth bbox
+
+Figure 2. Beneﬁts of using PyraLK. All three pictures contain the same object in the current frame It. The bbox in (a) is from the previous frame It−1. (b) uses the pyramid LK algorithm to predict the motion of the object, so the object’s center position in the current frame can be found(bbox’s width and height remain unchanged), and (c) is the ground truth bbox. We can se that (b) and (c) is almost aligned.
+
+Sft = [si,j]M×N , i = 1, · · · M, j = 1, · · · N. (4)
+2) Calculate the bbox IOU and form a prior similarity matrix from the result of step 1,
+
+E = w × IOU + (1 − w) × Sft.
+
+(5)
+
+The parameter w measures the relative importance between locations information and appearance information, the neural network is good at learning it, the initial value is set to 0.5.
+
+3) Aggregation features with adaptive weights,
+
+Fatg = EFt = E
+
+ft1, ft2, · · · , ftN
+
+T
+,
+
+(6)
+
+Then update the features,
+
+Hd = σ (FdW1 + Sigmoid (FdWa) FatgW2) , (7)
+
+Ht = σ (FtW1 + Sigmoid (FtWa) FadgW2) . (8)
+Where is the dot product. The values in different dimensions of an object’s feature vector represent the important information captured from this object’s different parts. And different parts may be the key to distinguishing the objects. Therefore, when aggregating features, We need to multiply the values of different dimensions by different weights, the weights need to be determined by the input feature vector, so we call Wa as the adaptive parameter, and Sigmoid (FdWa) as the adaptive weight. That’s the reason why we call it the adaptive graph neural network.
+The existing graph network tracking algorithm needs additional fully connected layers to reduce the dimension of vectors outputting from graph neural network, then calculates the euclidean distance to measure the similarity be-
+
+4
+
+tween the feature vectors. We only need normalize the feature vectors outputting from a simple one hidden layer graph neural network, and adopt the simple matrix multiplication to get the similarity matrix:
+
+hid =
+
+hid hid
+
+,
+2
+
+hjt
+
+=
+
+hjt hjt
+
+,
+2
+
+Sout=Hd HTt
+
+(9)
+
+The output values range from 0 to 1. The larger the value, the more similar the two objects are. The purpose is to make the feature vectors of the same target close to coincide, and the feature vectors of different targets close to vertical. Its essence is equivalent to Triplet Loss[35], but simpler than Triplet Loss.
+
+3.3. Blanced MSE Loss
+
+After outputting the similarity matrix, we expect the lable corresponding to the same target to be 1, and different targets to be 0. As seen in ﬁgure 3, each row presents a detected object in the current frame, each column presents a tracklet in the previous frame. The elements in the red rectangle column are all zero, which means the historical object does not match any detected object, so it is a disappeared object. Elements in the green rectangle column are all zero, which means the detected object does not match any historical object, so it is a new appeared object which
+
+will be added a new id. Apart from the above samples, the element which equals 1 means they are the same object, so it is a pair of continuous positive sample. An element that equals 0 means they are different objects, so it is a pair of continuous negative sample.
+
+Object disappeared New Object continuous positive samples Else 0 continuous negative samples
+
+0
+
+1
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+1
+
+0
+
+0
+
+1
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+1
+
+0
+
+1
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+1
+
+0
+
+0
+
+1
+
+0
+
+0
+
+1
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+1
+
+0
+
+0
+
+0
+
+0
+
+Figure 3. Explanation of unbalanced sample number distribution.
+
+When calculating loss, we use MSE Loss. However, most targets appear continuously, with only a small number of new and disappearing targets. In addition, each tracklet has at most one positive example in the current frame (label=1), the others are all negative examples (label=0), so the number of samples is extremely unbalanced. Therefore, we multiply different coefﬁcients before the loss function corresponding to the new targets, disappearing targets, the targets of continuous positive and negative samples to balance the number distribution, and record the Loss as blanced MSE Loss(see equation 10).
+
+L =αEc0 + βEc1 + γEne + δEd + εEw
+
+
+
+MN α
+
+=
+
+
+
+
+
+i=1 j=1
+
+2
+
+2
+
+
+
+Sˆi,j − Si,j · Icontinue · ISi,j =0 + β Sˆi,j − Si,j · Icontinue · ISi,j =1
+
+
+
++γ
+
+Sˆi,j − Si,j
+
+2
+· Inew + δ
+
+Sˆi,j − Si,j
+
+2
+
+· Idisap + ε
+
+W
+
+2 2
+
+
+
+(10)
+
+Where Ic (Si,j) =
+
+1, if Si,j is the c target 0, if Si,j isn’t the c target
+
+,
+
+α, β, γ, δ, ε are the hyperparameters.
+
+3.4. Inference
+In the inference time, after the similarity matrix Sout is obtained through the adaptive graph neural network, we add a matrix of size M × M , where all elements are equal to margin = π, the matrix is placed to the right side of Sout to form an augmented matrix, i.e., Sout = [Sout, π×1M×M ], and then use the Hungarian algorithm to get the best match.
+Association match and new object appearing. Assuming that one output pair of Hungarian Algorithm is (i, j), i is the number of rows, and j is the number of columns. If j < N , then i and trackle j will be matched, and the id of j is assigned to the object i. othreise, i is a new object, then the id of the object i is equal to max{id} + 1. As shown in
+
+ﬁgure 4, take M = 8, N = 10, and take margin π = 0.2. According to the Hungarian algorithm, we can get that the third and the eighth objects in the solution are new objects, other objects are matched, the 3rd and 8th objects add 1 and 2 to the current max id number, respectively.
+
+M=8,N=10:
+0.2 0.3 0.4 0.3 0.1 0.3 0 0.1 0.9 0.1 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.3 0.4 0.2 0.3 0.3 0.2 0.2 0.2 0.3 0.8 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0 0.1 0.3 0.3 0.2 0.9 0 0.2 0.1 0.5 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.1 0.1 0.3 0.7 0.4 0.2 0.1 0.4 0.1 0.3 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.4 0.2 0.1 0.1 0.4 0.1 0.9 0.4 0.2 0.5 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.1 0.7 0.3 0.1 0.3 0 0.2 0.1 0.4 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2
+
+(0, 8) (1, 9) (2, 10) Solution: (3, 5) (4, 3) (5, 6) (6, 2) (7, 11)
+
+New id New id
+
+Figure 4. An example of our method. After Hungarian algorithm, we can get the 3rd and 8th objects are new objects, so their id are max{id} + 1 and max{id} + 2, respectively.
+
+Object disappearing. We take k = 10 in inference time.
+
+5
+
+Dataset Videos
+
+Detector
+
+Identities Boxes Frames
+
+MOT16 train 7 test 7
+
+DPM DPM
+
+517 110407 5316 756 182326 5919
+
+MOT17 train 7 DPM,FRCNN,SDP 1638 336891 15948 test 7 DPM,FRCNN,SDP 2355 564228 17757
+Table 1. MOT datasets with public detection.
+
+It means that the information of the object in the previous 10 frames is retained and is matched with the objects in the current frame. If an object in one frame does not match all objects in the next ten frames, the object is considered to disappear.
+4. Experiments
+4.1. Datasets and Metrics
+Datasets We evaluate our TPAGT on the testing sets of MOT16 and MOT17 benchmark. A brief review of MOT public datasets lists in Table 1. MOT17 includes 7 training videos and 7 testing videos, MOT16 contains same videos with MOT17. The MOT16 datasets provide public detections of the DPM detector, while the MOT17 provides public detections of three detectors (DPM, Faster-RCNN, and SDP). We perform the tracking over MOT testing sets and main results are reported on that. For private detection, we choose the detection results of the Fair[2] for tracking. For ablation experiments, cause the MOT training sets provide the ground truth and the testing sets do not provide the ground truth, we divide the MOT17 training sets into two parts, half of which was used for training, and the other half as the validation set.
+Metrics We use the 7 most widely used metrics to evaluate the quality of our tracker. The main metric is the multiobject tracking accuracy (MOTA) [41]
+M OT A = 1 − t(F Pt + F Nt + IDSWt) , (11) t GTt
+where the subscript t is the frame index and GT is the number of ground truth bbox. The second is the IDF1 Score[42], the ratio of correctly identiﬁed detections over the average number of ground truth and computed detections. The third is the mostly tracked targets (MT), the ratio of ground-truth trajectories covered by a track hypothesis for at least 80% of their respective life span. The fourth one is the mostly lost targets (ML), the ratio of ground-truth trajectories covered by a track hypothesis for at most 20% of their respective life span. The remain three metrics are the number of false positives (FP), the number of false negatives (FN) and the number of identity switches (IDSW).
+4.2. Implementation Details
+We use ResNet101-FPN as backbone to perform main results. Four different architectures of neural networks,
+
+VGG16, ResNet34, ResNet50, and ResNet101(with or without FPN) are used as the backbone in the ablation experiment. Note that these four neural networks are pretrained on the coco data set. After 30 epochs of ﬁne-tunings on the detecting task of the MOT datasets, their neural network parameters are no longer updated.
+In data preprocessing, We adjust the sizes of the videos in MOT. Six videos are reduced from 1920×1080 to 1333× 750, and the other 640 × 480 video is resized to 800 × 450.
+In the pyramid LK algorithm, the neighborhood window we choose is 120 × 120, the number of iterations is 10, and the convergence criterion is 0.01. The dimension of the output feature vector in the AGNN is 256. The hyperparameters in balanced MSE loss α = 25, β = 1, γ = 50, δ = 50, ε = 0.01. The learning rate lr of neural networks is updated by the cosine annealing algorithm in the Adam optimizer from the initial 0.05 to the ﬁnal 2.5 × 10−7. It is updated every 30 epochs. The total epochs are 3000. Our module is trained on 2 GPUS of Tesla-V100, with 32 GB memory in each GPU.
+4.3. Main Results
+Public Detection Result The backbone we choose is ResNet101-FPN. From the table 2, we can get that whether it is on MOT16 or MOT17 testing sets, our MOTA, MT, ML, FN metrics are almost best among all the results, where MOTA metric achieves 62.7%, exceeds Unsup by 0.3 points on the MOT16; It achieves 62.0%, exceeds Unsup by 0.3 points and CenterTrack by 0.6 points on the MOT17. The IDF1 metric is also almost optimal, it achieves 60.3%, exceeds Unsup by 1.8 points on the MOT16; It achieves 62.0%, exceeds Unsup by 1.4 points and CenterTrack by 5.2 points on the MOT17.
+Private Detection Result Our detector uses the detection result of Fair. Similarly, it can be seen from the table 3 that whether it is in MOT16 or MOT17 testing sets, among all the results, our MOTA, MT, ML and FN indexes are the best, and IDF1 and IDSw indexes are almost optimal. The MOTA metric achieves 76.5%, exceeds Fair by 1.6 points on the MOT16; It achieves 76.2%, exceeds Fair by 2.5 points and CenterTrack by 8.4 points on the MOT17.
+4.4. Ablation Experiments
+Feature inﬂuence We ﬁrst performed an ablation experiment on the selection of backbone without using any trick, i.e., associating match using similarity matrix composed of initial features and IOU. The results are shown in table 4. Different neural networks have a certain impact on the accuracy of tracking. Simple network structures such as VGG16 and ResNet34 can have a very fast tracking speed, but the effect is not as good as deep networks such as ResNet101FPN. The reason why ResNet101-fpn performs well is that
+
+6
+
+MOT16
+
+Method
+
+MOTA↑ IDF1↑ MT↑ ML↓ FP↓ FN↓ IDSw↓
+
+RAR16[44]
+
+45.9 48.8 13.2 41.9 6871 91173 648
+
+AMIR[45]
+
+47.2 46.3 14.0 41.6 2681 92856 774
+
+MOTDT[47] 47.6 50.9 15.2 38.3 9253 85431 792
+
+STRN[48]
+
+48.5 53.9 17.0 34.9 9038 84178 747
+
+KCF[46]
+
+48.8 47.2 15.8 38.1 5875 86567 906
+
+Tracktor[43]
+
+54.5 52.5 19.0 36.9 3280 79149 682
+
+DeepMOT[49] 54.8 53.4 19.1 37.0 2955 78765 645
+
+MPNTrack[50] 58.6 61.7 27.3 34.0 4949 70252 354
+
+Lif T[51]
+
+61.3 64.7 27.0 34.0 4844 65401 389
+
+Unsup[52]
+
+62.4 58.5 27.0 31.9 5909 61981 588
+
+ours
+
+62.7 60.3 28.5 26.9 5077 61952 978
+
+MOT17
+
+Method
+
+MOTA↑ IDF1↑ MT↑ ML↓ FP↓ FN↓ IDSw↓
+
+DMAN[55]
+
+48.2
+
+STRN[48]
+
+50.9
+
+MOTDT[56] 50.9
+
+Tracktor17[53] 53.5
+
+LSST17[54]
+
+54.7
+
+FAMNet[57] 52.0
+
+TT17[58]
+
+54.9
+
+Tractor++v2[53] 56.3
+
+CenterTrack[1] 61.4
+
+Unsup[52]
+
+61.7
+
+ours
+
+62.0
+
+55.7 19.3 38.3 26218 263608 2194 56.0 18.9 33.8 25295 249365 2397 52.7 17.5 35.7 24069 250768 2474 52.3 19.5 36.6 12201 248047 2072 62.3 20.4 40.1 26091 228434 1243 48.7 19.1 33.4 14138 253616 3072 63.1 24.4 38.1 8895 233206 2351 55.1 21.1 35.3 8666 235449 1987 53.3 27.9 31.4 15520 196886 5326 58.1 27.2 32.4 16872 197632 1864 59.5 27.8 31.5 15114 196672 2621
+
+Table 2. Result on MOT16 and MOT17 Public detection datasets.
+
+MOT16
+
+Method
+
+MOTA↑ IDF1↑ MT↑ ML↓ FP↓ FN↓ IDSw↓
+
+EAMTT[59]
+
+52.5
+
+IOU[60]
+
+57.1
+
+SORTwHPD16[61] 59.8
+
+DeepSORT 2[62] 61.4
+
+RAR16wVGG[63] 63.0
+
+POI[64]
+
+66.1
+
+Tube TK POI[65] 66.9
+
+CTrackerV1[66] 67.6
+
+Fair[2]
+
+74.9
+
+ours
+
+76.5
+
+53.3 19.0 34.9 4407 81223 46.9 23.6 32.9 5702 70278 53.8 25.4 22.7 8698 63245 62.2 32.8 18.2 12852 56668 63.8 39.9 22.1 13663 53248 65.1 34.0 20.8 5061 55914 62.2 39.0 16.1 11544 47502 57.2 32.9 23.1 8934 48305 72.8 44.7 15.9 10163 34484 68.6 52.8 12.3 12878 28982
+MOT17
+
+910 2167 1423 781 482 805 1236 1897 1074 1026
+
+Method
+
+MOTA↑ IDF1↑ MT↑ ML↓ FP↓ FN↓ IDSw↓
+
+SCNet[65]
+
+60.0 54.4 34.4 16.2 72230 145851 7611
+
+Tube TK[65]
+
+63.0 58.6 31.2 19.9 27060 177483 4137
+
+CTrackerV1[66] 66.6 57.4 32.2 24.2 22284 160491 5529
+
+CTracker17[1]
+
+67.8 64.7 34.6 24.6 18498 160332 3039
+
+Fair[2]
+
+73.7 72.3 43.2 17.3 27507 117477 3303
+
+ours
+
+76.2 68.0 51.1 13.6 32796 98475 3237
+
+Table 3. Result on MOT16 and MOT17 Private detection datasets.
+
+it makes full use of the high-resolution information of lowlevel feature maps and high-level semantic information of high-level feature maps, this illustrates the important role of feature matching in multi-object tracking from the side. ResNet101-FPN is not used for detection, it simply extracts features, so it can achieve real-time tracking. Therefore, the backbone chosen for the Public and Private data sets in this article is Resnet101-fpn.
+Feature re-extraction We add motion prediction, but tracklets do not re-extract feature in the current frame. We use four motion estimation methods, i.e., LK, pyramid LK, Kalman ﬁlter and FlowNet, the results are shown in the table 5. In addition, we do a control experiment of reextracting feature of tracklets in the current frame, as shown
+
+Backbone
+
+MOTA↑ IDF1↑ FP↓ FN↓ IDSw↓
+
+VGG16
+
+56.6
+
+ResNet34
+
+57.2
+
+ResNet50
+
+58.8
+
+ResNet101
+
+59.7
+
+ResNet101-FPN 61.2
+
+55.1 4458 67446 1202 55.6 4371 66479 1245 57.1 4266 63966 1168 58.5 4038 62672 1174 59.1 3314 61057 986
+
+Table 4. Backbone experiments on public MOT17 train dataset.
+
+The ResNet101-FPN achieves the best result. This illustrates the
+
+importance of feature matching in multi-object tracking.
+
+Flow method MOTA↑ IDF1↑ FP↓ FN↓ IDSw↓
+
+baseline
+
+61.2
+
+LK[11]
+
+62.1
+
+pyramid-LK[7]
+
+63.2
+
+Kalman ﬁlter[39] 62.4
+
+FlowNet[14]
+
+62.3
+
+59.1 3314 61057 986 60.1 3305 59378 1158 63.1 3174 57682 1132 62.2 3263 58994 1079 62.2 3436 58991 1077
+
+Table 5. Four types of optical ﬂow method, tracklets do not re-
+
+extract features in the current frame, comprehensive performance
+
+of pyramid LK method is slightly better than other methods. We
+
+use the MOT17 training sets, half of the data is used as the training
+
+set, and the other half is used as the validation set.
+
+Flow method MOTA↑ IDF1↑ FP↓ FN↓ IDSw↓
+
+LK[11]
+
+63.1
+
+pyramid-LK[7]
+
+65.4
+
+Kalman ﬁlter[39] 63.9
+
+FlowNet[14]
+
+64.2
+
+61.8 3336 57665 1156 65.3 3567 53671 1044 63.7 3245 56547 1017 62.7 3489 55812 1003
+
+Table 6. Four types optical ﬂow method, tracklets re-extract fea-
+
+tures in the current frame, it shows the importance of extracting
+
+feature on the same frame for the same object on different times-
+
+tamps.
+
+Flow method MOTA↑ IDF1↑ FP↓ FN↓ IDSw↓
+
+baseline AGNN* AGNN
+
+61.2
+
+59.1 3314 61057 986
+
+62.3
+
+61.3 3395 58962 1147
+
+64.1
+
+63.1 3268 55149 1055
+
+Table 7. AGNN* means AGNN without adaptive part. We can get
+
+that GNN can fully use tracklets, location and appearance informa-
+
+tion to update feature vector, and the adaptive part can fully learn
+
+the important parts of each object. It’s beneﬁcial for re-identifying
+
+occluded objects.
+
+in the table 6. We can see that whether it is the MOTA metric or the IDF1 metric, the pyramid LK method is slightly better than other methods, mainly because the pyramid LK method can estimate large emotion well. After tracklets reextract feature in the current frame, the effect is greatly improved, which shows the importance of re-extracting feature on the same frame for the same object on different timestamps.
+Information aggregation We only add the AGNN part based on ResNet101-fpn, and use the MSE Loss. We compared three situations of whether to use AGNN and whether to use the adaptive part of AGNN, the result is shown in the table 7. The tracking effect of using GNN but not adding the adaptive part is better than not using GNN, and the result of adding the adaptive part is better. This is because adaptive weights can fully learn the important parts of each object.
+
+7
+
+Flow method MOTA↑ IDF1↑ FP↓ FN↓ IDSw↓
+
+baseline
+
+61.2
+
+59.1 3314 61057 986
+
+MSE
+
+61.5
+
+60.8 3497 60144 1211
+
+BMSE
+
+62.0
+
+61.7 3768 59112 1129
+
+Triplet[35]
+
+61.9
+
+61.7 3743 59288 1147
+
+Table 8. We only updates the parameters of the fully connected
+
+layer in training phase, result shows that BMSE Loss performs
+
+better than Triplet Loss.
+
+Feature alignment
+
+AGNN
+
+BMSE
+
+MOTA↑
+
+IDF1↑
+
+FP↓
+
+FN↓ IDSw↓
+
+√×
+
+×
+
+×
+
+61.2 59.1 3314 61057 986
+
+√×
+
+×
+
+65.4 65.3 3567 53671 1044
+
+×
+
+√×
+
+64.1 63.3 3268 55149 1055
+
+√×
+
+√×
+
+62.0 61.7 3768 59112 1129
+
+√
+
+√×
+
+68.1 65.8 3137 49664 933
+
+√×
+
+√
+
+66.3 65.8 3188 52565 1013
+
+√×
+
+√
+
+√
+
+65.0 63.6 3347 54584 1052
+
+68.9 66.3 2897 48624 865
+
+Table 9. Ablation study.
+
+Loss effect comparison We compared the use of MSE Loss, Triplet Loss and BMSE Loss respectively based on ResNet101-fpn, We only updates the parameters of the fully connected layer in training phase, the results are shown in the table 8. It can be seen that the results of BMSE is better than result of Triplet Loss, obviously simple BMSE Loss can replace Triplet Loss.
+Ablation study We analyzed multiple combinations, the backbone used in table 9 is Resnet101-fpn. We do ablation experiments on whether to use feature alignment(it means tracklets re-extract features from the current frame), AGNN, and balanced MSE LOSS. It can be seen from table 9 that only using feature alignment, the MOTA index is 4.2 points higher than not using any trick, and 1.3 points higher than using AGNN only, and 2.4 points higher than using BMSE only. On the basis of using feature alignment, coupled with the AGNN updating feature, it is 2.7 points higher. Finally, with the addition of BMSE, the MOTA index is 0.8 points higher. It can be observed from table 9, the feature alignment is a key point that makes the tracking performance the most improved. AGNN also has a very signiﬁcant effect on improving tracking performance, and the BMSE performs well, too.
+Robustness of TPAGT We use VGG16 and ResNet of other types as backbone for ablation experiments, and the results are shown in table 10. We found that after using feature alignment, AGNN and balanced MSE LOSS, the inﬂuence of network structure on tracking accuracy is not so obvious. After each type of network uses feature alignment and AGNN, their MOTA metric is closer. Especially when VGG16 is used as the backbone, on the premise of using feature alignment, the effect of using AGNN is actually improved by 4.9 points, which is basically the same as the effect of other ResNet networks. On the one hand, it shows that AGNN is a good way to integrate global spatial-
+
+Backbone AGNN BMSE MOTA↑ IDF1↑ FP↓ FN↓ IDSw↓
+
+VGG16
+
+×
+
+×
+
+62.8 61.7 3947 57610 1105
+
+ResNet34
+
+×
+
+×
+
+63.0 62.0 3804 56170 1179
+
+ResNet50
+
+×
+
+×
+
+63.4 62.5 3845 56779 1027
+
+ResNet101
+
+√×
+
+×
+
+64.0 62.8 3761 56411 1069
+
+VGG16
+
+√
+
+×
+
+67.7 65.3 3384 50011 1013
+
+ResNet34
+
+√
+
+×
+
+67.8 65.3 3199 49972 1067
+
+ResNet50
+
+√
+
+×
+
+67.8 65.3 3199 49972 1067
+
+ResNet101
+
+√
+
+√×
+
+68.0 65.4 3147 49676 1079
+
+VGG16
+
+√
+
+√
+
+68.5 66.1 3112 48905 1043
+
+ResNet34
+
+√
+
+√
+
+68.6 66.1 3066 48914 912
+
+ResNet50
+
+√
+
+√
+
+68.6 66.1 3066 48914 912
+
+ResNet101
+
+68.7 66.3 2996 48832 895
+
+√
+
+√
+
+ResNet101-FPN
+
+68.9 66.3 2897 48624 865
+
+Table 10. Ablation experiment on the MOT17 training datasets,
+
+half of the data is used as the training set, and the other half is
+
+used as the validation set. Feature alignment method is used by
+
+default.
+
+temporal location and appearance information , it means AGNN allows the same object on different frames to learn more similar feature vector. On the other hand, the AGNN part of TPAGT is robust. The features are extracted from different backbones, AGNN can fuse the location, appearance and historical information to updated the features, then these features of different objects can be very distinguishable, and the features of same object can be very similar.
+5. Conclusion
+We know usual tracking methods extract the features of the tracklets from previous frames rather than the current frame. And actually a lot of information is not fully utilized in these methods. So we further study how to extract better features of the objects to obtain preferred matching. In this work, we propose the TPAGT tracker, which is an end-toend learning framework. Our method predicts the motion of tracklets and extracts their features in the current frame, so that the features can be aligned. Then we input the features into Adaptive Graph Neural Network together with the detected ones. AGNN can integrate tracklets with location and appearance information to update the features. We also introduce the balanced MSE Loss during the training phase to obtain improved data distribution. FGAGT outperforms the state-of-the-art methods on Public and Private MOT Challenge datasets and shows great tracking accuracy.
+Acknowledgement
+This work was supported by Major Scientifc Research Project of Zhejiang Lab (No. 2019DB0ZX01).
+References
+[1] Zhou, Xingyi and Koltun, Vladlen and Kra¨henbu¨hl, Philipp.: Tracking Objects as Points. In: ECCV(2020).
+
+8
+
+[2] Zhang, Yifu and Wang, Chunyu and Wang, Xinggang and Zeng, Wenjun and Liu, Wenyu.: A Simple Baseline for Multi-Object Tracking. In: arXiv preprint arXiv:2004.01888(2020).
+[3] Bouguet, Jean-Yves Pyramidal.: Implementation of the Lucas Kanade Feature Tracker Description of the algorithm. In: Intel Corporation Microprocessor Research Labs (2000).
+[4] Milan, A., Leal-Taixe´, L., Reid, I., Roth, S. & Schindler, K.: MOT16: A Benchmark for Multi-Object Tracking. In: arXiv preprint arXiv: 1603.00831(2016).
+[5] Baker, S., Scharstein, D., Lewis, J.P. et al.: A Database and Evaluation Methodology for Optical Flow. In: Int J Comput Vis 92, 1-31(2011). https://doi.org/10.1007/s11263-010-0390-2
+[6] Jianbo Shi, & Tomasi.: Good features to track. In: Proceedings of IEEE Conference on Computer Vision and Pattern Recognition CVPR(1994). doi:10.1109/cvpr.1994.323794.
+[7] Jean-yves Bouguet.: Pyramidal implementation of the Lucas Kanade feature tracker. In: Intel Corporation, Microprocessor Research Labs(2000).
+[8] G. Farneb?ck.: Two-Frame Motion Estimation Based on Polynomial Expansion.In: Lecture Notes in Computer Science, pp. 363-370(2003).
+[9] Tao, M., Bai, J., Kohli, P., Paris, S.: SimpleFlow: A Non-iterative, Sublinear Optical Flow Algorithm. In: Computer Graphics Forum, 31(2pt1), 345C353. (2012). doi:10.1111/j.1467-8659.2012.03013.x
+[10] Berthold K.P. Horn, Brian G. Schunck.: Determining optical ﬂow. In: Artiﬁcial Intelligence, Volume 17, Issues 1-3, Pages 185-203(1981), ISSN 0004-3702, https://doi.org/10.1016/0004-3702(81)90024-2
+[11] Bruce D. Lucas and Takeo Kanade.: An iterative image registration technique with an application to stereo vision. In: In Proceedings of the 7th international joint conference on Artiﬁcial intelligence - Volume 2 (IJCAI’81). Morgan Kaufmann Publishers Inc., San Francisco, CA, USA, 674-679(1981).
+[12] Farneback, G. (n.d.).: Very high accuracy velocity estimation using orientation tensors, parametric motion, and simultaneous segmentation of the motion ﬁeld. In: Proceedings Eighth IEEE International Conference on Computer Vision. ICCV(2001). doi:10.1109/iccv.2001.937514
+
+[13] Alexey Dosovitskiy, Philipp Fischer, Eddy Ilg, P. H?usser, C. Haz?rba?, V. Golkov, P. Smagt, D. Cremers, Thomas Brox.: FlowNet: Learning Optical Flow with Convolutional Networks. In: IEEE International Conference on Computer Vision (ICCV), 2015.
+[14] Ilg Eddy, Mayer Nikolaus, Saikia Tonmoy, Keuper Margret, Dosovitskiy Alexey, Brox, Thomas.: FlowNet 2.0: Evolution of Optical Flow Estimation with Deep Networks. In: Conference: 2017 IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 1647-1655(2017).
+[15] Scarselli F , Gori M , Tsoi A C , et al. The Graph Neural Network Model[J]. IEEE Transactions on Neural Networks, 2009, 20(1):61.
+[16] Wenhan Luo and Junliang Xing and Anton Milan and Xiaoqin Zhang and Wei Liu and Xiaowei Zhao and Tae-Kyun Kim.: Multiple Object Tracking: A Literature Review. In: arXiv, cs.CV(2014).
+[17] Keni B , Rainer S . Evaluating Multiple Object Tracking Performance: The CLEAR MOT Metrics[J]. Eurasip Journal on Image & Video Processing, 2008, 2008(1):246309.
+[18] Ren S , He K , Girshick R , et al. Faster R-CNN: Towards Real-Time Object Detection with Region Proposal Networks[J]. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2015, 39(6).
+[19] H. W. Kuhn. The hungarian method for the assignment problem. Naval research logistics quarterly, 1955.
+[20] A. Bewley, Z. Ge, L. Ott, F. Ramos and B. Upcroft, ”Simple online and realtime tracking,” 2016 IEEE International Conference on Image Processing (ICIP), Phoenix, AZ, 2016, pp. 3464-3468, doi: 10.1109/ICIP.2016.7533003.
+[21] N. Wojke, A. Bewley and D. Paulus, ”Simple online and realtime tracking with a deep association metric,” 2017 IEEE International Conference on Image Processing (ICIP), Beijing, 2017, pp. 3645-3649, doi: 10.1109/ICIP.2017.8296962.
+[22] K. Liu, Y. Shen and L. Chen, ”Simple online and realtime tracking with spherical panoramic camera,” 2018 IEEE International Conference on Consumer Electronics (ICCE), Las Vegas, NV, 2018, pp. 1-6, doi: 10.1109/ICCE.2018.8326132.
+[23] Fu H., Wu L., Jian M., Yang Y., Wang X. (2019) MF-SORT: Simple Online and Realtime Tracking with Motion Features. In: Zhao Y., Barnes N., Chen B., Westermann R., Kong X., Lin C. (eds)
+
+9
+
+Image and Graphics. ICIG 2019. Lecture Notes in Computer Science, vol 11901. Springer, Cham. https://doi.org/10.1007/978-3-030-34120-6 13
+[24] Sergey Menshov, Yan Wang, Andrey Zhdanov, Eugene Varlamov, Dmitry Zhdanov, ”Simple online and realtime tracking people with new soft-iou metric,” Proc. SPIE 11342, AOPC 2019: AI in Optics and Photonics, 113420M (18 December 2019); https://doi.org/10.1117/12.2547922
+[25] X. Hou, Y. Wang and L. Chau, ”Vehicle Tracking Using Deep SORT with Low Conﬁdence Track Filtering,” 2019 16th IEEE International Conference on Advanced Video and Signal Based Surveillance (AVSS), Taipei, Taiwan, 2019, pp. 1-6, doi: 10.1109/AVSS.2019.8909903.
+[26] Maher, A., Taha, H. Zhang, B. Realtime multi-aircraft tracking in aerial scene with deep orientation network. J Real-Time Image Proc 15, 495C507 (2018). https://doi.org/10.1007/s11554-018-0780-1
+[27] S. Caelles Prat, Video Object Segmentation by Tracking Structured Key Points and Contours, Projecte Final de Mster Oﬁcial, UPC, Escola Tcnica Superior d’Enginyeria de Telecomunicaci de Barcelona, Departament de Teoria del Senyal i Comunicacions, 2016.
+[28] Yi Z , Tao X U , Dong X U , et al. Coordinating Multiple Cameras to Assist Tracking Moving Objects Based on Network Topological Structure[J]. Geomatics Information ence of Wuhan University, 2017, 42(8):1117-1122.
+[29] Malinovskiy, Yegor Wu, Yao-Jan Wang, Y.. (2009). Video-Based Vehicle Detection and Tracking Using Spatiotemporal Maps. Transportation Research Record. 2121. 81-89. 10.3141/2121-09.
+[30] Mittal, A. . ”M2Tracker: A Multi-View Approach to Segmenting and Tracking People in a Cluttered Scene.” Proc.of European Conf.on Computer Vision (2002).
+[31] Segen J . A camera-based system for tracking people in real time. In: International Conference on Pattern Recognition. IEEE, 1996.
+[32] Khan S M , Shah M . Tracking Multiple Occluding People by Localizing on Multiple Scene Planes[J]. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2009, 31(3):505-519.
+[33] Cohen, Isaac and Ayache, Nicholas and Sulger, Patrick.: Tracking points on deformable objects using curvature information. In: ECCV(1992), 458–466.
+
+[34] Zheng Zhang and Dazhi Cheng and Xizhou Zhu and Stephen Lin and Jifeng Dai.: Integrated Object Detection and Tracking with Tracklet-Conditioned Detection. In: arXiv:1811.11167 [cs.CV](2018).
+[35] Zhichao Lu and Vivek Rathod and Ronny Votel and Jonathan Huang.: RetinaTrack: Online Single Stage Joint Detection and Tracking. In: arXiv:2003.13870 [cs.CV](2020).
+[36] Yongxin Wang and Xinshuo Weng and Kris Kitani.: Joint Detection and Multi-Object Tracking with Graph Neural Networks. In: arXiv:2006.13164 [cs.CV](2020).
+[37] Xingyi Zhou and Dequan Wang and Philipp Kr?henbhl.: Objects as Points. In: arXiv:1904.07850 [cs.CV](2019).
+[38] Lin T Y , Goyal P , Girshick R , et al. Focal Loss for Dense Object Detection[J]. IEEE Transactions on Pattern Analysis & Machine Intelligence, 2017, PP(99):2999-3007.
+[39] Welch, G., Bishop, G., et al.: An introduction to the kalman ﬁlter (1995)
+[40] S. Hochreiter and J. Schmidhuber. 1997. Long shortterm memory. Neural Computation, 9(8):1735C1780. DOI: 10.1162/neco.1997.9.8.1735.
+[41] Bernardin, K. & Stiefelhagen, R. Evaluating Multiple Object Tracking Performance: The CLEAR MOT Metrics. Image and Video Processing, 2008(1):1-10, 2008
+[42] Ristani, E., Solera, F., Zou, R., Cucchiara, R. & Tomasi, C. Performance Measures and a Data Set for multi-object, Multi-Camera Tracking. In ECCV workshop on Benchmarking multi-object Tracking, 2016.
+[43] Philipp Bergmann, Tim Meinhardt, and Laura LealTaixe. Tracking without bells and whistles. arXiv preprint arXiv:1903.05625, 2019.
+[44] Fang, K., Xiang, Y., Li, X., Savarese, S.: Recurrent autoregressive networks for online multi-object tracking. In: W ACV. pp. 466C475 (2018).
+[45] Sadeghian, A., Alahi, A., Savarese, S.: Tracking the untrackable: Learning to track multiple cues with long-term dependencies. In: ICCV. pp. 300C311 (2017).
+[46] Chu, P., Fan, H., Tan, C.C., Ling, H.: Online multiobject tracking with instance- aware tracker and dynamic model refreshment. In: W ACV. pp. 161C170 (2019)
+
+10
+
+[47] Chen, L., Ai, H., Zhuang, Z., Shang, C.: Real-time multiple people tracking with deeply learned candidate selection and person re-identiﬁcation. In: ICME. pp. 1C6 (2018).
+[48] Xu, J., Cao, Y., Zhang, Z., Hu, H.: Spatial-temporal relation networks for multi- object tracking. In: ICCV. pp. 3988C3998 (2019).
+[49] Xu, Y., Osep, A., Ban, Y., Horaud, R., Leal-Taix e, L., Alameda-Pineda, X.: How to train your deep multiobject tracker. In: CVPR (2020).
+[50] G. Bras and L. Leal-Taix, ”Learning a Neural Solver for Multiple Object Tracking,” 2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), Seattle, WA, USA, 2020, pp. 6246-6256, doi: 10.1109/CVPR42600.2020.00628.
+[51] Hornakova, A., Henschel, R., Rosenhahn, B., and Swoboda, P.: 2020, arXiv e-prints, arXiv:2006.14550.
+[52] Karthik S , Prabhu A , Gandhi V . Simple Unsupervised Multi-Object Tracking[J]. 2020.
+[53] Bergmann, P ., Meinhardt, T., Leal-Taixe, L.: Tracking without bells and whistles. In: ICCV(2019).
+[54] Feng, W., Hu, Z., Wu, W., Yan, J., Ouyang, W.: Multiobject tracking with multiple cues and switcher-aware classiﬁcation. arXiv:1901.06129 (2019).
+[55] Zhu, J., Yang, H., Liu, N., Kim, M., Zhang, W., Yang, M.H.: Online multi-object tracking with dual matching attention networks. In: ECCV. pp. 366C382 (2018).
+[56] Chen, L., Ai, H., Zhuang, Z., Shang, C.: Real-time multiple people tracking with deeply learned candidate selection and person re-identiﬁcation. In: ICME. pp. 1C6(2018).
+[57] Chu, P., Ling, H.: Famnet: Joint learning of feature, afﬁnity and multi-dimensional assignment for online multiple object tracking. In: ICCV. pp. 6172C6181 (2019).
+[58] Y. Zhang, H. Sheng, Y. Wu, S. Wang, W. Lyu, W. Ke, Z. Xiong. Long-term Tracking with Deep Tracklet Association. In IEEE Transactions on Image Processing, 2020.
+
+[59] Sanchez-Matilla, R., Poiesi, F., Cavallaro, A.: Online multi-object tracking with strong and weak detections. In: European Conference on Computer Vision. pp. 84C99. Springer (2016).
+[60] E. Bochinski, V. Eiselein, T. Sikora. High-Speed Tracking-by-Detection Without Using Image Information. In International Workshop on Trafﬁc and Street Surveillance for Safety and Security at IEEE AVSS 2017, 2017.
+[61] Bewley, A., Ge, Z., Ott, L., Ramos, F., Upcroft, B.: Simple online and realtime tracking. In: 2016 IEEE International Conference on Image Processing (ICIP). pp. 3464C3468. IEEE (2016).
+[62] Wojke, N., Bewley, A., Paulus, D.: Simple online and realtime tracking with a deep association metric. In: 2017 IEEE international conference on image processing (ICIP). pp. 3645C3649. IEEE (2017).
+[63] Fang, K., Xiang, Y., Li, X., Savarese, S.: Recurrent autoregressive networks for online multi-object tracking. In: 2018 IEEE Winter Conference on Applications of Computer Vision (W ACV). pp. 466C475. IEEE (2018).
+[64] Yu, F., Li, W., Li, Q., Liu, Y., Shi, X., Yan, J.: Poi: Multiple object tracking with high performance detection and appearance feature. In: European Conference on Computer Vision. pp. 36C42. Springer (2016).
+[65] B. Pang, Y. Li, Y. Zhang, M. Li, C. Lu. TubeTK: Adopting Tubes to Track Multi-Object in a One-Step Training Model. In CVPR, 2020.
+[66] J. Peng, C. Wang, et.al. Chained-Tracker: Chaining Paired Attentive Regression Results for End-toEnd Joint Multiple-Object Detection and Tracking. In ECCV Spotlight, 2020.
+[67] Kaiming He and Georgia Gkioxari and Piotr Dollr and Ross Girshick. Mask R-CNN. In arXiv:1703.06870v3, cs.CV, 2018.
+
+11
+

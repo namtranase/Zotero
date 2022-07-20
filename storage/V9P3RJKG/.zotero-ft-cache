@@ -1,0 +1,720 @@
+ByteTrack: Multi-Object Tracking by Associating Every Detection Box
+
+Yifu Zhang1∗, Peize Sun2∗, Yi Jiang3, Dongdong Yu3, Zehuan Yuan3, Ping Luo2, Wenyu Liu1, Xinggang Wang1†
+1Huazhong University of Science and Technology 2The University of Hong Kong
+
+3ByteDance
+
+arXiv:2110.06864v2 [cs.CV] 14 Oct 2021
+
+Abstract
+Multi-object tracking (MOT) aims at estimating bounding boxes and identities of objects in videos. Most methods obtain identities by associating detection boxes whose scores are higher than a threshold. The objects with low detection scores, e.g. occluded objects, are simply thrown away, which brings non-negligible true object missing and fragmented trajectories. To solve this problem, we present a simple, effective and generic association method, tracking by associating every detection box instead of only the high score ones. For the low score detection boxes, we utilize their similarities with tracklets to recover true objects and ﬁlter out the background detections. When applied to 9 different state-of-the-art trackers, our method achieves consistent improvement on IDF1 score ranging from 1 to 10 points. To put forwards the state-of-theart performance of MOT, we design a simple and strong tracker, named ByteTrack. For the ﬁrst time, we achieve 80.3 MOTA, 77.3 IDF1 and 63.1 HOTA on the test set of MOT17 with 30 FPS running speed on a single V100 GPU. The source code, pre-trained models with deploy versions and tutorials of applying to other trackers are released at https://github.com/ifzhang/ByteTrack.
+1. Introduction
+Was vernu¨nftig ist, das ist wirklich; und was wirklich ist, das ist vernu¨nftig.
+—— G. W. F. Hegel
+Tracking by detection is the most effective paradigm for multi-object tracking (MOT) in current. Due to the complex scenarios in video, detectors are prone to make imperfect predictions. State-of-the-art MOT methods [3, 17, 44, 2, 69, 7, 67, 12, 4, 81, 56] need to deal with true positive / false positive trade-off in detection boxes to eliminate low conﬁdence detection boxes [5, 39]. However, is it the right
+∗ Equal contribution. † Corresponding author.
+
+Figure 1. MOTA-IDF1-FPS comparisons of different trackers. The horizontal axis is FPS (running speed), the vertical axis is MOTA, and the radius of circle is IDF1. Our ByteTrack achieves 80.3 MOTA, 77.3 IDF1 on MOT17 test set with 30 FPS running speed, outperforming all previous trackers. Details are given in Table 6.
+way to eliminate all low conﬁdence detection boxes? Our answer is NO: as Hegel said “What is reasonable is real; that which is real is reasonable.” Low conﬁdence detection boxes sometimes indicate the existence of objects, e.g. the occluded objects. Filtering out these objects causes irreversible errors for MOT and brings non-negligible missing detection and fragmented trajectories.
+Figure 2 (a) and (b) show this problem. In frame t1, we initialize three different tracklets as their scores are all higher than 0.5. However, in frame t2 and frame t3 when occlusion happens, red tracklet’s corresponding detection score becomes lower i.e. 0.8 to 0.4 and then 0.4 to 0.1. These detection boxes are eliminated by the thresholding mechanism and the red tracklet disappears accordingly. Nevertheless, if we take every detection box into consideration, more false positives will be introduced immediately,
+
+1
+
+Frame t1
+
+0.9
+
+0.8 0.9
+
+0.1
+
+Frame t2
+
+0.9
+
+0.4 0.8
+
+0.1
+
+Frame t3
+0.9 0.1 0.8 0.1
+
+(a) detection boxes
+
+(b) tracklets by associating high score detection boxes
+
+0.4
+
+0.1
+
+(c) tracklets by associating every detection box
+Figure 2. Examples of our method which associates every detection box. (a) shows all the detection boxes with their scores. (b) shows the tracklets obtained by previous methods which associates detection boxes whose scores are higher than a threshold, i.e. 0.5. The same box color represents the same identity. (c) shows the tracklets obtained by our method. The dashed boxes represent the predicted box of the previous tracklets using Kalman Filter. The two low score detection boxes are correctly matched to the previous tracklets.
+e.g., the most right box in frame t3 of Figure 2 (a). To the best of our knowledge, very few methods [29, 60] in MOT are able to handle this detection dilemma.
+In this paper, we identify that the similarity with tracklets provides a strong cue to distinguish the objects and background in low score detection boxes. As shown in Figure 2 (c), two low score detection boxes are matched to the tracklets by the motion model’s predicted boxes, and thus the objects are correctly recovered. At the same time, the background box is removed since it has no matched tracklet.
+For making full use of detection boxes from high scores to low ones in the matching process, we present a simple and effective association method BYTE, named for each detection box is a basic unit of the tracklet, as byte in computer program, and our tracking method values every detailed detection box. We ﬁrst match the high score detection boxes to the tracklets based on motion similarity. Similar to [7], we use Kalman Filter [28] to predict the location of the tracklets in the new frame. The motion similarity can be computed by the IoU of the predicted box and the detection box. Figure 2 (b) is exactly the results after the ﬁrst matching. Then, we perform the second matching between the unmatched tracklets, i.e. the tracklet in red box, and the low
+
+score detection boxes. Figure 2 (c) shows the results after the second matching. The occluded person with low detection scores is matched correctly to the previous tracklet and the background is removed.
+To evaluate the generalization ability of our proposed association method, we apply it to 9 different state-of-the-art trackers, including the Re-ID-based ones [66, 81, 32, 46], motion-based ones [85, 68, 47], chain-based one [47] and attention-based ones [56, 76]. We achieve notable improvements on almost all the metrics including MOTA, IDF1 score and ID switches. For example, we increase the MOTA of CenterTrack [85] from 66.1 to 67.4, IDF1 from 64.2 to 74.0 and decrease the IDs from 528 to 144 on the half validation set of MOT17 [85].
+Towards pushing forwards the state-of-the-art performance of MOT, we propose a simple and strong tracker, named ByteTrack. We adopt a recent high-performance detector YOLOX [24] to obtain the detection boxes and associate them with our proposed BYTE. On the MOT challenges, ByteTrack ranks 1st on both MOT17 [43] and MOT20 [16], achieving 80.3 MOTA, 77.3 IDF1 and 63.1 HOTA with 30 FPS running speed on V100 GPU on MOT17 and 77.8 MOTA, 75.2 IDF1 and 61.3 HOTA on crowded MOT20.
+Our proposed method is the ﬁrst work that achieves highly competitive tracking performance by the extremely simple motion model, without any Re-ID module or attention mechanisms [81, 32, 46, 65, 76, 56]. It sheds light on the great potential of motion cues on handling occlusion and long-range association. We hope the efﬁciency and simplicity of ByteTrack could make it attractive in real applications.
+2. Related Work
+Object detection and data association are two key components of multi-object tracking. Detection estimates the bounding boxes and association obtains the identities.
+2.1. Object Detection in MOT
+Object detection is one of the most active topics in computer vision and it is the basis of multi-object tracking. The MOT17 dataset [43] provides detection results obtained by popular detectors such as DPM [21], Faster R-CNN [49] and SDP [74]. A large number of methods [71, 14, 4, 12, 88, 9, 27] focus on improving the tracking performance based on these given detection results. The association ability of these methods can be fairly compared.
+Tracking by detection. With the rapid development of object detection [49, 26, 48, 34, 10, 22, 57, 55], more and more methods begin to use more powerful detectors to obtain higher tracking performance. The one-stage object detector RetinaNet [34] begin to be used by several methods such as
+
+2
+
+[38, 47]. CenterNet [86] is the most popular detector used by most methods [85, 81, 68, 83, 65, 60, 63] for its simplicity and efﬁciency. The YOLO series detectors [48, 8] are also used by a large number of methods [66, 32, 33, 15] for its excellent balance of accuracy and speed. Most of these methods directly use the detection boxes on a single image for tracking.
+However, the number of missing detections and very low scoring detections begin to increase when occlusion or motion blur happens in the video sequence, as is pointed out by video object detection methods [59, 40]. Therefore, the information of the previous frames are usually leveraged to enhance the video detection performance.
+Detection by tracking. Tracking can also adopted to help obtain more accurate detection boxes. Some methods [52, 88, 14, 13, 15, 12] use single object tracking (SOT) [6] or Kalman Filter [28] to predict the location of the tracklets in the following frame and fuse the predicted boxes with the detection boxes to enhance the detection results. Other methods [82, 33] use tracked boxes in the previous frames to enhance feature representation of the following frame. Recently, Transformer-based [61, 19, 64, 37] detectors [11, 89] are used by several methods [56, 41, 76] for its strong ability to propagate boxes between frames. Our method also utilize the similarity with tracklets to strength the reliability of detection boxes.
+After obtaining the detection boxes by various detectors, most MOT methods [66, 81, 46, 38, 32, 68, 56] only keep the high score detection boxes by a threshold, i.e. 0.5, and use those boxes as the input of data association. This is because the low score detection boxes contain many backgrounds which harm the tracking performance. However, we observe that many occluded objects can be correctly detected but have low scores. To reduce missing detections and keep the persistence of trajectories, we keep all the detection boxes and associate across every of them.
+2.2. Data Association
+Data association is the core of multi-object tracking, which ﬁrst computes the similarity between tracklets and detection boxes and then matches them according to the similarity.
+Similarity metrics. Location, motion and appearance are useful cues for association. SORT [7] combines location and motion cues in a very simple way. It ﬁrst uses Kalman Filter [28] to predict the location of the tracklets in the new frame and then computes the IoU between the detection boxes and the predicted boxes as the similarity. Some recent methods [85, 56, 68] design networks to learn object motions and achieve more robust results in cases of large camera motion or low frame rate. Location and motion similarity are accurate in the short-range matching. Ap-
+
+pearance similarity are helpful in the long-range matching. An object can be re-identiﬁed using appearance similarity after being occluded for a long period of time. Appearance similarity can be measured by the cosine similarity of the Re-ID features. DeepSORT [67] adopts a stand-alone Re-ID model to extract appearance features from the detection boxes. Recently, joint detection and Re-ID models [66, 81, 32, 38, 80, 46] becomes more and more popular because of their simplicity and efﬁciency.
+Matching strategy. After similarity computation, matching strategy assigns identities to the objects. This can be done by Hungarian Algorithm [30] or greedy assignment [85]. SORT [7] matches the detection boxes to the tracklets by once matching. DeepSORT [67] proposes a cascaded matching strategy which ﬁrst matches the detection boxes to the most recent tracklets and then to the lost ones. MOTDT [12] ﬁrst uses appearance similarity to match and then use the IoU similarity to match the unmatched tracklets. QuasiDense [46] turns the appearance similarity into probability by a bi-directional softmax operation and uses a nearest neighbor search to accomplish matching. Attention mechanism [61] can directly propagate boxes between frames and perform association implicitly. Recent methods such as [41, 76] propose track queries to ﬁnd the location of the tracked objects in the following frames. The matching is implicitly performed in the attention interaction process.
+All these methods focus on how to design better association methods. However, we argue that the detection boxes determines the upper bound of data association and we focus on how to make use of detection boxes from high scores to low ones in the matching process.
+3. BYTE
+We propose a simple, effective and generic data association method, BYTE. Different from previous methods [66, 81, 32, 46] which only keep the high score detection boxes, we keep every detection box and separate them into high score ones and low score ones. We ﬁrst associate the high score detection boxes to the tracklets. Some tracklets get unmatched because it does not match to an appropriate high score detection box, which usually happens when occlusion, motion blur or size changing occurs. We then associate the low score detection boxes and these unmatched tracklets to recover the objects in low score detection boxes and ﬁlter out background, simultaneously. The pseudo-code of BYTE is shown in Algorithm 1.
+The input of BYTE is a video sequence V, along with an object detector Det and the Kalman Filter KF. We also set three thresholds τhigh, τlow and . τhigh and τlow are the detection score thresholds and is the tracking score threshold. The output of BYTE is the tracks T of the video and each track contains the bounding box and identity of the
+
+3
+
+Algorithm 1: Pseudo-code of BYTE.
+
+Input: A video sequence V; object detector Det; Kalman Filter
+
+KF; detection score threshold τhigh, τlow; tracking score threshold
+
+Output: Tracks T of the video
+
+1 Initialization: T ← ∅
+
+2 for frame fk in V do
+
+/* Figure 2(a) */
+
+/* predict detection boxes & scores */
+
+3
+
+Dk ← Det(fk)
+
+4
+
+Dhigh ← ∅
+
+5
+
+Dlow ← ∅
+
+6
+
+for d in Dk do
+
+7
+
+if d.score > τhigh then
+
+8
+
+Dhigh ← Dhigh ∪ {d}
+
+9
+
+end
+
+10
+
+else if d.score > τlow then
+
+11
+
+Dlow ← Dlow ∪ {d}
+
+12
+
+end
+
+13
+
+end
+
+/* predict new locations of tracks */
+
+14
+
+for t in T do
+
+15
+
+t ← KF(t)
+
+16
+
+end
+
+/* Figure 2(b) */
+
+/* first association */
+
+17
+
+Associate T and Dhigh using IoU distance
+
+18
+
+Dremain ← remaining object boxes from Dhigh
+
+19
+
+Tremain ← remaining tracks from T
+
+/* Figure 2(c) */
+
+/* second association */
+
+20
+
+Associate Tremain and Dlow using IoU distance
+
+21
+
+Tre−remain ← remaining tracks from Tremain
+
+/* delete unmatched tracks */
+
+22
+
+T ← T \ Tre−remain
+
+/* initialize new tracks */
+
+23
+
+for d in Dremain do
+
+24
+
+if d.score > then
+
+25
+
+T ← T ∪ {d}
+
+26
+
+end
+
+27
+
+end
+
+28 end
+
+29 Return: T
+
+Track rebirth [67, 85] is not shown in the algorithm for simplicity. In green is the key of our method.
+
+object in each frame.
+For each frame in the video, we predict the detection boxes and scores using the detector Det. We separate all the detection boxes into two parts Dhigh and Dlow according to the detection score thresholds τhigh and τlow. For the detection boxes whose scores are higher than τhigh, we put them into the high score detection boxes Dhigh. For those whose scores range from τlow to τhigh, we put them into the low score detection boxes Dlow (line 3 to 13 in Algorithm 1).
+After separating the low score detection boxes and the
+
+high score detection boxes, we use Kalman Filter KF to predict the new locations of each track in T (line 14 to 16 in Algorithm 1).
+The ﬁrst association is performed between the high score detection boxes Dhigh and all the tracks T (including the lost tracks Tlost). The similarity is computed by the IoU between the detection boxes Dhigh and the predicted box of tracks T . Then, we use Hungarian Algorithm [30] to ﬁnish the matching based on the similarity. In particular, if the IoU between the detection box and the tracklet box is smaller than 0.2, we reject the matching. We keep the unmatched detections in Dremain and the unmatched tracks in Tremain (line 17 to 19 in Algorithm 1).
+BYTE is highly ﬂexible and can be compatible to other different association methods. For example, when BYTE is combined with DeepSORT [67], Re-ID feature is added into * first association * in Algorithm 1, others are the same. In the experiments, we apply BYTE to 9 different state-of-the-art trackers and achieve notable improvements on almost all the metrics.
+The second association is performed between the low score detection boxes Dlow and the remaining tracks Tremain after the ﬁrst association. We keep the unmatched tracks in Tre−remain and just delete all the unmatched low score detection boxes, since we view them as background. (line 20 to 21 in Algorithm 1).
+We ﬁnd it important to use IoU as the similarity in the second association because the low score detection boxes usually contains severe occlusion or motion blur and appearance features are not reliable. Thus, when apply BYTE to other Re-ID based trackers [66, 81, 46], we do not use appearance similarity in the second association.
+After the association, the unmatched tracks will be deleted from the tracklets. We do not list the procedure of track rebirth [67, 12, 85] in Algorithm 1 for simplicity. Actually, it is necessary for the long-range association to preserve the identity of the tracks. For the unmatched tracks Tre−remain after the second association, we put them into Tlost. For each track in Tlost, only when it exists for more than a certain number of frames, i.e. 30, we delete it from the tracks T . Otherwise, we remain the lost tracks Tlost in T (line 22 in Algorithm 1).
+Finally, we initialize new tracks from the unmatched high score detection boxes Dremain after the ﬁrst association. For each detection box in Dremain, if its detection score is higher than and exists for two consecutive frames, we initialize a new track (line 23 to 27 in Algorithm 1).
+The output of each individual frame is the bounding boxes and identities of the tracks T in the current frame. Note that we do not output the boxes and identities of Tlost.
+
+4
+
+4. ByteTrack
+To put forwards the state-of-the-art performance of MOT, we design a simple and strong tracker, named ByteTrack, by equipping the high-performance detector YOLOX [24] with our association method BYTE.
+YOLOX switches the YOLO series detectors [48, 8] to an anchor-free manner and conduct other advanced detection techniques, including decoupled heads, strong data augmentations, such as Mosaic [8] and Mixup [77], and effective label assignment strategy SimOTA [23] to achieve state-of-the-art performance on object detection.
+The backbone network is the same as YOLOv5 [1] which adopts an advanced CSPNet [62] backbone and an additional PAN [36] head. There are two decoupled heads after the backbone network, one for regression and the other for classiﬁcation. An additional IoU-aware branch is added to the regression head to predict the IoU between the predicted box and the ground truth box. The regression head directly predicts four values in each location in the feature map, i.e., two offsets in terms of the left-top corner of the grid, and the height and width of the predicted box. The regression head is supervised by GIoU loss [50] and the classiﬁcation and IoU heads are supervised by the binary cross entropy loss.
+The SimOTA label assignment strategy automatically select positive samples according to their cost to the ground truth annotations. The cost is computed by a weighted sum of the classiﬁcation cost and the box location cost [87, 11, 55]. Then, it selects a number of dynamic top-k positive samples from a ﬁxed size of areas around the object center according to their cost. The advanced label assignment strategy notably increases the detection performance.
+We note MOT17 [43] requires the bounding boxes [85] covering the whole body, even though the object is occluded or partly out of the image. However, the default implementation of YOLOX clips the detection boxes inside the image area. To avoid the wrong detection results around the image boundary, we modify YOLOX in terms of data preprocessing and label assignment. We do not clip the bounding boxes inside the image during the data pre-processing and data augmentation procedure. We only delete the boxes which are fully outside the image after data augmentation. In the SimOTA label assignment strategy, the positive samples need to be around the center of the object, while the center of the whole body boxes may lie out of the image, so we clip the center of the object inside the image.
+MOT20 [16] clips the bounding box annotations inside the image in and thus we just use the original YOLOX.
+
+5. Experiments
+5.1. Setting
+Datasets. We evaluate BYTE and ByteTrack on MOT17 [43] and MOT20 [16] datasets under the “private detection” protocol. Both datasets contain training sets and test sets, without validation sets. For ablation studies, we use the ﬁrst half of each video in the training set of MOT17 for training and the last half for validation following [85]. We train on the combination of CrowdHuman dataset [54] and MOT17 half training set following [85, 56, 76, 68]. We add Cityperson [78] and ETHZ [20] for training following [66, 81, 32] when testing on the test set of MOT17.
+Metrics. We use the CLEAR metrics [5], including MOTA, FP, FN, IDs, etc., IDF1 [51] and HOTA [39] to evaluate different aspects of the tracking performance. MOTA is computed based on FP, FN and IDs. Considering the amount of FP and FN are larger than IDs, MOTA focuses more on the detection performance. IDF1 evaluates the identity preservation ability and focus more on the association performance. HOTA is a very recently proposed metric which explicitly balances the effect of performing accurate detection, association and localization.
+Implementation details. For BYTE, the default high detection score threshold τhigh is 0.6, the low threshold τlow 0.1 and the trajectory initialization score 0.7, unless otherwise speciﬁed. In the linear assignment step, if the IoU between the detection box and the tracklet box is smaller than 0.2, the matching will be rejected. For the lost tracklets, we keep it for 30 frames in case it appears again.
+For ByteTrack, the detector is YOLOX [24] with YOLOX-X as the backbone and COCO-pretrained model [35] as the initialized weights. The training schedule is 80 epochs on the combination of MOT17, CrowdHuman, Cityperson and ETHZ. The input image size is 1440 ×800 and the shortest side ranges from 576 to 1024 during multiscale training. The data augmentation includes Mosaic [8] and Mixup [77]. The model is trained on 8 NVIDIA Tesla V100 GPU with batch size of 48. The optimizer is SGD with weight decay of 5 × 10−4 and momentum of 0.9. The initial learning rate is 10−3 with 1 epoch warm-up and cosine annealing schedule. The total training time is about 12 hours. Following [24], FPS is measured with FP16precision [42] and batch size of 1 on a single GPU.
+5.2. Ablation Studies on BYTE
+Comparisons with other association methods. We compare BYTE with other popular association methods including SORT [7], DeepSORT [67] and MOTDT [12]. The results are shown in Table 1.
+SORT can be seen as our baseline method because both
+
+5
+
+Method
+
+w/ Re-ID MOTA↑ IDF1↑ IDs↓ FPS
+
+SORT DeepSORT MOTDT BYTE (ours)
+
+74.6 76.9 291 30.1 75.4 77.2 239 13.5 75.8 77.6 273 11.1 76.6 79.3 159 29.6
+
+Table 1. Comparison of different data association methods on the MOT17 validation set. The best results are shown in bold.
+
+Figure 3. Comparison of the performances of BYTE and SORT under different detection score thresholds. The results are from the validation set of MOT17.
+methods only use Kalman Filter to predict the object motion. We can see that BYTE improves the MOTA metric of SORT from 74.6 to 76.6, IDF1 from 76.9 to 79.3 and decreases IDs from 291 to 159. This highlights the importance of the low score detection boxes and proves the ability of BYTE to recover object boxes from low score one.
+DeepSORT uses additional Re-ID models to enhance the long-range association. We surprisingly ﬁnd BYTE also has additional gains compared with DeepSORT. This suggests a simple Kalman Filter can perform long-range association and achieve better IDF1 and IDs when the detection boxes are accurate enough. We note that in severe occlusion cases, Re-ID features are vulnerable and may lead to more identity switches, instead, motion model behaves more reliably.
+MOTDT integrates motion-guided box propagation results and detection results to associate unreliable detection results with tracklets. Although sharing the similar motivation, MOTDT is behind BYTE by a large margin. We explain that MOTDT uses propagated boxes as tracklet boxes, which may lead to locating drifts in tracking. Instead, BYTE uses low-score detection boxes to re-associate those unmatched tracklets, therefore, tracklet boxes are more accuracy.
+Robustness to detection score threshold. The detection score threshold τhigh is a sensitive hyper-parameter and needs to be carefully tuned in the task of multi-object tracking. We change it from 0.2 to 0.8 and compare the MOTA and IDF1 score of BYTE and SORT. The results are shown in Fig 3. From the results we can see that BYTE is more robust to the detection score threshold than SORT. This is
+
+because the second association in BYTE recovers the objects whose scores are lower than τhigh, and thus considers every detection box regardless of the change of τhigh.
+Analysis on low score detection boxes. To prove the effectiveness of BYTE, we collect the number of TPs and FPs in the low score boxes obtained by BYTE. We use the half training set of MOT17 and CrowdHuman for training and evaluate on the half validation set of MOT17. First, we keep all the low score detection boxes whose scores range from τlow to τhigh and classify the TPs and FPs using ground truth annotations. Then, we select the tracking results obtained by BYTE from low score detection boxes. The results of each sequence are shown in Fig 4. We can see that BYTE obtains notably more TPs than FPs from the low score detection boxes even though some sequences have much more FPs in all the detection boxes. The obtained TPs notably increases MOTA from 74.6 to 76.6 as is shown in Table 1.
+Applications on other trackers. We apply BYTE on 9 different state-of-the-arts trackers, including JDE [66], CSTrack [32], FairMOT [81], TraDes [68], QuasiDense [46], CenterTrack [85], Chained-Tracker [47], TransTrack [56] and MOTR [76]. Among these trackers, JDE, CSTrack, FairMOT, TraDes use a combination of motion and ReID similarity. QuasiDense uses Re-ID similarity alone. CenterTrack and TraDes predict the motion similarity by the learned networks. Chained-Tracker adopts the chain structure and outputs the results of two consecutive frames simultaneously and associate in the same frame by IoU. TransTrack and MOTR use the attention mechanism to propagate boxes among frames. Their results are shown in the ﬁrst line of each tracker in Table 2. To evaluate the effectiveness of BYTE, we design two different modes to apply BYTE to these trackers.
+• The ﬁrst mode is to insert BYTE into the original association methods of different trackers, as is shown in the second line of the results of each tracker in Table 2. Take FairMOT[81] for example, after the original association is done, we select all the unmatched tracklets and associate them with the low score detection boxes following the * second association * in Algorithm 1. Note that for the low score objects, the Re-ID features are not reliable so we only use the IoU between the detection boxes and the tracklet boxes after motion prediction as the similarity. We do not apply the ﬁrst mode of BYTE to Chained-Tracker because we ﬁnd it is difﬁcult to implement in the chain structure.
+• The second mode is to directly use the detection boxes of these trackers and associate using the whole procedure in Algorithm 1, as is shown in the third line of the results of each tracker in Table 2.
+
+6
+
+Figure 4. Comparison of the number of TPs and FPs in all low score detection boxes and the low score tracked boxes obtained by BYTE. The results are from the validation set of MOT17.
+
+Method
+
+Similarity
+
+w/ BYTE MOTA↑ IDF1↑
+
+FP↓ FN↓ IDs↓
+
+JDE [66]
+
+Motion(K) + Re-ID Motion(K) + Re-ID
+Motion(K)
+
+60.0
+
+63.6
+
+2923 18158 473
+
+60.3 (+0.3) 64.1 (+0.5) 3065 17912 418
+
+60.6 (+0.6) 66.0 (+2.4) 3082 17771 360
+
+CSTrack [32]
+
+Motion(K) + Re-ID Motion(K) + Re-ID
+Motion(K)
+
+68.0
+
+72.3
+
+1846 15075 325
+
+69.2 (+1.2) 73.9 (+1.6) 2160 14128 285
+
+69.3 (+1.3) 71.7 (-0.6) 2202 14068 279
+
+FairMOT [81]
+
+Motion(K) + Re-ID Motion(K) + Re-ID
+Motion(K)
+
+69.1
+
+72.8
+
+1976 14443 299
+
+70.4 (+1.3) 74.2 (+1.4) 2288 13470 232
+
+70.3 (+1.2) 73.2 (+0.4) 2189 13625 236
+
+TraDes [68]
+
+Motion + Re-ID Motion + Re-ID
+Motion(K)
+
+68.2
+
+71.7
+
+1913 14962 285
+
+68.6 (+0.4) 71.1 (-0.6) 2253 14419 259
+
+67.9 (-0.3) 72.0 (+0.3) 1822 15345 178
+
+QuasiDense [46]
+
+Re-ID Motion(K) + Re-ID
+Motion(K)
+
+67.3
+
+67.8
+
+2637 14605 377
+
+67.7 (+0.4) 72.0 (+4.2) 2280 14856 281
+
+67.9 (+0.6) 70.9 (+3.1) 2310 14746 258
+
+CenterTrack [85]
+
+Motion Motion Motion(K)
+
+66.1
+
+64.2
+
+2442 15286 528
+
+66.3 (+0.2) 64.8 (+0.6) 2376 15445 334
+
+67.4 (+1.3) 74.0 (+9.8) 1778 15641 144
+
+Chained-Tracker [47]
+
+Chain Motion(K)
+
+63.1
+
+60.9
+
+2955 16174 755
+
+65.0 (+1.9) 66.7 (+5.8) 3303 15206 346
+
+TransTrack [56]
+
+Attention Attention Motion(K)
+
+67.1
+
+68.3
+
+1652 15817 254
+
+68.6 (+1.5) 69.0 (+0.7) 2151 14515 232
+
+68.3 (+1.2) 72.4 (+4.1) 1692 15189 181
+
+MOTR [76]
+
+Attention Attention Motion(K)
+
+64.7
+
+67.2
+
+5278 13452 346
+
+64.3 (-0.4) 69.3 (+2.1) 5787 13220 263
+
+65.7 (+1.0) 68.4 (+1.2) 1607 16651 260
+
+Table 2. Results of applying BYTE to 9 different state-of-the-art trackers on the MOT17 validation set. “K” is short for Kalman Filter. In green are the improvements of at least +1.0 point.
+
+7
+
+Input size MOTA↑ IDF1↑ IDs↓ Time (ms)
+
+512 × 928 75.0 608 × 1088 75.6 736 × 1280 76.2 800 × 1440 76.6
+
+77.6 200 17.9+4.0 76.4 212 21.8+4.0 77.4 188 26.2+4.2 79.3 159 29.6+4.2
+
+Table 3. Comparison of different input sizes on the MOT17 validation set. The total running time is a combination of the detection time and the association time. The best results are shown in bold.
+
+Training data
+
+Images MOTA↑ IDF1↑ IDs↓
+
+MOT17
+
+2.7K 75.8
+
+MOT17 + CH
+
+22.0K 76.6
+
+MOT17 + CH + CE 26.6K 76.7
+
+76.5 205 79.3 159 79.7 183
+
+Table 4. Comparison of different training data on the MOT17 validation set. “MOT17” is short for the MOT17 half training set. “CH” is short for the CrowdHuman dataset. “CE” is short for the Cityperson and ETHZ datasets. The best results are shown in bold.
+
+Interval MOTA↑ IDF1↑ FP↓ FN↓ IDs↓
+
+No
+
+76.6 79.3 3358 9081 159
+
+10
+
+77.4 79.7 3638 8403 150
+
+20
+
+78.3 80.2 3941 7606 146
+
+30
+
+78.3 80.2 4237 7337 147
+
+Table 5. Comparison of different interpolation intervals on the MOT17 validation set. The best results are shown in bold.
+
+We can see that in both modes, BYTE can bring stable improvements over almost all the metrics including MOTA, IDF1 and IDs. For example, BYTE increases CenterTrack by 1.3 MOTA and 9.8 IDF1, Chained-Tracker by 1.9 MOTA and 5.8 IDF1, TransTrack by 1.2 MOTA and 4.1 IDF1. The results in Table 2 indicate that BYTE has strong generalization ability and can be easily applied to existing trackers to obtain performance gain.
+5.3. Ablation Studies on ByteTrack
+Speed v.s. accuracy. We evaluate the speed and accuracy of ByteTrack using different size of input images during inference. All experiments use the same multi-scale training. The results are shown in Table 3. The input size during inference ranges from 512 × 928 to 800 × 1440. The running time of the detector ranges from 17.9 ms to 30.0 ms and the association time is all around 4.0 ms. ByteTrack can achieve 75.0 MOTA with 45.7 FPS running speed and 76.6 MOTA with 29.6 FPS running speed, which has advantages in practical applications.
+Training data. We evaluate ByteTrack on the half validation set of MOT17 using different combinations of training data. The results are shown in Table 4. When only using the
+
+half training set of MOT17, the performance achieves 75.8 MOTA, which already outperforms most methods. This is because we use strong augmentations such as Mosaic [8] and Mixup [77]. When further adding CrowdHuman, Cityperson and ETHZ for training, we can achieve 76.7 MOTA and 79.7 IDF1. The big improvement of IDF1 arises from that the CrowdHuman dataset can boost the detector to recognize occluded person, therefore, making the Kalman Filter generate smoother predictions and enhance the association ability of the tracker.
+The experiments on training data suggest that ByteTrack is not data hungry. This is a big advantage for real applications, comparing with previous methods [81, 32, 63, 33] that require more than 7 data sources [43, 20, 78, 70, 84, 18, 54] to achieve high performance.
+
+Visualization results. We show some visualization results of difﬁcult cases which ByteTrack is able to handle in Figure 5. We select 6 sequences from the half validation set of MOT17 and generate the visualization results using the model with 76.6 MOTA and 79.3 IDF1. The difﬁcult cases include occlusion (i.e. MOT17-02, MOT17-04, MOT1705, MOT17-09, MOT17-13), motion blur (i.e. MOT17-10, MOT17-13) and small objects (i.e. MOT17-13). The pedestrian in the middle frame with red triangle has low detection score, which is obtained by our association method BYTE. The low score boxes not only decrease the number of missing detection, but also play an important role for long-range association. As we can see from all these difﬁcult cases, ByteTrack does not bring any identity switch and preserve the identity effectively.
+
+Tracklet interpolation. We notice that there are some fully-occluded pedestrians in MOT17, whose visible ratio is 0 in the ground truth annotations. Since it is almost impossible to detect them by visual cues, we obtain these objects by tracklet interpolation.
+Suppose we have a tracklet T , its tracklet box is lost due to occlusion from frame t1 to t2. The tracklet box of T at frame t1 is Bt1 ∈ R4 which contains the top left and bottom right coordinate of the bounding box. Let Bt2 represent the tracklet box of T at frame t2. We set a hyper-parameter σ representing the max interval we perform tracklet interpolation, which means tracklet interpolation is performed when t2 − t1 ≤ σ, . The interpolated box of tracklet T at frame t can be computed as follows:
+
+Bt
+
+=
+
+Bt1
+
++
+
+(Bt2
+
+−
+
+Bt1
+
+)
+
+t t2
+
+− t1 − t1
+
+,
+
+(1)
+
+where t1 < t < t2. As shown in Table 5, tracklet interpolation can im-
+prove MOTA from 76.6 to 78.3 and IDF1 from 79.3 to 80.2, when σ is 20. Tracklet interpolation is an effective post-processing method to obtain the boxes of those fullyoccluded objects.
+
+8
+
+MOT17-02
+
+MOT17-04
+
+MOT17-05
+
+MOT17-09
+
+MOT17-10
+
+MOT17-13
+
+Figure 5. Visualization results of ByteTrack. We select 6 sequences from the validation set of MOT17 and show the effectiveness of ByteTrack to handle difﬁcult cases such as occlusion and motion blur. The yellow triangle represents the high score box and the red triangle represents the low score box. The same box color represents the same identity.
+
+5.4. MOT Challenge Result
+We compare ByteTrack with the state-of-the-art trackers on the test set of MOT17 and MOT20 under the private detection protocol in Table 6 and Table 7, respectively. All the results are directly obtained from the ofﬁcial MOT Challenge evaluation server1.
+MOT17. ByteTrack ranks 1st among all the trackers on the leaderboard of MOT17. Not only does it achieve the best accuracy (i.e. 80.3 MOTA, 77.3 IDF1 and 63.1 HOTA), but also runs with highest running speed (30 FPS). It outperforms the second-performance tracker [73] by a large margin (i.e. +3.3 MOTA, +5.3 IDF1 and +3.4 HOTA). Also, we use less training data than many high performance methods such as [81, 32, 63, 53, 33] (29K images vs. 73K images). It is worth noting that we only use the simplest similarity computation method Kalman Filter in the association step compared to other methods [81, 32, 46, 65, 76, 56] which additionally use Re-ID similarity or attention mechanisms. All these indicate that ByteTrack is a simple and strong tracker.
+MOT20. Compared with MOT17, MOT20 has much more crowded scenarios and occlusion cases. The average number of pedestrians in an image is 170 in the test set of MOT20. ByteTrack also ranks 1st among all the trackers on the leaderboard of MOT20 and outperforms other state-ofthe-art trackers by a large margin on almost all the metrics. For example, it increases MOTA from 68.6 to 77.8, IDF1 from 71.4 to 75.2 and decreases IDs by 71% from 4209 to 1223. It is worth noting that ByteTrack achieves extremely
+1https://motchallenge.net
+
+low identity switches, which further indicates that associating every detection boxes is very effective under occlusion cases.
+6. Conclusion
+We present a simple yet effective data association method BYTE for multi-object tracking. BYTE can be easily applied to existing trackers and achieve consistent improvements. We also propose a strong tracker ByteTrack, which achieves 80.3 MOTA, 77.3 IDF1 and 63.1 HOTA on MOT17 test set with 30 FPS, ranking 1st among all the trackers on the leaderboard. ByteTrack is very robust to occlusion for its accurate detection performance and the help of associating low score detection boxes. It also sheds light on how to make the best use of detection results to enhance multi-object tracking. We hope the high accuracy, fast speed and simplicity of ByteTrack can make it attractive in real applications.
+References
+[1] Yolov5. https://github.com/ultralytics/ yolov5, 2020.
+[2] S.-H. Bae and K.-J. Yoon. Robust online multi-object tracking based on tracklet conﬁdence and online discriminative appearance learning. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 1218– 1225, 2014.
+[3] J. Berclaz, F. Fleuret, E. Turetken, and P. Fua. Multiple object tracking using k-shortest paths optimization. IEEE transactions on pattern analysis and machine intelligence, 33(9):1806–1819, 2011.
+
+9
+
+Tracker
+DAN [58] Tube TK [45] MOTR [76] Chained-Tracker [47] CenterTrack [85] QuasiDense [46] TraDes [68] MAT [25] SOTMOT [83] TransCenter [72] GSDT [65] Semi-TCL [31] FairMOT [81] RelationTrack [75] PermaTrackPr [60] CSTrack [32] TransTrack [56] FUFET [53] SiamMOT [33] CorrTracker [63] TransMOT [15] ReMOT [73] ByteTrack (ours)
+
+MOTA↑
+52.4 63.0 65.1 66.6 67.8 68.7 69.1 69.5 71.0 73.2 73.2 73.3 73.7 73.8 73.8 74.9 75.2 76.2 76.3 76.5 76.7 77.0 80.3
+
+IDF1↑
+49.5 58.6 66.4 57.4 64.7 66.3 63.9 63.1 71.9 62.2 66.5 73.2 72.3 74.7 68.9 72.6 63.5 68.0 72.3 73.6 75.1 72.0 77.3
+
+HOTA↑
+39.3 48.0
+49.0 52.2 53.9 52.7 53.8
+54.5 55.2 59.8 59.3 61.0 55.5 59.3 54.1 57.9
+60.7 61.7 59.7 63.1
+
+MT↑
+21.4% 31.2% 33.0% 37.8% 34.6% 40.6% 36.4% 43.8% 42.7% 40.8% 41.7% 41.8% 43.2% 41.7% 43.8% 41.5% 55.3% 51.1% 44.8% 47.6% 51.0% 51.7% 53.2%
+
+ML↓
+30.7% 19.9% 25.2% 18.5% 24.6% 21.9% 21.5% 18.9% 15.3% 18.5% 17.5% 18.7% 17.3% 23.2% 17.2% 17.5% 10.2% 13.6% 15.5% 12.7% 16.4% 13.8% 14.5%
+
+FP↓
+25423 27060 45486 22284 18498 26589 20892 30660 39537 23112 26397 22944 27507 27999 28998 23847 50157 32796
+29808 36231 33204 25491
+
+FN↓
+234592 177483 149307 160491 160332 146643 150060 138741 118983 123738 120666 124980 117477 118623 115104 114303 86442 98475
+99510 93150 93612 83721
+
+IDs↓
+8431 4137 2049 5529 3039 3378 3555 2844 5184 4614 3891 2790 3303 1374 3699 3567 3603 3237
+3369 2346 2853 2196
+
+FPS↑
+<3.9 3.0 6.8 17.5 20.3 17.5 9.0 16.0 1.0 4.9 25.9 8.5 11.9 15.8 10.0 6.8 12.8 15.6 9.6 1.8 29.6
+
+Table 6. Comparison of the state-of-the-art methods under the “private detector” protocol on MOT17 test set. The best results are shown in bold. MOT17 contains rich scenes and half of the sequences are captured with camera motion. ByteTrack ranks 1st among all the trackers on the leaderboard of MOT17 and outperforms the second one ReMOT by a large margin on almost all the metrics. It also has the highest running speed among all the trackers.
+
+Tracker
+MLT [79] FairMOT [81] TransCenter [72] TransTrack [56] CorrTracker [63] Semi-TCL [31] CSTrack [32] GSDT [65] SiamMOT [33] RelationTrack [75] SOTMOT [83] ByteTrack (ours)
+
+MOTA↑
+48.9 61.8 61.9 65.0 65.2 65.2 66.6 67.1 67.1 67.2 68.6 77.8
+
+IDF1↑
+54.6 67.3 50.4 59.4 69.1 70.1 68.6 67.5 69.1 70.5 71.4 75.2
+
+HOTA↑
+43.2 54.6
+48.5
+55.3 54.0 53.6
+56.5
+61.3
+
+MT↑
+30.9% 68.8% 49.4% 50.1% 66.4% 61.3% 50.4% 53.1% 49.0% 62.2% 64.9% 69.2%
+
+ML↓
+22.1% 7.6% 15.5% 13.4% 8.9% 10.5% 15.5% 13.2% 16.3% 8.9% 9.7% 9.5%
+
+FP↓
+45660 103440 45895 27197 79429 61209 25404 31913
+61134 57064 26249
+
+FN↓
+216803 88901 146347 150197 95855 114709 144358 135409
+104597 101154 87594
+
+IDs↓
+2187 5243 4653 3608 5183 4139 3196 3131
+4243 4209 1223
+
+FPS↑
+3.7 13.2 1.0 7.2 8.5
+4.5 0.9 4.3 2.7 8.5 17.5
+
+Table 7. Comparison of the state-of-the-art methods under the “private detector” protocol on MOT20 test set. The best results are shown in bold. The scenes in MOT20 are much more crowded than those in MOT17. ByteTrack ranks 1st among all the trackers on the leaderboard of MOT20 and outperforms the second one SOTMOT by a large margin on all the metrics. It also has the highest running speed among all the trackers.
+
+10
+
+[4] P. Bergmann, T. Meinhardt, and L. Leal-Taixe. Tracking without bells and whistles. In ICCV, pages 941–951, 2019.
+[5] K. Bernardin and R. Stiefelhagen. Evaluating multiple object tracking performance: the clear mot metrics. EURASIP Journal on Image and Video Processing, 2008:1–10, 2008.
+[6] L. Bertinetto, J. Valmadre, J. F. Henriques, A. Vedaldi, and P. H. Torr. Fully-convolutional siamese networks for object tracking. In European conference on computer vision, pages 850–865. Springer, 2016.
+[7] A. Bewley, Z. Ge, L. Ott, F. Ramos, and B. Upcroft. Simple online and realtime tracking. In ICIP, pages 3464–3468. IEEE, 2016.
+[8] A. Bochkovskiy, C.-Y. Wang, and H.-Y. M. Liao. Yolov4: Optimal speed and accuracy of object detection. arXiv preprint arXiv:2004.10934, 2020.
+[9] G. Braso´ and L. Leal-Taixe´. Learning a neural solver for multiple object tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 6247–6257, 2020.
+[10] Z. Cai and N. Vasconcelos. Cascade r-cnn: Delving into high quality object detection. In CVPR, pages 6154–6162, 2018.
+[11] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov, and S. Zagoruyko. End-to-end object detection with transformers. In European Conference on Computer Vision, pages 213–229. Springer, 2020.
+[12] L. Chen, H. Ai, Z. Zhuang, and C. Shang. Real-time multiple people tracking with deeply learned candidate selection and person re-identiﬁcation. In 2018 IEEE International Conference on Multimedia and Expo (ICME), pages 1–6. IEEE, 2018.
+[13] P. Chu, H. Fan, C. C. Tan, and H. Ling. Online multi-object tracking with instance-aware tracker and dynamic model refreshment. In 2019 IEEE Winter Conference on Applications of Computer Vision (WACV), pages 161–170. IEEE, 2019.
+[14] P. Chu and H. Ling. Famnet: Joint learning of feature, afﬁnity and multi-dimensional assignment for online multiple object tracking. In ICCV, pages 6172–6181, 2019.
+[15] P. Chu, J. Wang, Q. You, H. Ling, and Z. Liu. Transmot: Spatial-temporal graph transformer for multiple object tracking. arXiv preprint arXiv:2104.00194, 2021.
+[16] P. Dendorfer, H. Rezatoﬁghi, A. Milan, J. Shi, D. Cremers, I. Reid, S. Roth, K. Schindler, and L. Leal-Taixe´. Mot20: A benchmark for multi object tracking in crowded scenes. arXiv preprint arXiv:2003.09003, 2020.
+[17] C. Dicle, O. I. Camps, and M. Sznaier. The way they move: Tracking multiple targets with similar appearance. In Proceedings of the IEEE international conference on computer vision, pages 2304–2311, 2013.
+[18] P. Dolla´r, C. Wojek, B. Schiele, and P. Perona. Pedestrian detection: A benchmark. In CVPR, pages 304–311. IEEE, 2009.
+[19] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Unterthiner, M. Dehghani, M. Minderer, G. Heigold, S. Gelly, et al. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929, 2020.
+
+[20] A. Ess, B. Leibe, K. Schindler, and L. Van Gool. A mobile vision system for robust multi-person tracking. In CVPR, pages 1–8. IEEE, 2008.
+[21] P. Felzenszwalb, D. McAllester, and D. Ramanan. A discriminatively trained, multiscale, deformable part model. In CVPR, pages 1–8. IEEE, 2008.
+[22] J. Fu, L. Zong, Y. Li, K. Li, B. Yang, and X. Liu. Model adaption object detection system for robot. In 2020 39th Chinese Control Conference (CCC), pages 3659–3664. IEEE, 2020.
+[23] Z. Ge, S. Liu, Z. Li, O. Yoshie, and J. Sun. Ota: Optimal transport assignment for object detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 303–312, 2021.
+[24] Z. Ge, S. Liu, F. Wang, Z. Li, and J. Sun. Yolox: Exceeding yolo series in 2021. arXiv preprint arXiv:2107.08430, 2021.
+[25] S. Han, P. Huang, H. Wang, E. Yu, D. Liu, X. Pan, and J. Zhao. Mat: Motion-aware multi-object tracking. arXiv preprint arXiv:2009.04794, 2020.
+[26] K. He, G. Gkioxari, P. Dolla´r, and R. Girshick. Mask r-cnn. In ICCV, pages 2961–2969, 2017.
+[27] A. Hornakova, R. Henschel, B. Rosenhahn, and P. Swoboda. Lifted disjoint paths with application in multiple object tracking. In International Conference on Machine Learning, pages 4364–4375. PMLR, 2020.
+[28] R. E. Kalman. A new approach to linear ﬁltering and prediction problems. J. Fluids Eng., 82(1):35–45, 1960.
+[29] T. Khurana, A. Dave, and D. Ramanan. Detecting invisible people. arXiv preprint arXiv:2012.08419, 2020.
+[30] H. W. Kuhn. The hungarian method for the assignment problem. Naval research logistics quarterly, 2(1-2):83–97, 1955.
+[31] W. Li, Y. Xiong, S. Yang, M. Xu, Y. Wang, and W. Xia. Semi-tcl: Semi-supervised track contrastive representation learning. arXiv preprint arXiv:2107.02396, 2021.
+[32] C. Liang, Z. Zhang, Y. Lu, X. Zhou, B. Li, X. Ye, and J. Zou. Rethinking the competition between detection and reid in multi-object tracking. arXiv preprint arXiv:2010.12138, 2020.
+[33] C. Liang, Z. Zhang, X. Zhou, B. Li, Y. Lu, and W. Hu. One more check: Making” fake background” be tracked again. arXiv preprint arXiv:2104.09441, 2021.
+[34] T.-Y. Lin, P. Goyal, R. Girshick, K. He, and P. Dolla´r. Focal loss for dense object detection. In ICCV, pages 2980–2988, 2017.
+[35] T.-Y. Lin, M. Maire, S. Belongie, J. Hays, P. Perona, D. Ramanan, P. Dolla´r, and C. L. Zitnick. Microsoft coco: Common objects in context. In ECCV, pages 740–755. Springer, 2014.
+[36] S. Liu, L. Qi, H. Qin, J. Shi, and J. Jia. Path aggregation network for instance segmentation. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 8759–8768, 2018.
+[37] Z. Liu, Y. Lin, Y. Cao, H. Hu, Y. Wei, Z. Zhang, S. Lin, and B. Guo. Swin transformer: Hierarchical vision transformer using shifted windows. arXiv preprint arXiv:2103.14030, 2021.
+
+11
+
+[38] Z. Lu, V. Rathod, R. Votel, and J. Huang. Retinatrack: Online single stage joint detection and tracking. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pages 14668–14678, 2020.
+[39] J. Luiten, A. Osep, P. Dendorfer, P. Torr, A. Geiger, L. LealTaixe´, and B. Leibe. Hota: A higher order metric for evaluating multi-object tracking. International journal of computer vision, 129(2):548–578, 2021.
+[40] H. Luo, W. Xie, X. Wang, and W. Zeng. Detect or track: Towards cost-effective video object detection/tracking. In Proceedings of the AAAI Conference on Artiﬁcial Intelligence, volume 33, pages 8803–8810, 2019.
+[41] T. Meinhardt, A. Kirillov, L. Leal-Taixe, and C. Feichtenhofer. Trackformer: Multi-object tracking with transformers. arXiv preprint arXiv:2101.02702, 2021.
+[42] P. Micikevicius, S. Narang, J. Alben, G. Diamos, E. Elsen, D. Garcia, B. Ginsburg, M. Houston, O. Kuchaiev, G. Venkatesh, et al. Mixed precision training. arXiv preprint arXiv:1710.03740, 2017.
+[43] A. Milan, L. Leal-Taixe´, I. Reid, S. Roth, and K. Schindler. Mot16: A benchmark for multi-object tracking. arXiv preprint arXiv:1603.00831, 2016.
+[44] A. Milan, S. Roth, and K. Schindler. Continuous energy minimization for multitarget tracking. IEEE transactions on pattern analysis and machine intelligence, 36(1):58–72, 2013.
+[45] B. Pang, Y. Li, Y. Zhang, M. Li, and C. Lu. Tubetk: Adopting tubes to track multi-object in a one-step training model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 6308–6318, 2020.
+[46] J. Pang, L. Qiu, X. Li, H. Chen, Q. Li, T. Darrell, and F. Yu. Quasi-dense similarity learning for multiple object tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 164–173, 2021.
+[47] J. Peng, C. Wang, F. Wan, Y. Wu, Y. Wang, Y. Tai, C. Wang, J. Li, F. Huang, and Y. Fu. Chained-tracker: Chaining paired attentive regression results for end-to-end joint multipleobject detection and tracking. In European Conference on Computer Vision, pages 145–161. Springer, 2020.
+[48] J. Redmon and A. Farhadi. Yolov3: An incremental improvement. arXiv preprint arXiv:1804.02767, 2018.
+[49] S. Ren, K. He, R. Girshick, and J. Sun. Faster r-cnn: Towards real-time object detection with region proposal networks. In Advances in neural information processing systems, pages 91–99, 2015.
+[50] H. Rezatoﬁghi, N. Tsoi, J. Gwak, A. Sadeghian, I. Reid, and S. Savarese. Generalized intersection over union: A metric and a loss for bounding box regression. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 658–666, 2019.
+[51] E. Ristani, F. Solera, R. Zou, R. Cucchiara, and C. Tomasi. Performance measures and a data set for multi-target, multicamera tracking. In ECCV, pages 17–35. Springer, 2016.
+[52] R. Sanchez-Matilla, F. Poiesi, and A. Cavallaro. Online multi-target tracking with strong and weak detections. In ECCV, pages 84–99. Springer, 2016.
+[53] C. Shan, C. Wei, B. Deng, J. Huang, X.-S. Hua, X. Cheng, and K. Liang. Tracklets predicting based adaptive graph tracking. arXiv preprint arXiv:2010.09015, 2020.
+
+[54] S. Shao, Z. Zhao, B. Li, T. Xiao, G. Yu, X. Zhang, and J. Sun. Crowdhuman: A benchmark for detecting human in a crowd. arXiv preprint arXiv:1805.00123, 2018.
+[55] P. Sun, Y. Jiang, E. Xie, W. Shao, Z. Yuan, C. Wang, and P. Luo. What makes for end-to-end object detection? In Proceedings of the 38th International Conference on Machine Learning, volume 139 of Proceedings of Machine Learning Research, pages 9934–9944. PMLR, 2021.
+[56] P. Sun, Y. Jiang, R. Zhang, E. Xie, J. Cao, X. Hu, T. Kong, Z. Yuan, C. Wang, and P. Luo. Transtrack: Multiple-object tracking with transformer. arXiv preprint arXiv:2012.15460, 2020.
+[57] P. Sun, R. Zhang, Y. Jiang, T. Kong, C. Xu, W. Zhan, M. Tomizuka, L. Li, Z. Yuan, C. Wang, et al. Sparse rcnn: End-to-end object detection with learnable proposals. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 14454–14463, 2021.
+[58] S. Sun, N. Akhtar, H. Song, A. S. Mian, and M. Shah. Deep afﬁnity network for multiple object tracking. IEEE transactions on pattern analysis and machine intelligence, 2019.
+[59] P. Tang, C. Wang, X. Wang, W. Liu, W. Zeng, and J. Wang. Object detection in videos by high quality object linking. IEEE transactions on pattern analysis and machine intelligence, 42(5):1272–1278, 2019.
+[60] P. Tokmakov, J. Li, W. Burgard, and A. Gaidon. Learning to track with object permanence. arXiv preprint arXiv:2103.14258, 2021.
+[61] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, Ł. Kaiser, and I. Polosukhin. Attention is all you need. In Advances in neural information processing systems, pages 5998–6008, 2017.
+[62] C.-Y. Wang, H.-Y. M. Liao, Y.-H. Wu, P.-Y. Chen, J.W. Hsieh, and I.-H. Yeh. Cspnet: A new backbone that can enhance learning capability of cnn. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition workshops, pages 390–391, 2020.
+[63] Q. Wang, Y. Zheng, P. Pan, and Y. Xu. Multiple object tracking with correlation learning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 3876–3886, 2021.
+[64] W. Wang, E. Xie, X. Li, D.-P. Fan, K. Song, D. Liang, T. Lu, P. Luo, and L. Shao. Pyramid vision transformer: A versatile backbone for dense prediction without convolutions. arXiv preprint arXiv:2102.12122, 2021.
+[65] Y. Wang, K. Kitani, and X. Weng. Joint object detection and multi-object tracking with graph neural networks. arXiv preprint arXiv:2006.13164, 2020.
+[66] Z. Wang, L. Zheng, Y. Liu, Y. Li, and S. Wang. Towards real-time multi-object tracking. In Computer Vision–ECCV 2020: 16th European Conference, Glasgow, UK, August 23– 28, 2020, Proceedings, Part XI 16, pages 107–122. Springer, 2020.
+[67] N. Wojke, A. Bewley, and D. Paulus. Simple online and realtime tracking with a deep association metric. In 2017 IEEE international conference on image processing (ICIP), pages 3645–3649. IEEE, 2017.
+[68] J. Wu, J. Cao, L. Song, Y. Wang, M. Yang, and J. Yuan. Track to detect and segment: An online multi-object tracker.
+
+12
+
+In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 12352–12361, 2021.
+[69] Y. Xiang, A. Alahi, and S. Savarese. Learning to track: Online multi-object tracking by decision making. In ICCV, pages 4705–4713, 2015.
+[70] T. Xiao, S. Li, B. Wang, L. Lin, and X. Wang. Joint detection and identiﬁcation feature learning for person search. In CVPR, pages 3415–3424, 2017.
+[71] J. Xu, Y. Cao, Z. Zhang, and H. Hu. Spatial-temporal relation networks for multi-object tracking. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 3988–3998, 2019.
+[72] Y. Xu, Y. Ban, G. Delorme, C. Gan, D. Rus, and X. AlamedaPineda. Transcenter: Transformers with dense queries for multiple-object tracking. arXiv preprint arXiv:2103.15145, 2021.
+[73] F. Yang, X. Chang, S. Sakti, Y. Wu, and S. Nakamura. Remot: A model-agnostic reﬁnement for multiple object tracking. Image and Vision Computing, 106:104091, 2021.
+[74] F. Yang, W. Choi, and Y. Lin. Exploit all the layers: Fast and accurate cnn object detector with scale dependent pooling and cascaded rejection classiﬁers. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 2129–2137, 2016.
+[75] E. Yu, Z. Li, S. Han, and H. Wang. Relationtrack: Relationaware multiple object tracking with decoupled representation. arXiv preprint arXiv:2105.04322, 2021.
+[76] F. Zeng, B. Dong, T. Wang, C. Chen, X. Zhang, and Y. Wei. Motr: End-to-end multiple-object tracking with transformer. arXiv preprint arXiv:2105.03247, 2021.
+[77] H. Zhang, M. Cisse, Y. N. Dauphin, and D. Lopez-Paz. mixup: Beyond empirical risk minimization. arXiv preprint arXiv:1710.09412, 2017.
+[78] S. Zhang, R. Benenson, and B. Schiele. Citypersons: A diverse dataset for pedestrian detection. In CVPR, pages 3213– 3221, 2017.
+[79] Y. Zhang, H. Sheng, Y. Wu, S. Wang, W. Ke, and Z. Xiong. Multiplex labeling graph for near-online tracking in crowded scenes. IEEE Internet of Things Journal, 7(9):7892–7902, 2020.
+[80] Y. Zhang, C. Wang, X. Wang, W. Liu, and W. Zeng. Voxeltrack: Multi-person 3d human pose estimation and tracking in the wild. arXiv preprint arXiv:2108.02452, 2021.
+[81] Y. Zhang, C. Wang, X. Wang, W. Zeng, and W. Liu. Fairmot: On the fairness of detection and re-identiﬁcation in multiple object tracking. arXiv preprint arXiv:2004.01888, 2020.
+[82] Z. Zhang, D. Cheng, X. Zhu, S. Lin, and J. Dai. Integrated object detection and tracking with tracklet-conditioned detection. arXiv preprint arXiv:1811.11167, 2018.
+[83] L. Zheng, M. Tang, Y. Chen, G. Zhu, J. Wang, and H. Lu. Improving multiple object tracking with single object tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 2453–2462, 2021.
+[84] L. Zheng, H. Zhang, S. Sun, M. Chandraker, Y. Yang, and Q. Tian. Person re-identiﬁcation in the wild. In CVPR, pages 1367–1376, 2017.
+
+[85] X. Zhou, V. Koltun, and P. Kra¨henbu¨hl. Tracking objects as points. In European Conference on Computer Vision, pages 474–490. Springer, 2020.
+[86] X. Zhou, D. Wang, and P. Kra¨henbu¨hl. Objects as points. arXiv preprint arXiv:1904.07850, 2019.
+[87] B. Zhu, J. Wang, Z. Jiang, F. Zong, S. Liu, Z. Li, and J. Sun. Autoassign: Differentiable label assignment for dense object detection. arXiv preprint arXiv:2007.03496, 2020.
+[88] J. Zhu, H. Yang, N. Liu, M. Kim, W. Zhang, and M.-H. Yang. Online multi-object tracking with dual matching attention networks. In Proceedings of the European Conference on Computer Vision (ECCV), pages 366–382, 2018.
+[89] X. Zhu, W. Su, L. Lu, B. Li, X. Wang, and J. Dai. Deformable detr: Deformable transformers for end-to-end object detection. arXiv preprint arXiv:2010.04159, 2020.
+
+13
+

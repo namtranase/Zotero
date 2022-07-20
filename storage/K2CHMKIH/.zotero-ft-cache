@@ -1,0 +1,569 @@
+YOLO5Face: Why Reinventing a Face Detector
+Delong Qi, Weijun Tan*, Qi Yao, Jingfeng Liu Shenzhen Deepcam Information Technologies
+Shenzhen China
+{delong.qi,weijun.tan,qi.yao,jingfeng.liu}@deepcam.com
+LinkSprite Technologies, USA, weijun.tan@deepcam.com
+
+arXiv:2105.12931v2 [cs.CV] 2 Dec 2021
+
+Abstract
+Tremendous progress has been made on face detection in recent years using convolutional neural networks. While many face detectors use designs designated for detecting faces, we treat face detection as a generic object detection task. We implement a face detector based on the YOLOv5 object detector and call it YOLO5Face. We make a few key modiﬁcations to the YOLOv5 and optimize it for face detection. These modiﬁcations include adding a ﬁve-point landmark regression head, using a stem block at the input of the backbone, using smaller-size kernels in the SPP, and adding a P6 output in the PAN block. We design detectors of different model sizes, from an extra-large model to achieve the best performance to a super small model for real-time detection on an embedded or mobile device. Experiment results on the WiderFace dataset show that on VGA images, our face detectors can achieve state-of-theart performance in almost all the Easy, Medium, and Hard subsets, exceeding the more complex designated face detectors. The code is available at https://github.com/ deepcam-cn/yolov5-face.
+1. Introduction
+Face detection is an important computer vision task. As the ﬁrst step of many tasks, including face recognition, veriﬁcation, tracking, alignment, expression analysis, face detection attracts many research and developments in academia and the industry. Tremendous progress has been made since deep learning, particularly convolutional neural network (CNN), has been used in this task. And the performance of face detection has improved signiﬁcantly over the years. For a survey of face detection, please refer to the benchmark results [40, 39].
+There are many methods in this ﬁeld from different perspectives. Research directions include the design of the CNN network, loss functions, data augmentations, and training strategies. For example, in the YOLOv4 paper,
+
+the authors explore all these research directions and propose the YOLOV4 object detector based on optimizations of network architecture, selection of bags of freebies, and selection of bags of specials [2].
+In our approach, we treat face detection as a generic object detection task. We have the same intuition as the TinaFace [57]. Intuitively, a face is an object. As discussed in the TinaFace [57], from the perspective of data, the properties that face has, like pose, scale, occlusion, illumination, blur, etc., also exist in other objects. The unique properties in faces like expression and makeup can also correspond to distortion and color in objects. Landmarks are special to face, but they are not unique either. They are just key points of an object. For example, in license plate detection, landmarks are also used. And adding landmark regression in the object prediction head is straightforward. Then from the perspective of challenges encountered by face detection like multi-scale, small faces, and dense scenes, they all exist in generic object detection. Thus, face detection is just a sub-task of generic object detection.
+In this paper, we follow this intuition and design a face detector based on the YOLOv5 object detector [42]. We modify the design for face detection considering large faces, small faces, landmark supervision for different complexities and applications. Our goal is to provide a portfolio of models for various applications, from very complex ones to get the best performance to very simple ones to get the best trade-off of performance and speed on embedded or mobile devices.
+Our main contributions are summarized as follows,
+• We redesign the YoloV5 object detector [42] as a face detector, and call it YOLO5Face. We implement key modiﬁcations to the network to improve the performance in terms of mean average precision (mAP) and speed. The details of these modiﬁcations will be presented in Section III.
+• We design a series of models of different model sizes, from large models, to medium models, to super small
+
+1
+
+models, for needs in different applications. In addition to the backbone used in YOLOv5 [42], we implement a backbone based on ShufﬂeNetV2 [26], which gives the state-of-the-art (SOTA) performance and fast speed for mobile devices.
+• We evaluate our models on the WiderFace [40] dataset. On VGA resolution images, almost all our models achieve the start-of-the-art (SOTA) performance and fast speed. We also evaluate it on the FDDB dataset [36]. A face recognition evaluation on the Webface dataset [58] demonstrates better landmark accuracy than the RetinaFace [8]. This answers the question in the title of this paper. We delicately design a face detector based on YOLOv5 [42] that is as good as or better than other face detectors speciﬁcally invented for face detection.
+Please note that our contribution is not exploring a novel idea but rather a delicate redesign of an existing idea for a speciﬁc application. Since we open-source the code, many applications and mobile apps have been developed based on our design and achieve impressive performance, which demonstrates the value of our work to the face detection community.
+2. Related Work
+2.1. Object Detection
+General object detection aims at locating and classifying the pre-deﬁned objects in a given image. Before deep CNN is used, traditional face detection uses hand-crafted features, like HAAR, HOG, LBP, SIFT, DPM, ACF, etc. The seminal work by Viola and Jones [53] introduces integral images to compute HAAR-like features. For a survey of face detection using hand-crafted features, please refer to [38, 54].
+Since deep CNN shows its power in many machine learning tasks, face detection is dominated by deep CNN methods. There are two-stage and one-stage object detectors. Typical two-stage methods are the RCNN family, including RCNN [12], fast-RCNN [11], faster-RCNN [30], mask-RCNN [14], Cascade-RCNN [3].
+The two-stage object detector has excellent performance but suffers from long latency and slow speed. Therefore, one-stage object detectors are studied to overcome this problem. Typical one-stage networks include SSD [23], YOLO [27, 29, 28, 2, 42].
+Other object detection networks include FPN [21], MMDetection [5], EfﬁcientDet [33], transformer(DETR) [4], Centernet [9, 56], and so on.
+
+2.2. Face Detection
+The researches for face detection follows the general object detection. After the most popular and challenging face detection benchmark WiderFace dataset [40] is released, face detection develops rapidly, focusing on the extreme and real variation problem including scale, pose, occlusion, expression, makeup, illumination, blur, etc.
+A lot of methods are proposed to deal with these problems, particularly the scale, context, anchor in order to detect small faces. These methods include MTCNN [44], FaceBox [48], S3FD [49], DSFD [19], RetinaFace [8], ReﬁneFace [45], DFS [35], VIM-FD [51], SRN [6], ISRN [47], SFDet [46], PyramidBox [34], PyramidBox++ [20], and the most recent ASFD [43], MaskFace [41], TinaFace [57], MogFace [25], and SCRFD [13]. For a list of popular face detectors, the readers are referred to the WiderFace website [39].
+It is worth noting that some of these face detectors explore unique characteristics in a human face; the others are just general object detectors adopted and modiﬁed for face detection. Using RetinaFace [8] as an example, it uses face landmark and mesh (2D and 3D) regression to help the supervision of face detection, while TinaFace [57] is simply a general object detector.
+2.3. YOLO
+YOLO ﬁrst appeared in 2015 [27] as a different approach than popular two-stage approaches. It treats object detection as a regression problem rather than a classiﬁcation problem. It performs all the essential stages to detect an object using a single neural network. As a result, it achieves not only good detection performance but also achieves realtime speed. Furthermore, it has excellent generalization capability, can be easily trained to detect different objects.
+Over the next ﬁve years, the YOLO algorithm has been upgraded to ﬁve versions with many innovative ideas from the object detection community. The ﬁrst three versions YOLOv1 [27], YOLOv2 [29], YOLOv3 [28] is developed by the author of the original YOLO algorithm. Out of these three versions, the YOLOv3 [28] is a milestone with big improvements in performance and speed by introducing multiscale features (FPN) [21], a better backbone network (Darknet53), and replacing the Softmax classiﬁcation loss with the binary cross-entropy loss.
+In early 2020, after the original YOLO authors withdrew from the research ﬁeld, YOLOv4 [2] was released by a different research team. The team explores a lot of options in almost all aspects of the YOLOv3 [28] algorithm, including the backbone and what they call bags of freebies and bags of specials. It achieves 43.5% AP (65.7% AP50) for the MS COCO dataset at a real-time speed of 65 FPS on the Tesla V100.
+
+2
+
+One month later, the YOLOv5 [42] was released by another different research team. In the algorithm perspective, the YOLOv5 [42] does not have many innovations. And the team does not publish a paper. These bring quite some controversies about if it should be called YOLOv5. However, due to its signiﬁcantly reduced model size, faster speed, and similar performance as YOLOv4 [2], and full implementation in Python (Pytorch), it is welcome by the object detection community.
+3. YOLO5Face Face Detector
+In this section, we present the key modiﬁcations we make in YOLOv5 and make it a face detector YOLO5Face.
+3.1. Summary Key Modiﬁcations
+A summary of these modiﬁcations is listed below. More details will be given in the following subsections.
+1. We add a landmark regression head. 2. We replace the Focus layer with a stem block structure. 3. We change the SPP block [15] to use smaller kernels. 4. We add a P6 output block with a stride of 64. 5. We design two super light-weight models based on ShufﬂeNetV2 [26] backbone. 6. We optimize data augmentation methods speciﬁcally good for face detection.
+3.2. Network Architecture
+We use the YOLOv5 object detector [42] as our baseline and optimize it for face detection. We introduce some modiﬁcations designated for the detection of small faces as well as large faces.
+The network architecture of our YOLO5Face face detector is depicted in Fig. 1. The diagram style is borrowed from [22]. All our modiﬁed blocks are highlighted in red. It consists of the backbone with FPN, FAN neck, and output head. In YOLOv5, a newly designed backbone block called CSPNet [42] is used. Near the end of the backbone, an SPP block is used. In the neck, a PAN [22] is used to aggregate the features. In the output head, regression and classiﬁcation are both used. In the YOLOv5 [42] design, there is a focus layer at the input. We replace this focus layer with a stem unit.
+In Fig. 1 (c), an output label for the head include bounding box (box), conﬁdence (conf), classiﬁcation (class) and ﬁve-point landmarks. The landmarks are our addition to the YOLOv5 to make it a face detector with landmark output. If without the landmark, the last dimension 16 should be 6. Please note that the output dimensions 80*80*16 in P3, 40*40*16 in P4, 20*20*16 in P5, 10*10*16 in optional P6 are for every anchor. The real dimension should be multiplied by the number of anchors.
+
+In the SPP block, the three kernel sizes 13x13, 9x9, 5x5 in YOLOv5 are revised to 7x7, 5x5, 3x3 in our face detector. This has been shown as one of the innovations that improve face detection performance.
+Note that we only consider VGA resolution input images. To be more precise, the longer edge of the input image is scaled to 640, and the shorter edge is scaled accordingly. The shorter edge is also adjusted to be a multiple of the largest stride of the SPP block. For example, when P6 is not used, the shorter edge needs to be multiple of 32; when P6 is used, the shorter edge needs to multiple of 64.
+3.3. Landmark Regression
+Landmarks are important characteristics of the human face. They can be used to do face alignment, face recognition, face express analysis, age analysis, etc. Traditional landmarks consist of 68 points. They are simpliﬁed to 5 points in MTCNN [44] Since then, the ﬁve-point landmarks have been used widely in face recognition. The quality of landmarks affects the quality of face alignment and face recognition.
+The general object detector does not include landmarks. It is straightforward to add it as a regression head. Therefore, we add it to our YOLO5Face. The landmark outputs will be used in align face images before they are sent to the face recognition network.
+General loss functions for landmark regression are L2, L1, or smooth-L1. The MTCNN [44] uses the L2 loss function. However, it is found these loss functions are not sensitive to small errors. To overcome this problem, the Wingloss is proposed [10],
+
+w · ln(1 + |x|/e), if x < w
+
+wing(x) =
+
+(1)
+
+|x| − C,
+
+otherwise
+
+The non-negative w sets the range of the nonlinear part to (−w, w), e limits the curvature of the nonlinear region, and C = w − wln(1 + w/e) is a constant that smoothly links the piecewise-deﬁned linear and nonlinear parts. As pointed out in [10], in the Wing loss function, the response at a small error area near zero is boosted compared to the L2, L1, or smooth-L1 functions.
+The loss functions for landmark point vector s = {si}, and its ground truth s = {si}, where i = 1, 2, ..., 10, is deﬁned as,
+
+lossL(s) = wing(si − si)
+
+(2)
+
+i
+
+Let the general object detection loss function of YOLOv5 be lossobj(bounding box, class, probability), then the new total loss function is,
+
+loss(s) = lossobj + λL · lossL
+
+(3)
+
+3
+
+Figure 1. The proposed YOLO5Face network architecture. The style of the diagram is borrowed from [22].
+
+where the λL is a weighting factor for the landmark regression loss function. Details of lossobj can be found in the appendix.
+3.4. Stem Block Structure
+In a standard network like ResNet [16] there is a stem unit - a component whose goal is to reduce the input resolution quickly. The ResNet50 stem is comprised of a stride-2 conv7x7 followed by a max-pooling layer [16]. The ResNet50-D [17] stem design is more elaborate - the conv7x7 is replaced by three conv3x3 layers. The new ResNet50-D stem design improves accuracy but at the cost of lowering the training throughput. In the TResNet [31], the stem unit is called a DepthToSpace transformation layer, which aims to replace the traditional convolution-based downsampling unit with a fast and seamless layer, with as little information loss as possible. It has been reported in [17], and [31] that a better-designed stem unit can improve the classiﬁcation accuracy.
+We design a stem block similar to [37], as shown in Fig.1 (d). In this stem block, we implement a stride = 2 in the ﬁrst spatial down-sampling on the input image and increase the number of channels. With this stem block, the computation complexity only increases marginally while a better performance may be achieved. Experiment data will be presented in the ablation study.
+3.5. SPP with Smaller Kernels
+Before forwarding to the feature aggregation block in the neck, the output feature maps of the YOLO5 backbone are sent to an additional SPP block [15] to increase the receptive ﬁeld and separate out the most important features. Instead of many CNN models containing fully connected layers which only accept input images of speciﬁc dimensions,
+
+Figure 2. Stem block structure to replace the focus layer.
+
+Model
+
+Backbone
+
+(D,W) P6?
+
+YOLOv5n
+
+ShufﬂeNetv2
+
+-
+
+No
+
+YOLOv5n-0.5 ShufﬂeNetv2-0.5
+
+-
+
+No
+
+YOLOv5s YOLO5-CSPNet (0.33,0.50) No
+
+YOLOv5s6 YOLO5-CSPNet (0.33,0.50) Yes
+
+YOLOv5m YOLO5-CSPNet (0.50,0.75) No
+
+YOLOv5m6 YOLO5-CSPNet (0.50,0.75) Yes
+
+YOLOv5l YOLO5-CSPNet (1.0,1.0) No
+
+YOLOv5l6 YOLO5-CSPNet (1.0,1.0) Yes
+
+YOLOv5x YOLO5-CSPNet (1.33,1.25) No
+
+YOLOv5x6 YOLO5-CSPNet (1.33,1.25) Yes
+
+Table 1. Detail of implemented YOLO5Face models, where (D,W)
+
+are the depth and width multiples of the YOLOv5-CSPNet [42].
+
+The ShufﬂeNetv2 [26] is used as the backbone in the two super-
+
+small models. The number of parameters and Flops are listed in
+
+Table 4.
+
+SPP is proposed to aim at generating a ﬁxed-size output irrespective of the input size. In addition, SPP also helps to extract important features by pooling multi-scale versions of itself.
+
+4
+
+In YOLO5, three kernel sizes 13x13, 9x9, 5x5 are used [42]. We revise them to use smaller size kernels 7x7, 5x5, and 3x3. These smaller kernels help to detect small faces more easily and increase the overall face detection performance. Qualitative evaluation will be shown in the ablation study.
+3.6. P6 Output Block
+A key component of YOLOv4 [2], and YOLOv5 [42] is the path aggregation network (PAN) [22], which helps the preserving and passing of ﬁne-grained features in deep layers.
+In YOLOv5, there are three output blocks in the PAN output feature maps, called P3, P4, P5, corresponding to 80x80x16, 40x40x16, 20x20x16, with strides 8, 16, 32, respectively. The face bounding box, landmarks, and conﬁdence are regressed from these blocks. In our YOLO5Face, we add an extra P6 output block, whose feature map is 10x10x16 with stride 64. This modiﬁcation particularly helps the detection of large faces. While almost all face detectors focus on improving the detection of small faces, detection of large faces can be easily overlooked. We ﬁll this hole by adding the P6 output block. Qualitative evaluation will be shown in the ablation study.
+3.7. ShufﬂeNetV2 as Backbone
+For applications in embedding or mobile devices, a lightweight backbone is used to reduce the computation complexity and increase speed. Two popular choices are MobileNet [32] and ShufﬂeNet [50]. The ShufﬂeNetv2 [50] borrows the idea of a shortcut path similar to that in DenseNet [18], and uses channel shufﬂing to mix features. This makes the ShufﬂeNetV2 a super-fast network.
+We use the ShufﬂeNetV2 as the backbone in YOLOv5 and implement super small face detectors YOLOv5n-Face, and YOLOv5n0.5-Face.
+3.8. Data Augmentation for Face Detection
+We ﬁnd that some data augmentation methods on general object detection are not appropriate for face detection, including up-down ﬂipping and Mosaic. Removing the updown ﬂipping improves the performance. When small images are used, the Mosaic augmentation [2] degrades the performance. However, when the small faces are ignored, it works well. Random cropping helps the performance. More details can be found in the ablation study.
+4. Experiments
+4.1. Dataset
+The WiderFace dataset [40] is the largest face detection dataset, which contains 32,203 images and 393,703 faces.
+
+For its large variety of scale, pose, occlusion, expression, illumination, and event, it is close to reality and is very challenging.
+The whole dataset is divided into train/validation/test sets by ratio 50%/10%/40% within each event class. Furthermore, each subset is deﬁned into three levels of difﬁculty: Easy, Medium, and Hard. As it names indicates, the Hard subset is most challenging. So the performance on the Hard subset best reﬂects the effectiveness of a face detector.
+Unless speciﬁed otherwise, the WiderFace dataset [40] is used in this work. In the face recognition with YOLO5Face landmark and alignment, the Webface dataset [58] is used. The FDDB dataset [36] is used in testing to demonstrate our model’s performance on cross-domain datasets.
+4.2. Implementation Details
+We use the YOLOv5 codebase [42] as our starting point and implement all the modiﬁcations we describe earlier in PyTorch.
+The SGD optimizer is used. The initial learning rate is 1E-2, the ﬁnal learning rate is 1E-5, and the weight decay is 5E-3. A momentum of 0.8 is used in the ﬁrst three warmingup epochs. After that, the momentum is changed to 0.937. The training runs 250 epochs with a batch size of 64. The λL = 0.5 is optimized by exhaust search.
+Implemented Models. We implement a series of face detector models, as listed in Table 1. We implement eight relatively large models, including extra large-size models (YOLOv5x, YOLOv5x6), largesize models (YOLOv5l, YOLOv5l6) medium-size models (YOLOv5m, YOLOv5m6), and small-size models (YOLOv5s, YOLOv5s6). In the name of the model, the last postﬁx 6 means it has the P6 output block in the SPP. These models all use the YOLOv4 CSPNet as the backbone with different depth and width multiples, denoted as D and W in Table 1.
+Furthermore, we implement two super small-size models, YOLOv5n and YOLOv5n0.5, which use the ShufﬂeNetv2 and ShufﬂeNetv2-0.5 [26] as the backbone. Except for the backbone, all other main blocks, including the stem block, SPP, PAN, are the same as in the larger models.
+The number of parameters and number of ﬂops of all these models is listed in Table 4 for comparison with existing methods.
+4.3. Ablation Study
+In this subsection, we present the effects of the modiﬁcations we have in our YOLO5Face. In this study, we use the YOLO5s model. We use the WiderFace [40] validation dataset and use the mAP as the performance metric. The results are presented in Table 2. Please note we do the experiments incrementally, where we add a modiﬁcation at a time.
+
+5
+
+Modiﬁcation
+
+Easy Medium Hard
+
+Baseline (Focus block) 94.70 92.90 83.27
+
++ Stem block
+
+94.46 92.72 83.57
+
++ Landmark
+
+94.47 92.79 83.21
+
++ SPP(3,5,7)
+
+94.66 92.83 83.33
+
++ Ignore small faces 94.71 93.01 83.33
+
++ P6 block
+
+95.29 93.61 83.27
+
+Table 2. Ablation study results on the WiderFace validation
+
+dataset.
+
+FaceDetect
+
+traning dataset
+
+FNMR
+
+RetinaFace[8] WiderFace [40] 0.1065
+
+YOLOv5s
+
+WiderFace
+
+0.1060
+
+YOLOv5s +Multi-task facial[52] 0.1058
+
+YOLOv5m
+
+WiderFace
+
+0.1056
+
+YOLOv5m +Multi-task facial 0.1051
+
+Table 3. Evaluation of YOLO5Face landmark on Webface test
+
+dataset [58]. Retina refers to the RetinaFace [45]. Two
+
+YOLO5Face models, the small model YOLOv5s, and the medium
+
+model YOLOv5m are used.
+
+Stem Block We use the standard YOLOv5 [42] as a baseline which has a focus layer. By replacing the focus layer with our stem block, the mAP on the hard subset increased by 0.30%, which is non-trivial. The mAPs on the easy and medium subsets degrades slightly.
+Landmark. Landmarks are used in many applications, including face recognition, where the landmarks are used to align the detected face image. Using the stem block as a baseline, adding the landmark achieves about the same performance on the easy and medium subsets while causes a little performance loss on the hard dataset. We will show in the next subsection the beneﬁts of our landmarks to face recognition.
+SPP with Smaller Size Kernels. The stem block and landmark are used in this test. The SPP kernel sizes (13x13, 9x9, 5x5) are changed to (7x7, 5x5, 3x3). mAPs are improved in all easy, medium, and hard subsets. The mAPs are improved by 0.1-0.2%.
+Data Augmentation. A few data augmentation methods are studied. We ﬁnd that ignoring small faces combined with random crop and Mosaic [2] helps the mAPs. It improves the mAPs on the easy and medium subset by 0.10.2%.
+P6 Output Block. The P6 block brings signiﬁcant mAP improvements, about 0.5-0.6%, on the easy and medium subsets. Perhaps motivated by our ﬁndings, the P6 block is added to YOLOv5 [42] after us.
+Please note that since we do not use exactly the same parameters in this ablation study as in the ﬁnal benchmark tests, the results in Table 2 may be slightly different from that in Table 4.
+
+Figure 3. Some examples of detected face and landmarks, where the ﬁrst row is from RetinaFace [8], and second row is from our YOLOv5m.
+4.4. YOLO5Face for Face Recognition
+Landmark is critical for face recognition accuracy. In RetinaFace [8], the accuracy of the landmark is evaluated with the MSE between estimated landmark coordinates and their ground truth and with the face recognition accuracy. The results show that the RetinaFace has better landmarks than the older MTCNN [44].
+In this work, we also use face recognition to evaluate the accuracy of landmarks of the YOLO5Face. We use the Webface test dataset, which is the largest face dataset with noisy 4M identities/260M faces, and cleaned 2M identities/42M faces [58]. This dataset is used in the ICCV2021 Masked Face Recognition (MFR) challenge. In this challenge, both masked face images and standard face images are included, and a metric False Non-Match Rate (FNMR) at False Match Rate (FMR) = 1E-5 is used. The FNMR*0.25 for MFR plus FNMR*0.75 for standard face recognition is combined as the ﬁnal metric.
+By default, the RetinaFace [17] is used as the face detector on the dataset. We compare our YOLO5Face with the RetinaFace on this dataset. We use ArcFace [7] framework with Resnet124 [16] as backbone. Extracted features of two models trained on the Glint360k dataset [1] are concatenated as the baseline model. We replace the RetinaFace with our YOLO5Face. We test two models, a small model YOLOv5s, and a medium model YOLOv5m.
+The results are listed in Table 3. From the results, we see that both our small and medium models outperform the RetinaFace [8]. In addition, we notice that there are very few large face images in the WiderFace dataset, so we add some large face images from the Multi-task-facial dataset [52] into the YOLO5Face training dataset. We ﬁnd that this technique improves face recognition performance.
+shown in Figure 3 are some detected Webface [58] faces and landmarks using the RetinaFace [8] and our YOLOv5m. On the faces of a large pose, we can visually observe that our landmarks are more accurate, which has been prooved in our face recognition results shown in Table 3.
+
+6
+
+Detector
+
+Backbone
+
+Easy Medium Hard Params(M) Flops(G)
+
+DSFD [19]
+
+ResNet152 [16]
+
+94.29 91.47 71.39 120.06
+
+259.55
+
+RetinaFace [8]
+
+ResNet50 [16]
+
+94.92 91.90 64.17 29.50
+
+37.59
+
+HAMBox [24]
+
+ResNet50 [16]
+
+95.27 93.76 76.75 30.24
+
+43.28
+
+TinaFace [57]
+
+ResNet50 [16]
+
+95.61 94.25 81.43 37.98
+
+172.95
+
+SCRFD-34GF [13] Bottleneck ResNet 96.06 94.92 85.29 9.80
+
+34.13
+
+SCRFD-10GF [13] Basic ResNet [16] 95.16 93.87 83.05 3.86
+
+9.98
+
+Our YOLOv5s YOLOv5-CSPNet [42] 94.33 92.61 83.15 7.075
+
+5.751
+
+Our YOLOv5s6
+
+YOLOv5-CSPNet 95.48 93.66 82.8 12.386
+
+6.280
+
+Our YOLOv5m
+
+YOLOv5-CSPNet 95.30 93.76 85.28 21.063 18.146
+
+Our YOLOv5m6 YOLOv5-CSPNet 95.66 94.1 85.2 35.485 19.773
+
+Our YOLOv5l
+
+YOLOv5-CSPNet 95.9 94.4 84.5 46.627 41.607
+
+Our YOLOv5l6
+
+YOLOv5-CSPNet 96.38 94.90 85.88 76.674 45.279
+
+Our YOLOv5x6
+
+YOLOv5-CSPNet 96.67 95.08 86.55 141.158 88.665
+
+SCRFD-2.5GF [13]
+
+Basic Resnet
+
+93.78 92.16 77.87 0.67
+
+2.53
+
+SCRFD-0.5GF [13] Depth-wise Conv 90.57 88.12 68.51 0.57
+
+0.508
+
+RetinaFace [8]
+
+MobileNet0.25[32] 87.78 81.16 47.32 0.44
+
+0.802
+
+FaceBoxes [48]
+
+-
+
+76.17 57.17 24.18 1.01
+
+0.275
+
+Our YOLOv5n
+
+ShufﬂeNetv2 [26] 93.61 91.54 80.53 1.726
+
+2.111
+
+Our YOLOv5n0.5 ShufﬂeNetv2-0.5 [26] 90.76 88.12 73.82 0.447
+
+0.571
+
+Table 4. Comparison of our YOLO5Face and existing face detectors on the WiderFace validation dataset [40].
+
+4.5. YOLO5Face on WiderFace Dataset
+We compare our YOLO5Face with many existing face detectors on the WiderFace dataset. The results are listed in Table 4, where the previous SOTA results and our best results are both highlighted.
+We ﬁrst look at the performance of relatively large models whose number of parameters is larger than 3M and the number of ﬂops is larger than 5G. All existing methods achieve mAP in 94.27-96.06% on the Easy subset, 91.9-94.92% on the Medium subset, and 71.3985.29% on the Hard subset. The most recently released SCRFD [13] achieves the best performance in all subsets. Our YOLO5Face (YOLOv5x6) achieves 96.67%, 95.08%, 86.55% on the three subsets, respectively. We achieve the SOTA performance on all the Easy, Medium, and Hard subsets.
+Next, we look at the performance of super small models whose number of parameters is less than 2M and the number of ﬂops is less than 3G. All existing methods achieve mAP in 76.17-93.78% on the Easy subset, 57.17-92.16% on the Medium subset, and 24.18-77.87% on the Hard subset. Again, the SCRFD [13] achieves the best performance in all subsets. Our YOLO5Face (YOLOv5n) achieves 93.61%, 91.54%, 80.53% on the three subsets, respectively. Our face detector has a little bit worse performance than the SCRFD [13] on the Easy and Medium subsets. However, on the Hard subset, our face detector is leading by 2.66%. Furthermore, our smallest model, YOLOv5n0.5, has good performance, even its model size is much smaller.
+The precision-recall (PR) curves of our YOLO5Face
+
+Method
+
+MAP
+
+ASFD [43] 0.9911
+
+ReﬁneFace [45] 0.9911
+
+PyramidBox [34] 0.9869
+
+FaceBoxes [48] 0.9598
+
+Our YOLOv5s 0.9843
+
+Our YOLOv5m 0.9849
+
+Our YOLOv5l 0.9867
+
+Our YOLOv5l6 0.9880
+
+Table 5. Evaluation of YOLO5Face on the FDDB dataset [36].
+
+face detector, along with the competitors, are shown in Figure 4. The leading competitors include DFS [35], ISRN [47], VIM-FD [51], DSFD [19], PyramidBox++ [20], SRN [6], PyramidBox [34] and more. For a full list of the competitors and their results on the WiderFace [40] validation and test datasets, please refer to [39]. In the results on the validation dataset, our YOLOv5x6-Face detector achieves 96.9%, 96.0%, 91.6% mAP on the Easy, Medium, and Hard subset, respectively, exceeding the previous SOTA by 0.0%, 0.1%, 0.4%. In the results on the test dataset, our YOLOv5x6-Face detector achieves 95.8%, 94.9%, 90.5% mAP on the Easy, Medium, and Hard subset, respectively with 1.1%, 1.0%, 0.7% gap to the previous SOTA. Please note that, in these evaluations, we only use multiple scales and left-right ﬂipping without using other test-time augmentation (TTA) methods. Our focus is more on the VGA input images, where we achieve the SOTA in almost all conditions.
+
+7
+
+Figure 4. The precision-recall (PR) curves of face detectors, (a) validation-Easy, (b)validation-Medium, (c) validation-Hard, (d) test-Easy, (e) test-Medium, (f) test-Hard.
+
+4.6. YOLO5Face on FDDB Dataset
+FDDB dataset [36] is a small dataset with 5171 faces annotated in 2845 images. To demonstrate our YOLO5Face’s performance on the cross-domain dataset, we test it on the FDDB dataset without retraining on it. The performances of true positive rate (TPR) when the number of false-positive is 1000 are listed in Table 4. Please note that it is pointed out in ReﬁneFace [45] that the annotation of FDDB misses many faces. In order to achieve their perfor-
+
+mance of 0.9911, the ReﬁneFace modiﬁes the FDDB annotation. In our evaluation, we use the original FDDB annotation without modiﬁcations. RetinaFace [8] is not evaluated on the FDDB dataset.
+5. Conclusion
+In this paper, we present our YOLO5Face based on YOLOv5 object detector [42]. We implement ten models. Both the super large model YOLOv5x6 and the su-
+
+8
+
+per small model YOLOv5n achieve close to or exceeding SOTA performance on the VGA images on the WiderFace [40] validation datasets. This proves the effectiveness of our YOLO5Face in not only achieving outstanding prediction accuracy but also running fast. This answers the question in the title. By delicately redesigning YOLOv5, we can obtain a face detector as good as or better than other detectors speciﬁcally designed for face detection.
+References
+[1] X. An, X. Zhu, Y. Xiao, L. Wu, M. Zhang, Y. Gao, B. Qin, D. Zhang, and Y. Fu. Partial fc: Training 10 million identities on a single machine. arXiv preprint 2010.05222, 2021.
+[2] A. Bochkovskiy, C.-Y. Wang, and H.-Y. M. Liao. Yolov4: Optimal speed and accuracy of object detection. ArXiv preprint 2004.10934, 2020.
+[3] Z. Cai and N. Vasconcelos. Cascade r-cnn: Delving into high quality object detection. CVPR, 2018.
+[4] N. Carion, F. Massa, G. Synnaeve, N Usunier, A. Kirillov, and Z. Zagoruyko. End-to-end object detection with transformers. ECCV, 2020.
+[5] K. et al. Chen. Mmdetection: Open mmlab detection toolbox and benchmark. ECCV, 2020.
+[6] C. Chi, S. Zhang, J. Xing, Z. Lei, and S. Z. Li. Srn - selective reﬁnement network for high performance face detection. ArXiv preprint 1809.02693, 2018.
+[7] J. Deng, J. Guo, N. Xue, and S. Zafeiriou. Arcface: Additive angular margin loss for deep face recognition. CVPR, June 2019.
+[8] J. Deng, J. Guo, Y. Zhou, J. Yu, I. Kotsia, and S. Zafeiriou. Retinaface: Single-stage dense face localisation in the wild. CVPR, 2020.
+[9] K. Duan, S. Bai, L. Xie, H. Qi, Q. Huang, and Q. Tian. Centernet: Keypoint triplets for object detection. ICCV, 2019.
+[10] Z. Feng, J. Kittler, M. Awais, P. Huber, and X. Wu. Wing loss for robust facial landmark localisation with convolutional neural networks. CVPR, 2018.
+[11] R. Girshick. Fast R-CNN. In Proceedings of the International Conference on Computer Vision (ICCV), 2015.
+[12] R. Girshick, J. Donahue, T. Darrell, and J. Malik. Rich feature hierarchies for accurate object detection and semantic segmentation. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2014.
+[13] J. Guo, A. Deng, J. Lattas, and S. Zafeiriou. Sample and computation redistribution for efﬁcient face detection. ArXiv preprint 2105.04714, 2021.
+
+[14] K. He, G. Gkioxari, P. Dolla´r, and R. Girshick. Mask R-CNN. In Proceedings of the International Conference on Computer Vision (ICCV), 2017.
+[15] K. He, X. Zhang, S. Ren, and J. Sun. Sigmoidweighted linear units for neural network function approximation in reinforcement learning. TPAMI, 2015.
+[16] K. He, X. Zhang, S. Ren, and J. Sun. Deep residual learning for image recognition. CVPR, 2016.
+[17] T. He, Z. Zhang, H. Zhang, Z. Zhang, J. Xie, and M. Li. Bag of tricks for image classiﬁcation with convolutional neural networks. CVPR, 2019.
+[18] G. Huang, Z. Liu, L. Maaten, and K.Q. Weinberger. Densely connected convolutional networks. CVPR, 2017.
+[19] J. Li, Y. Wang, C. Wang, Y. Tai, J. Qian, J. Yang, C. Wang, J. Li, and F. Huang. Dsfd: Dual shot face detector. ArXiv preprint 1810.102207, 2018.
+[20] Z. Li, X. Tang, J. Han, J. Liu, and Z. He. Pyramidbox++: High performance detector for ﬁnding tiny face. ArXiv preprint 1904.00386, 2019.
+[21] T. Lin, P. Dolla´r, R. Girshick, K. He, B Hariharan, and S. Belongie. Feature pyramid networks for object detection. CVPR, 2017.
+[22] S. Liu, L. Qi, H. Qin, J. Shi, and J. Jia. Path aggregation network for instance segmentation. ArXiv preprint 1803.01534, 2018.
+[23] W. Liu, D. Anguelov, D. Erhan, C. Szegedy, S. Reed, C. Fu, and A. Berg. Yolov3: An incremental improvement. ECCV, 2016.
+[24] Y. Liu, X. Tang, X. Wu, J. Han, J. Liu, and E. Ding. Hambox: Delving into online high-quality anchors mining for detecting outer faces. CVPR, 2020.
+[25] Y. Liu, F. Wang, B. Sun, and H. Li. Mogface: Rethinking scale augmentation on the face detector. ArXiv preprint 2103.11139, 2021.
+[26] M. Ma, X. Zhang, H. Zheng, and J. Sun. Shufﬂenet v2: Practical guidelines for efﬁcient cnn architecture design. ArXiv preprint 1807.11164, 2018.
+[27] J. Redmon, S. Divvala, R. Girshick, and A. Farhadi. You only look once: Uniﬁed, real-time object detection. CVPR, 2016.
+[28] J. Redmon and A. Farhadi. Yolov3: An incremental improvement. arXiv preprint arXiv:1804.02767, 2015.
+[29] J. Redmon and A. Farhadi. Yolo9000: better, faster,stronger. CVPR, 2017.
+[30] S. Ren, K. He, R. Girshick, and J. Sun. Faster r-cnn: Towards real-time object detection with region proposal networks. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2016.
+
+9
+
+[31] T. Ridnik, H. Lawen, A. Noy, E. B. Baruch, G. Sharir, and I. Friedman. Tresnet: High performance gpudedicated architecture. WACV, 2021.
+
+[32] M. Sandler, A. Howard, w. Zhu, A. Zhmoginov, and L. Chen. Mobilenetv2: Inverted residuals and linear bottlenecks. CVPR, 2018.
+
+[33] M. Tan, R. Pang, and Q. Le. Efﬁcientdet: Scalable and efﬁcient object detection. CVPR, 2020.
+
+[34] X. Tang, Daniel K. Du, Z. He, and J. Liu. Pyramidbox: A context-assisted single shot face detector. ArXiv preprint 1803.07737, 2018.
+
+[35] W. Tian, Z. Wang, H. Shen, W. Deng, B. Chen, and X. Zhang. Learning better features for face detection with feature fusion and segmentation supervision. ArXiv preprint 1811.08557, 2018.
+
+[36] V.Jain and E. Learned-Miller. Fddb: A benchmark for face detection in unconstrained settings. University of Massachusetts Report, (UM-CS-2010-009), 2010.
+
+[37] R. J. Wang, X. Li, and C. X. Ling. Pelee: A real-time object detection system on mobile devices. NeurIPS, 2018.
+
+[38] M. Yang, D. Kriegman, and N. Ahuja. Detecting faces in images: a survey. TPAMI, 2002.
+
+[39] S. Yang, P. Luo, C. C. Loy, and X. Tang. Wider face: A face detection benchmark. http://shuoyang1213.me/WIDERFACE/index.html.
+
+[40] S. Yang, P. Luo, C. C. Loy, and X. Tang. Wider face: A face detection benchmark. CVPR, 2016.
+
+[41] D. Yashunin, T. Baydasov, and R. Vlasov. Maskface: multi-task face and landmark detector. ArXiv preprint 2005.09412, 2020.
+
+[42] YOLOv5.
+
+Yolov5.
+
+https://github.com/ultralytics/yolov5, 2020.
+
+[43] B. Zhang, J. Li adn Y. Wang, Y. Tai, C. Wang, J. Li, F. Huang, Y. Xia, W. Pei, and R. Ji. Automatic and scalable face detector. ArXiv preprint 2003.11228, 2020.
+
+[44] K. Zhang, Z. Zhang, Z. Li, and Y. Qiao. Joint face detection and alignment using multitask cascaded convolutional networks. IEEE Signal Processing Letters, 23(10):1499–1503, 2016.
+
+[45] S. Zhang, C. Chi, Z. Lei, and S.Z. Li. Reﬁneface: Reﬁnement neural network for high performance face detection. ArXiv preprint 1909.04376, 2019.
+
+[46] S. Zhang, L. Wen, H. Shi, Z. Lei, S. Lyu, and Stan Z. Li. Sfdet - single-shot scale-aware network for realtime face detection. IJCV, 2019.
+
+[47] S. Zhang, R. Zhu, X. Wang, H. Shi, T. Fu, S. Wang, T. Mei, and Stan Z. Li. Isrn - improved selective reﬁnement network for face detection. ArXiv preprint 1901.06651, 2019.
+
+[48] S. Zhang, X. Zhu, Z. Lei, H. Shi, X. Wang, and S. Z. Li. Faceboxes: A cpu real-time face detector with high accuracy. IJCB, 2017.
+[49] S. Zhang, X. Zhu, Z. Lei, H. Shi, X. Wang, and S. Z. Li. S3fd: Single shot scale-invariant face detector. ICCV, 2017.
+[50] X. Zhang, X. Zhou, M. Lin, and J. Sun. Shufﬂenet: An extremely efﬁcient convolutional neural network for mobile devices. ArXiv preprint 1707.01083, 2017.
+[51] Y. Zhang, X. Xu, and X. Liu. Robust and high performance face detector. ArXiv preprint 1901.02350, 2019.
+[52] Z. Zhang, P. Luo, C.C. Loy, and X. Tang. Facial landmark detection by deep multi-task learning. ECCV, 2014.
+[53] Z. Zhang, C.and Zhang. Robust real-time face detection. IJCV, 2004.
+[54] Z. Zhang, C.and Zhang. A survey of recent advances in face detection. Microsoft Research Technical report, 2010.
+[55] Z. Zheng, P. Wang, W. Liu, J. Li, R. Ye, and D. Ren. Distance-iou loss: Faster and better learning for bounding box regression. In The AAAI Conference on Artiﬁcial Intelligence (AAAI), 2020.
+[56] X. Zhou, D. Wang, and Kra¨henbu¨hl P. Objects as points. In arXiv preprint arXiv:1904.07850, 2019.
+[57] Y. Zhu, H. Cai, S. Zhang, C. Wang, and W. Xiong. Tinaface: Strong but simple baseline for face detection. ArXiv preprint 2011.13183, 2020.
+[58] Z. Zhu, G. Huang, J. Deng, Y. Ye, J. Huang, X. Chen, J. Zhu, T. Yang, J. Lu, D. Du, and J. Zhou. Webface260m: A benchmark unveiling the power of million-scale deep face recognition. CVPR, 2021.
+
+10
+
+A. YOLOv5 Loss Function
+The details of the YOLOv5 [42] loss function lossobj(bounding box, class, probability) are given in this appendix.
+YOLOv3 loss function. Let’s start with the YOLOv3 [28] loss function. Deﬁne the center coordinate of a bounding box as (xi, yi), width and height as wi, hi, class as Ci. A hat denotes an object’s ground truth. Deﬁne Iio,bjj = 1 if there is an object (obj) at grid (i,j), otherwise it is 0. And deﬁne Iin,joobj = 1 if there is no object (noobj) at grid (i,j), otherwise it is 0. The the YOLOv3 loss function is deﬁend in Equation (4),
+
+K2 M
+
+lossloc = λcoord
+
+1oi,bjj (2 − wi × hi)
+
+i=0 j=0
+
+[(xi − xˆi)2 + (yi − yˆi)2 + (wi − wˆi)2 + (hi − hˆi)2],
+
+K2 M
+
+losscls = −λclass
+
+1oi,bjj
+
+[pi(c)log(pˆi(c)
+
+i=0 j=0
+
+c∈classes
+
++ (1 − pˆi(c))log(1 − pi(c))]),
+
+K2 M
+
+lossconf = −λnoobj
+
+1ni,ojobj [Cˆi × log(Ci)
+
+i=0 j=0
+
++ (1 − Cˆi) × (1 − log(Ci)]
+
+M
+− 1oi,bjj[Cˆi × log(Ci) + (1 − Cˆi) × (1 − log(Ci)],
+j=0
+
+loss = lossloc + lossconf + losscls (4)
+where lossloc is the bounding box location regression loss, lossconf is the conﬁdence loss, and losscls is the classiﬁcation loss, and all λ’s are weighting factors. In this loss function, there are KxK grids and M anchors in every grid, and a bounding box predicted for every anchor. So in total, there are KxKxM bounding boxes. If there is no object in an box, then only the conﬁdence loss is calculated. Please note that,
+
+• The regression loss is multiplied by a (2-w*h) scale factor. This is to penalize the loss for small objects.
+
+• The conﬁdence loss function uses cross entropy and is divided into two parts: there are objects and no objects, and the loss of noobj also increases the weight coefﬁcient, which is to reduce the calculation part without objects Contribution weight.
+
+• The classiﬁcation loss loss function uses cross entropy. When the jth anchor box of the ith grid is responsible for a real target, then the bounding box generated by
+
+this anchor box is used to calculate the classiﬁcation loss function.
+YOLOv4 loss function. Different from YOLOv3 [28], YOLOv4 [2] uses different location loss. It does not use the MSE loss; instead, it uses a complete IoU (CIoU) loss [55]. For bounding box, this CIoU loss considers more information then the IoU, including overlapping of the edges, distance of centers, and ratio of the width to height.
+
+v = 4/π2[arctan(wgt/hgt) − arctan(w/h)]2
+
+α = v/[1 − IoU + v]
+
+(5)
+
+lossloc = 1 − IoU + ρ2(b, bgt)/c2 + αv
+
+YOLOv5 loss function. YOLOv5 loss function is essentially same as the YOLOv4 loss function except for the optional focal loss function to replace the the cross entropy loss function in the conﬁdence loss and/or the classiﬁcation loss.
+The focal loss function pays more attention to hard samples. It achieves this goal by using a weighting factor in the cross entropy function. More speciﬁcally, the cross entropy function −log(p) is replaced with −(1 − p)γlog(p), where γ is a weighting factor used to reduces the relative loss for well-classiﬁed examples.
+
+11
+
+Figure 5. Detected faces on the largest selﬁe image in the world.
+B. Qualitative Demonstrations of YOLO5FAce
+To demonstrate the qualitative effect of YOLO5Face, we show the detected faces on the largest selﬁe image in the world, shown in Figure 5. At the conﬁdence threshold of 0.2, our YOLOv5m model detects 935 faces. Please note that the conﬁdence scores of different face detectors do not mean the same. At the conﬁdence threshold of 0.2 in our face detector, the false-positive rate is very low.
+12
+

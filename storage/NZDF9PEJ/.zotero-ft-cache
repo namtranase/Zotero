@@ -1,0 +1,87 @@
+
+VTUAV --Visible-Thermal UAV Tracking: A Large-Scale Benchmark and New Baseline
+Pengyu Zhang 1      Jie Zhao 1      Dong Wang 1       Huchuan Lu 1,2      Xiang Ruan 3
+1 IIAU, Dalian University of Technology   2 Peng Cheng Laboratory   3 Tiwaki Co.Ltd.
+
+    Highlights
+    Download
+    Evaluation & Results
+    Citation
+    Contact
+
+
+News
+
+    3/28/2022: The VTUAV dataset is released at Google drive.
+    4/6/2022: The VTUAV dataset is released at baidu disk.
+    4/11/2022: Paper is available at Arxiv .
+    4/15/2022: Three files(train_LT_part1, train_ST_part3, train_ST_part4) have been updated due to some mistakes. Sorry for inconvenient.
+
+Highlights
+
+    Large-scale sequences with high diversity : Million-Scale Paired training and test frames
+    Comprehensive evaluation : Short-term; long-term; pixel-level target prediction
+    Generic object and scene category : 2 cities; 13-class object; 15-class scenes
+    Hierarchical attributes : Sequence-level and frame-level attributes for training
+
+Abstract
+
+With the popularity of multi-modal sensors, visible-thermal (RGB-T) object tracking is to achieve robust performance and wider application scenarios with the guidance of objects’ temperature information. However, the lack of paired training samples is the main bottleneck for unlocking the power of RGB-T tracking. Since it is laborious to collect high-quality RGB-T sequences, recent benchmarks only provide test sequences. In this paper, we construct a large-scale benchmark with high diversity for visible-thermal UAV tracking (VTUAV), including 500 sequences with 1.7 million high-resolution (1920*1080 pixels) frame pairs. In addition, comprehensive applications (short-term tracking, long-term tracking and segmentation mask prediction) with diverse categories and scenes are considered for exhaustive evaluation. Moreover, we provide a coarse-to-fine attribute annotation, where frame-level attributes are provided to exploit the potential of challenge-specific trackers. In addition, we design a new RGB-T baseline, named Hierarchical Multi-modal Fusion Tracker (HMFT), which fuses RGB-T data in various levels. Numerous experiments on several datasets are conducted to reveal the effectiveness of HMFT and the complement of different fusion types.
+Download
+RGB-T version                                                                                   RGB version
+Type                       	Baidu Disk           	Google Drive           	                      	Baidu Disk           	Google Drive          
+Full dataset link 	link[code:] 	link 		link 	link
+train_ST_part1.zip 	link[code:v8su] 	link 		link 	link
+train_ST_part2.zip 	link[code:om84] 	link 		link 	link
+train_ST_part3.zip 	link[code:t7m6] 	link 		link 	link
+train_ST_part4.zip 	link[code:uuo3] 	link 		link 	link
+train_ST_part5.zip 	link[code:hkjb] 	link 		link 	link
+train_ST_part6.zip 	link[code:6pt2] 	link 		link 	link
+train_ST_part7.zip 	link[code:panl] 	link 		link 	link
+train_ST_part8.zip 	link[code:mnja] 	link 		link 	link
+train_ST_part9.zip 	link[code:19va] 	link 		link 	link
+train_ST_part10.zip 	link[code:gvvf] 	link 		link 	link
+train_ST_part11.zip 	link[code:rvni] 	link 		link 	link
+train_LT_part1.zip 	link[code:jmji] 	link 		link 	link
+train_LT_part2.zip 	link[code:t1vv] 	link 		link 	link
+train_LT_part3.zip 	link[code:ib10] 	link 		link 	link
+train_LT_part4.zip 	link[code:v275] 	link 		link 	link
+test_ST_part1.zip 	link[code:fnd4] 	link 		link 	link
+test_ST_part2.zip 	link[code:ngi6] 	link 		link 	link
+test_ST_part3.zip 	link[code:h2r5] 	link 		link 	link
+test_ST_part4.zip 	link[code:oqf8] 	link 		link 	link
+test_ST_part5.zip 	link[code:trid] 	link 		link 	link
+test_ST_part6.zip 	link[code:1e57] 	link 		link 	link
+test_ST_part7.zip 	link[code:s2eu] 	link 		link 	link
+test_ST_part8.zip 	link[code:gq5p] 	link 		link 	link
+test_ST_part9.zip 	link[code:ihs0] 	link 		link 	link
+test_ST_part10.zip 	link[code:vdv8] 	link 		link 	link
+test_ST_part11.zip 	link[code:r7qt] 	link 		link 	link
+test_ST_part12.zip 	link[code:17ju] 	link 		link 	link
+test_ST_part13.zip 	link[code:p2fm] 	link 		link 	link
+test_LT_part1.zip 	link[code:7qbp] 	link 		link 	link
+test_LT_part2.zip 	link[code:miv0] 	link 		link 	link
+test_LT_part3.zip 	link[code:awd1] 	link 		link 	link
+test_LT_part4.zip 	link[code:l9wc] 	link 		link 	link
+test_LT_part5.zip 	link[code:9iuf] 	link 		link 	link
+test_LT_part6.zip 	link[code:0i3n] 	link 		link 	link
+test_LT_part7.zip 	link[code:6cpq] 	link 		link 	link
+test_LT_part8.zip 	link[code:uteu] 	link 		link 	link
+test_LT_part9.zip 	link[code:f1ka] 	link 		link 	link
+test_LT_part10.zip 	link[code:tv9l] 	link 		link 	link
+Evaluation & Results
+
+
+Citation
+
+ @InProceedings{Zhang_CVPR22_VTUAV,
+  author = {Zhang Pengyu and Jie Zhao and Dong Wang and Huchuan Lu and Xiang Ruan},
+  title = {Visible-Thermal UAV Tracking: A Large-Scale Benchmark and New Baseline},
+  booktitle = {Proceedings of the IEEE conference on computer vision and pattern recognition},
+  year = {2022}
+}
+          
+
+Contact
+
+If you have any question, please contact Pengyu Zhang at pyzhang@mail.dlut.edu.cn .

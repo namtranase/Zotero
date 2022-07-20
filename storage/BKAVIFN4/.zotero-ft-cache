@@ -1,0 +1,396 @@
+arXiv:2107.02396v1 [cs.CV] 6 Jul 2021
+
+Semi-TCL: Semi-Supervised Track Contrastive Representation Learning
+Wei Li, Yuanjun Xiong, Shuo Yang, Mingze Xu, Yongxin Wang, and Wei Xia
+wayl, yuanjx, shuoy, xumingze, yongxinw, wxia@amazon.com Amazon AWS AI
+Abstract. Online tracking of multiple objects in videos requires strong capacity of modeling and matching object appearances. Previous methods for learning appearance embedding mostly rely on instance-level matching without considering the temporal continuity provided by videos. We design a new instance-to-track matching objective to learn appearance embedding that compares a candidate detection to the embedding of the tracks persisted in the tracker. It enables us to learn not only from videos labeled with complete tracks, but also unlabeled or partially labeled videos. We implement this learning objective in a uniﬁed form following the spirit of constrastive loss. Experiments on multiple object tracking datasets demonstrate that our method can eﬀectively learning discriminative appearance embeddings in a semi-supervised fashion and outperform state of the art methods on representative benchmarks.
+1 Introduction
+Online multiple object tracking (MOT) usually performs three tasks simultaneously: a) object detection; b) motion prediction; c) appearance matching (also known as Re-Identiﬁcation (ReID)). Previous methods implement these three functions either separately, such as the earlier works using diﬀerent oﬀ-the-shelf models [36], or in an integrated way. For example, recent works on combining motion prediction [1,29] or appearance modeling [42] as additional heads on an object detection backbone. Among these methods, obtaining representative appearance features is a central topic.
+The appearance representation is used for matching a newly detected object instance to a set of objects being tracked at a certain time-step. The appearance module needs to have strong discriminative power to distinguish the “same” object from other objects despite the inter-instance and intra-instance variations. Earlier approach [36] utilizes separately trained ReID [43] models for this purpose. Recently, Zhang et al [42] propose to learn the appearance embedding using a classiﬁcation task and demonstrated that this integrated model can achieve good tracking performance. Nonetheless, the existing methods to learn appearance embedding mostly draw inspiration from image-level instance recognition tasks, such as face recognition [21,7] or ReID [17]. That is, the learning objective is usually to match one object instance, in the form of an encoded image patch, to another instance in the same object track (metric learning [3,28,12]),
+
+2
+
+Authors Suppressed Due to Excessive Length
+
+or its corresponding “class” indexed on the object’s identity. These methods are limited in several aspects. First, the instance-to-instance matching objective does not utilize the temporal continuity of video. This is because such method stems from image-level recognition datasets where the temporal information is not present. Second, existing appearance embedding learning methods require complete track annotations for training, which is laborious to obtain for a sufﬁcient amount of videos. These issues call for a method that can 1) utilize the temporal information in videos for learning appearance representation and 2) learn from both labeled and unlabeled videos.
+We present a Semi-supervised Track Contrastive embedding learning approach, Semi-TCL., a new method for learning appearance embedding to address the above issues. We start by devising a new learning objective of matching a detected object instance to a track formed by tracked object instances in a few video frames. This design ﬁts closely to the actual use case of appearance embedding where each newly detected instance will be matched against the aggregated representation of tracks. It also alleviates the need for full track-level annotation of videos for learning. Low-cost primitive trackers can be used to generate track labels on unlabeled videos, which can be used together with fully annotated but scarcely labelled videos. We show that eﬀectively learning using the instance-totrack objective can be implemented with a form of contrastive loss [13], where the tracks serve as the positive samples and negative samples for contrasting. This uniﬁed loss formulation can be applied to all videos regardless of whether they are fully annotated, achieving practical semi-supervised learning. Semi-TCL can be applied to state-of-the-art online MOT models with integrated detection and appearance modeling, which provides a simple end-to-end solution for training MOT models.
+We benchmark tracking models learned with Semi-TCL on multiple MOT datasets, including MOT15 [15], MOT16 [20], MOT17 [20], and MOT20 [6]. Our model outperforms other state-of-the-art tracking methods on all benchmarks. We further study the eﬀect of several design choices in Semi-TCL and demonstrate that it can eﬀectively learn from unlabeled videos through semi-supervised learning and the proposed instance-to-track matching objective is more suitable for learning appearance models for the MOT task.
+
+2 Related Work
+MOT and ReID. With the rapid development of deep learning, we keep witnessing new breakthroughs in MOT areas. Wojke et al. [36] employed the tracking by detection idea and provided a fast online tracking method. [1,29] combined the detection and tracking module and proposed the joint detection and tracking approach. These approaches provide multiple options to generate the tracklets. To connect the tracklets, ReID embedding learning is a necessary component. [18] explored the detection and ReID embedding work, while the detection and ReID learning are separate so it is not eﬃcient. [39,27,35,42] jointly detect and learn the ReID embedding, improving the overall runtime signiﬁcantly. Cur-
+
+Semi-TCL: Semi-Supervised Track Contrastive Representation Learning
+
+3
+
+Fig. 1. Illustration of the instance to track matching learning objective.(better view in color). Instance (person in the middle) matches with both labeled tracks (top) and unlabeled tracks (bottom, label computed by model prediction), with this objective, distance of positive pairs (green line) will be pushed together and negative pairs (red line) are pulled apart.
+rently, joint learning of multiple object tracking and ReID tend to be the most eﬃcient solution, we follow this design in our work. However, diﬀerent from these works which rely on complete human labeled tracking data, we conduct a semi-supervised learning manner.
+Contrastive embedding learning. Contrastive learning [13,30,13,32,11,10,38] had been studied for a long time for the visual embedding learning. Researchers used to build a local batch and construct positive pairs from the same class and negative pairs for the diﬀerent ones. They try to push apart negative embedding distances and squeeze the positive ones. [13] proposed a loss for supervised learning while still building on the self-supervised contrastive methods by leveraging the label information. To build the positive pairs, [13] looked into the instances in a batch and construct positive and negative pairs based on class labels. SCL [13] uniﬁed the real labeled data and unlabeled data in one format. SCL allows both supervised and unsupervised learning to follow the same formation and permits jointly combining the labeled data and partially labeled data learning together. This makes [13] outperform the baseline where cross entropy is used in the image classiﬁcation tasks. MoCo[11] is another important contrastive learning approach which focuses on building a dynamic dictionary to boost the contrastive learning. Our work is inspired by the ﬂexibility of dealing with image labels proposed by[13]. We employed the contrastive idea and proposed a uniﬁed objective, which is shared by both labeled and unlabeled video in ReID embedding learning.
+
+4
+
+Authors Suppressed Due to Excessive Length
+
+Video/Group embedding learning. Video embedding learning is widely investigated in video related tasks. [25] proposed a video contrastive learning approach leveraging spatial and temporal cues to learn spatial-temporal representations from unlabeled videos. [31] proposed a self-supervised learning approach for video features. The work proved that the learned features are eﬀective for a variety of downstream video tasks, such as classiﬁcation, captioning and segmentation. Video based ReID learning has also been investigated. [2] proposed the competitive snippet-similarity aggregation and temporal co-attentive embedding. With the design, intra-person appearance variation is reduced and similarity estimation is improved by utilizing more relevant features. Yang et al [40] proposed a Spatial and Temporal Graph Convolution Network to learn the ReID embedding from video sequence. By jointly extracting structural information of a human body and mining discriminative cues from adjacent frames, the approach achieved state-of-the-art results on Video ReID benchmarks [43,37]. [14] proposed a semi-online approach to tracking multiple people. The method employed Multi-Label Markov Random Field and focused on eﬃciently solving the ReID learning in challenging cases. The video based embedding shows that the temporal information from video is helpful in learning embeddings. As we are trying to learn embedding from tracking videos, employing temporal information from sequence might be beneﬁcial.
+
+3 Method
+
+For the task of online MOT, earlier methods [36] usually utilize separately learned visual embedding model from either person [24,18,41] or face recognition [19,7,33] tasks. The models are trained mostly on image datasets, which may suﬀer from the large domain gap between image and video data. Recent works started to investigate joint learning of the visual feature for ReID together with other components in an integrated tracking model [42]. We aim at building models that simultaneously perform object detection and tracking using appearance features. Similar to [42], we build our joint model on top of CenterNet [8]. An ID branch with two convolution layers operates in parallel to the heatmap prediction branch in [8] to perform visual feature extraction at each center location. The visual feature is extracted from the detection centers for matching newly detected object instances to objects being tracked by the tracker.
+The overall loss function for training our model is
+
+Ljoint = Ldet + Lid,
+
+(1)
+
+where Ldet is the loss for the object detection branch and Lid denotes the loss for visual embedding learning. We use the same loss formulation from [8] for Ldet on every video frame in training and design a novel way of constructing Lid and learning visual embedding.
+
+Semi-TCL: Semi-Supervised Track Contrastive Representation Learning
+
+5
+
+3.1 Learning with Instance-to-Track Matching
+
+Existing separate and joint visual embedding learning methods mostly start from an image-level instance matching problem. That is, they try to learn an embedding function f (·) that maps each image I to a C-dimensional vector f (I) with a certain distance metric, which is usually the 2 distance. Given two images or image crops depicting the appearance of two object instances, I1 and I2, we expect f (I1) and f (I2) to have a small distance when they are showing the same object and otherwise a large distance. Traditionally, learning the embedding function is achieved by comparing each image to other images of the same or diﬀerent object. One can use either a classiﬁcation loss
+
+Lclass = − log yipyi ,
+
+(2)
+
+or the margin loss [19,9]
+
+1 Lmargin = y1=y2
+
+f (Ii) − f (Ij)
+
+2 2
+
++
+
+1y1=y2
+
+max(0,
+
+m
+
+−
+
+f (Ii) − f (Ij) 22).
+
+(3)
+
+Here yi denotes an instance’s identity label and pyi is the classiﬁcation output probability of Ii being to identity class yi out of the K identity classes. For example in [42], Eq. 2 is used to classify one detected instance to K potential
+classes, the annotations of which are obtain by labeling all tracks in all videos
+across all training datasets.
+Now consider the case of using the learned visual embedding in online track-
+ing. At each time-step t, a newly detected object instance needs to be matched
+to a set of existing tracks. But each track Tj usually contains multiple instances of the tracked object accumulated over time. An additional aggregation function
+G(·) has to be introduced to make this matching possible. Thus the matching is actually between f (Ii) and the aggregate track-level G(Ijt0 , . . . , Ijt−1), where Ijt denotes the instance of the object depicted by track Tj at time t. The added aggregation function is apparently not addressed in the original learning objective
+of image level matching, as in Eq. 2 or Eq. 3. Thus, using the visual embedding
+learned by either one for the matching in online track could be sub-optimal.
+To address this discrepancy, our learning objective should be directly built
+on the aforementioned instance-to-track matching task. Formally, for a temporally ordered set of object instances Tj = {Ij0, . . . , Ijn} that belong to the same object j, we deﬁned the aggregation function G(·) that maps the set of features {f (Ij0), . . . , f (Ijn)} to a single vector gj. We learn the embedding function f (·) and the aggregation function G(·) so that the object to track distance
+
+D(Ii, Tj) = d(f (Ii), G(f (Ij0), . . . , f (Ijn))). = d(f (Ii), gj)
+
+(4)
+
+is small when Ii and Tj are depicting the same object and large otherwise. Explicitly incorporating the aggregation function into the learning objective has two advantages: 1) it makes the learning objective close to the actual tracking scenario, which enables the embedding learning to beneﬁt from the temporal information in videos; 2) as we shall see later, it make it easier to extend the learning objective to videos with partial or without track level annotations.
+
+6
+
+Authors Suppressed Due to Excessive Length
+
+3.2 Tracklet Contrastive Learning
+
+Given one object instance Ii, there is a track Ti that this instance belongs to. Ti contains multiple instances G(Ii0, . . . , Iil), where l is the length of the track. We can generate random sub-tracks S(i) = {T˜ij} of Ti by sampling random subsets of instances Ti . These sub-tracks resemble the actual partial tracks occur in online tracking. That is, at a given time-step during online tracking, we can only
+observe a portion of the complete track that have already been shown in the
+video. For a batch of input videos V , we can sample a set of object instances I = {I0, . . . , IN } belonging to their corresponding sub-tracks T˜ = {T˜0, . . . , T˜L}. With these N instances and L subtracks, we can implement the instance-to-track
+matching objective in the contrastive loss form
+
+N −1
+
+LT CL = |S(i)|
+
+i=1
+
+T˜j ∈S(i)
+
+exp (f (Ii) · g˜j/τ ) . T˜l∈T˜ exp (f (Ii) · g˜l/τ )
+
+(5)
+
+Here S(i) denotes all sub-tracks that are sampled from the tracks that Ii belongs to. g˜j is the aggregated visual feature of a sub-track T˜j. We assume the feature vectors are all 2normalized and the temperature parameter τ controls the scaling of the cosine similarities between vectors. We use τ = 0.07 following the general practices for contrastive losses.
+We call the proposed method of learning visual features in a tracker with Eq. 5 as tracklet contrastive learning (TCL). Compared with instance-level contrastive learning [38,13,11] which compares one image to another image, the instance to track loss has two diﬀerent concepts in the comparison: the object instances and the sub-tracks. Because this type of comparison is close to the actual use case in tracking, we expect the learned visual features to be more suitable to the ReID task during online tracking. In this work, we use a simple aggregation function G that averages all input feature vectors, which we empirically found to give satisfying visual embeddings. But TCL does not inhibit the uses of more advanced aggregation functions which could be developed in future.
+
+3.3 Learning with Labeled and Unlabeled Videos
+Learning with the instance-to-track matching objective also enables us to extend the learning task to videos without human annotated track labels. In Eq. 5, we notice that only the sampled sub-tracks, instead of the complete tracks, are used in training. On the other hand, when we apply a certain primitive multiple object tracker that relies on motion prediction to videos without track-level annotations, we can obtain a large amount of potentially incomplete tracks. The generation of these incomplete tracks can be viewed as sampling sub-tracks from the complete, annotated tracks, which have not been annotated. This means the seemingly unusable unlabelled videos have now become a potential source for mining useful sub-tracks in TCL. In particular, for videos with no track annotation, we can apply a motion prediction based tracker [29] and obtain a set of predicted tracks. These tracks are treated as the pseudo labels of these
+
+Semi-TCL: Semi-Supervised Track Contrastive Representation Learning
+
+7
+
+videos. We can then train our tracker using these pseudo-labeled videos together with the annotated videos.
+
+Fig. 2. Training instance and tracklets sampling strategy. We ﬁlter the unlabeled videos by the number of tracks predicted. They are then used towgether with the labeled videos in Semi-TCL. Each training batch contains 4 video segment of 32 frames each with a 1 : 1 ratio between labeled and unlabeled videos.
+Formally, we obtain a track annotated video set VA and an unlabeled video set VU for learning with Semi-TCL. Usually the unlabeled video set is much larger than the labeled set but may contain segments that has very few objects of interest, thus has less value for learning. We apply a primitive tracker such as [29] on VU to obtain predicted tracks for each video. Then we rank the unlabeled videos in VU by the number of produced tracks in them. To mine potentially useful videos for Semi-TCL, we simply take the top-K videos based on tracklet density in the rank and produce a reﬁned video set VR. This VR is used together with VL in training. We split each video in both VA and VR into segments of 32 consecutive frames. We randomly sample 2 segments from VA and 2 segments from VR in each training step to form one training mini-batch. From these 4 segments, we can obtain M tracks, either annotated or produced by the primitive tracker. We perform another round of sampling on these tracks so that for each track we can obtain 3 sub-tracks, meaning L = 3M . This ensures that each instance is exposed to multiple sub-tracks of the same track. We extract N object instances from these sampled sub-tracks. These samples are then used for calculating the loss in Eq. 5. This process is illustrated in Fig. 2. The loss function in Eq. 5 is diﬀerentiable and easy to empirically optimize. Thus models with Semi-TCL can be learned with backprogagation in an end-to-end manner.
+
+8
+
+Authors Suppressed Due to Excessive Length
+
+4 Experiments
+
+4.1 Dataset and metrics
+In the Semi-TCL experiments, three types of dataset are used. They are image detection dataset for pre-training, labeled video tracking dataset for supervised joint tracking and embedding learning, unlabeled video dataset for Semisupervised learning. Person detection dataset we employed Crowdhuman[26] for the pre-training. Crowdhuman is a person detection image dataset with more than 20k images and 470K instances. Labeled video tracking dataset We used MOT15, MOT17, MOT20 training set as our labeled set. MOT15, 17, 20 are from multiple academic datasets and annotated with human tracking information. The dataset are widely used for supervised tracking and ReID. Unlabeled video dataset We employed the AVA-Kinetics[16] and MEVA [5] Dataset to boost the Semi-TCL learning. MEVA and AVA-Kinetics are originally used for human activity detection. The AVA-Kinetics dataset has relatively low resolution varying from 144 × 256 to 454 × 256, and the total amount of videos is 230k. We select 3 sets of videos from AVA-Kinetics with the amount of 100, 200, 300 based on the tracklet density. The total frame number for the three selected sets are 24755, 49135, 73923 respectively. Compared with AVA-Kinetics, MEVA dataset has a high resolution with 1920 × 1072. We select 15 of the videos with a total number of 17754 frames for training.
+We report IDF1, MOTA, MT, ML, IDS on MOT series test benchmarks. Among the metrics, we prioritize IDF1 and MOTA over other metrics as it corresponds closely with the embedding learning. On the test benchmarks, we report our results on the private session based on our results obtained from the MOT challenge server. On our ablation studies, we report IDF1, MOTA and IDS to compare the impact of diﬀerent components.
+
+4.2 Implementation details
+A 8 NVIDIA Tesla V-100 GPUs machine is used to train the Semi-TCL models. We select 144 as our batch size and the starting learning rate is 1e-3. Person detection dataset is ﬁrst employed as pre-training, and then Semi-TCL training is conducted on the joint set of labeled and unlabeled videos. We train the Semi-TCL model for 200 epochs before dropping learning rate to 1e-4, and for another 20 epochs until the training fully converges. For the unlabeled video, we use Center Track [29] preprocessed 20k videos from AVA-Kinetics and 15 MEVA videos, tracking threshold is set to be 0.3 to process all the videos. From the 20k processed AVA videos, we select 100/200/300 videos based on a tracklet density based mining strategy. To make sure unlabeled data not dominate the training, we applied a balanced sampling strategy based on the method in 3.3.
+
+Semi-TCL: Semi-Supervised Track Contrastive Representation Learning
+
+9
+
+Table 1. Evaluating Semi-TCL the private detection tracks of the MOT challenge benchmarks. We report results evaluated by the public evaluation servers. Bold fonts mark the best results.
+
+MOT15 test
+
+Methods
+
+IDF1 MOTA IDS MT ML
+
+FairMOT[42] 64.7 60.6 591 343 79
+
+GSDT[34] 64.6 60.7 477 339 76
+
+TubeTK[22] 53.1 58.4 854 283 130
+
+Semi-TCL 64.9 60.6 551 344 88
+
+MOT16 test
+
+Methods
+
+IDF1 MOTA IDS MT ML
+
+DeepSort[36] 62.2 61.4 781 249 138
+
+TubeTK[22] 59.4 64.0 1117 254 147
+
+CTracker[23] 57.2 67.6 1897 250 175
+
+GSDT[34] 69.2 66.7 959 293 144
+
+FairMOT[42] 72.8 74.9 815 306 127
+
+Semi-TCL 73.9 74.8 925 322 130
+
+MOT17 test
+
+Methods
+
+IDF1 MOTA IDS MT ML
+
+SST[31]
+
+49.5 52.4 8431 504 723
+
+TubeTK [22] 58.6 63.0 4137 735 468
+
+Ctr.Track [29] 64.7 67.8 3039 816 579
+
+CTracker [23] 57.4 66.6 5529 759 570
+
+GSDT [23] 66.5 73.2 3891 981 411
+
+FairMOT[42] 72.3 73.7 3303 1017 408
+
+Semi-TCL 73.3 73.3 2790 972 441
+
+MOT20 test
+
+Methods
+
+IDF1 MOTA IDS MT ML
+
+FairMOT[42] 67.3 61.8 5243 855 94
+
+GSDT [34] 67.5 67.1 3131 660 164
+
+Semi-TCL 70.1 65.2 4139 761 131
+
+Frag 1731 1705 1194 1687
+Frag 2008 1366 3112 2596 2399 2569
+Frag 14797 5727 6102 9114 8604 8073 8010
+Frag 7874 9875 8508
+
+10
+
+Authors Suppressed Due to Excessive Length
+
+4.3 Comparison with State of the Art
+Semi-TCL is trained on the joint labeled and unlabeled video dataset, while tested on MOT15, MOT16, MOT17, MOT20 benchmarks. With the MOT benchmarks test annotations unavailable, we submit our test prediction results to the MOT server and obtain our benchmarks results. Table 1 shows the benchmark results of Semi-TCL as well as other SOTA approaches. Since our work focuses on ReID embedding learning for tracking, the primary metric for us is the IDF1. Based on Table 1, our method consistently outperforms the other the state of the art approaches in all MOT benchmarks. Specially, on MOT16 and MOT17, SemiTCL is able to have 1% and 1.1% increase under the IDF1 metric. On MOT20 where the dataset tends to have very crowded scenes and ReID is highly relied to match trackletd, our method improves the SOTA IDF1 score from 67.5% to 70.1% with a 2.5% improvement. It is also worth noticing that, in all four MOT benchmarks, we have the best score in IDF1, which highlights the quality of the ReID embedding. The comparison of the test results with other SOTA approaches shows the superiority and robustness of Semi-TCL.
+
+4.4 Design choices in TCL
+As the core component of this work, TCL based a instance to tracklet matching scheme instead of the widely used instance to instance matching during contrastive pair building. To show the eﬀectiveness of the work, we start the ablation study with the comparison of TCL with other instance matching based approach. All the comparison experiments are using half of MOT17 as labeled tracking training data and the other half for validation. Contrastive loss vs. other instance recognition losses. To see whether the proposed embedding learning objective is eﬀective, we compare the performance of diﬀerent embedding learning objectives. Our baseline method is the cross entropy (CE) objective function, which is common in many computer vision applications and proven to be eﬀective for embedding learning. In tracking embedding learning, with the tracking labeled data, images from the same tracklet are regarded as samples of same class. We also compare with the a baseline contrastive learning objective using instance-to-instance match, referred to as SCL [13]. They are compared with the TCL objective in Table 2. We report comparison result on MOT17 validation set of the diﬀerent objective functions. We can see that TCL outperforms both CE and SCL objective functions. We also notice that the MOTA are similar between SCL and TCL, but the IDF1 score improves from 75.5 to 76.2. It suggests that the instance to trackl matching objective could be more eﬀective for the ReID learning.
+Impact of batch size on training Larger batch sizes tend to be useful in image embedding contrastive learning tasks[4]. We would like to see if this also holds in the scenario of tracking embedding learning. We use 3 batch sizes for comparison, 32, 96, 144. We keep the training setting same as the main experiment and only use batch size as variable. Evaluation results can be found in 2. We ﬁnd that while increasing the batch size from 32 to 96 and 144, the
+
+Semi-TCL: Semi-Supervised Track Contrastive Representation Learning
+
+11
+
+Table 2. MOT17 validation ablation study on loss objective and batch size. CE refers to the Cross Entropy pretraining on detection dataset. SCL means the instance-toinstance match based contrastive embedding learning. CE pre and SCL pre stands for the CE and SCL applied to detection dataset based pretraining. TCL represents the tracklet contrastive embedding learning. TCL w. b32 means the TCL learning with the batch size to be 32, same applied to b96 and b144.
+
+IDF1 MOTA IDS
+
+CE pre
+
+48.2 47.0 463
+
+SCL pre 53.6 45.2 404
+
+CE
+
+74.7 70.5 404
+
+SCL
+
+75.5 74.7 365
+
+TCL
+
+76.2 74.6 339
+
+TCL w. b144 76.2 74.6 339
+
+TCL w. b96 75.1 73.1 358
+
+TCL w. b32 74.4 70.4 321
+
+Table 3. MOT17 validation evaluation on external datasets. TCL stands for tracklet
+
+contrastive learning with only labeled MOT17 training data. TCL w.AVA100 stands for
+
+Semi-TCL training with the joint labeled MOT17 training set and unlabeled AVA100
+
+external dataset. Same applied to TCL w.AVA200 and TCL w.AVA300. TCL w.MEVA
+
+means Semi-TCL training with the joint labeled MOT17 training set and unlabeled
+
+MEVA dataset. And TCL w.AVA+MEVA means Semi-TCL training with the joint
+
+labeled MOT17 training set and combined AVA100 and MEVA.
+
+IDF1 MOTA IDS
+
+TCL
+
+76.2 74.6 339
+
+TCL w.AVA100
+
+76.9 74.9 310
+
+TCL w.AVA200
+
+77.2 74.2 343
+
+TCL w.AVA300
+
+77.8 74.1 352
+
+TCL w.MEVA
+
+78.1 77.6 423
+
+TCL w.AVA+MEVA 78.4 78.0 375
+
+MOTA and IDF1 have a 0.7%, 2.7% and 1.1%,1.5% improvement respectively. This means larger batch sizes, or more contrastive learning pairs, are helpful to the tracking embedding learning.
+4.5 Semi-supervised learning with TCL
+Pre-training comparison Static image pre-training is proved to be useful in the joint tracking and ReID learning [42]. We also applied contrastive learning based pre-training in our approach. To see whether CE or contrastive learning can have better pre-training quality, we use Crowdhuman dataset [26] for training and evaluation is conducted on MOT17 validation. Table 2 demonstrates the benchmark results, we can see the SCL based approach can outperform the CE based approach signiﬁcantly in IDF1 with a 5.4% gap. In MOTA the SCL is behind for 1.8%, which shows that the SCL help learned better embedding quality.
+
+12
+
+Authors Suppressed Due to Excessive Length
+
+Fig. 3. Snapshots of images in AVA and MEVA (left two columns/four images are from AVA-Kinetics and right two from MEVA, resolution are 454 × 256 1920 × 1072, the images also shows the MEVA video has more appearance and motion diversity).
+Accuracy vs. volume of unlabeled videos The eﬀectiveness of Semi-TCL assumes that external video is helping the embedding learning. We want to move one step further, ﬁguring out the relationship of Semi-TCL learning with diﬀerent number of videos. Setting the total learning epoch to be 150, 200, 300 for AVA100/200/300 respectively, we can obtain three Semi-TCL models. Results can be see in Table 3. Not to our surprise, with more additional videos, we do see the improvements in the IDF1 from 76.9 to 77.8. It is interesting to observe that the MOTA does not have obvious change with more data, staying around 74. This is understandable as no additional human supervision is provided for the detection task. Table 3 shows embedding learned with MEVA dataset (15 videos and 17k frames) outperform all the three AVA series dataset with much smaller data amount. With this comparison, we are also interested in the case where we combine the AVA and MEVA datasets. By combining the MEVA and AVA100 dataset, we found the joint video dataset can boost the MOT17 evaluation results further to IDF1 78.4 and MOTA to 78.0. From the AVA and MEVA experiments we can see that the tracklet contrastive learning objective can beneﬁt from the increasing number of unlabeled video data. Accuracy vs. types of videos. Besides the volume of videos, the unlabeled videos may come from diﬀerent domains. MEVA [5] and AVA are both curated as action recognition datasets but the content type is diﬀerent 3. With larger resolution than AVA videos and crowded scenes, videos in the MEVA dataset are more akin to the videos presented in MOT dataset, where the video are mostly from surveillance or car mounted cameras. Comparing the results of semisupervised learning with either of the two datasets, we observe that unlabeled videos with similar content are more eﬀective in increasing the tracking accuracy. Mining strategy for unlabeled videos. We sample the unlabeled video based on tracklet density as we believe more predicted tracklet might mean more human related content. Based on on primitive prediction results, the mining dataset has average 103 tracks while the overall average tracks number is 36.7. To verify if this tracklet density based video mining strategy help the embedding learning, we conduct a ablation study to compare dataset with mining v.s. random selection. To run this experiment, we also build a AVA 100/200/300 dataset by just random selection. We can observe training with ﬁltered videos, which have more tracks produced by the primitive tracker, leads to better increase in accuracy with respect to the number of videos used.
+
+Semi-TCL: Semi-Supervised Track Contrastive Representation Learning
+
+13
+
+Use of contrastive loss for semi-supervised learning. We also compared Semi-TCL with an alternative approach which uses the cross entropy loss in [42] (CE) for semi supervised learning on the AVA and MOT17 training joint dataset. We show the IDF1 and MOTA results in Figure 4 to compare with the results learned via Semi-TCL. Both methods are trained with the mined unlabeled videos and labeled videos as decribed above. We can observe that CE seems to be not beneﬁting form additional unlabeled videos. So we stop adding more videos to it. In contrast, Semi-TCL continually beneﬁts from more unlabeled videos.
+
+Fig. 4. (a)IDF1 and MOTA results with unlabeled data growth. We use blue, red, gray color to represent the metrics for Semi-TCL with video dataset with mining, Semi-TCL with random selection from videos and using CE on video set with mining. (b)Visualization of error examples in Semi-TCL predictions. In the left section, we show the starting frame and use bounding box highlight the regions the example happen. In the right section we zoom in and crop the region. Row 1 show Semi-TCL successfully match a new detection to the previous track ID with partial detection. Row 2 shows the model fails and match to a wrong ID due to blueness. Row 3 shows the rematch fails after long time when the missing track expires.
+4.6 Error Analysis
+We demonstrate qualitative results of the Semi-TCL on MOT test samples. In Figure 4(b), we show a positive sample in the ﬁrst row and two error samples in second and third row. In the ﬁrst row, we ﬁnd the person with track #255 can be correctly re-identiﬁed after being occluded for one frame. In the second row, the region is extremely blurred which deteriorates the visual repsentation quality. As a result, Track #1452 is ﬁrst assigned to a person in black coat then matched with a person in yellow. Example in the third row shows a case where a person is
+
+14
+
+Authors Suppressed Due to Excessive Length
+
+occluded for a extended period of time and thus can not be correctly associated with his previous track. The error sampls shows though we have achieved good improvement in tracking accuracy, there still exist several challenging situations that remains to be tackled in future research works.
+
+5 Conclusion
+In the paper, we proposed Semi-supervised tracklet level embedding learning approach (Semi-TCL). Semi-TCL extends the embedding learning from instanceinstance match to instance-tracklet match which ﬁts more closely to how ReID embedding is used in tracking. Semi-TCL uses the contrastive loss to implement this idea and is able to learn embeddings from both labeled video and unlabeled videos. Evaluation of Semi-TCL on MOT15, MOT16, MOT17, MOT20 shows the state of the art performance on all the benchmarks, which is further justiﬁed by our ablation studies. We observe an promising growth of accuracy when the amount of unlabeled videos increases, which may shed light on large-scale semisupervised or unsupervised learning of multiple obejct tracking models.
+
+Semi-TCL: Semi-Supervised Track Contrastive Representation Learning
+
+15
+
+References
+1. Philipp Bergmann, Tim Meinhardt, and Laura Leal-Taixe. Tracking without bells and whistles. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 941–951, 2019.
+2. Dapeng Chen, Hongsheng Li, Tong Xiao, Shuai Yi, and Xiaogang Wang. Video person re-identiﬁcation with competitive snippet-similarity aggregation and coattentive snippet embedding. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pages 1169–1178, 2018.
+3. Ting Chen, Simon Kornblith, Mohammad Norouzi, and Geoﬀrey Hinton. A simple framework for contrastive learning of visual representations. In International conference on machine learning, pages 1597–1607. PMLR, 2020.
+4. Xinlei Chen, Haoqi Fan, Ross Girshick, and Kaiming He. Improved baselines with momentum contrastive learning. arXiv preprint arXiv:2003.04297, 2020.
+5. Kellie Corona, Katie Osterdahl, Roderic Collins, and Anthony Hoogs. Meva: A large-scale multiview, multimodal video dataset for activity detection. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision, pages 1060–1068, 2021.
+6. Patrick Dendorfer, Hamid Rezatoﬁghi, Anton Milan, Javen Shi, Daniel Cremers, Ian Reid, Stefan Roth, Konrad Schindler, and Laura Leal-Taix´e. Mot20: A benchmark for multi object tracking in crowded scenes. arXiv preprint arXiv:2003.09003, 2020.
+7. Jiankang Deng, Jia Guo, Niannan Xue, and Stefanos Zafeiriou. Arcface: Additive angular margin loss for deep face recognition. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 4690–4699, 2019.
+8. Kaiwen Duan, Song Bai, Lingxi Xie, Honggang Qi, Qingming Huang, and Qi Tian. Centernet: Keypoint triplets for object detection. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 6569–6578, 2019.
+9. Gamaleldin F Elsayed, Dilip Krishnan, Hossein Mobahi, Kevin Regan, and Samy Bengio. Large margin deep networks for classiﬁcation. arXiv preprint arXiv:1803.05598, 2018.
+10. Raia Hadsell, Sumit Chopra, and Yann LeCun. Dimensionality reduction by learning an invariant mapping. In 2006 IEEE Computer Society Conference on Computer Vision and Pattern Recognition (CVPR’06), volume 2, pages 1735–1742. IEEE, 2006.
+11. Kaiming He, Haoqi Fan, Yuxin Wu, Saining Xie, and Ross Girshick. Momentum contrast for unsupervised visual representation learning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 9729– 9738, 2020.
+12. Elad Hoﬀer and Nir Ailon. Deep metric learning using triplet network. In International workshop on similarity-based pattern recognition, pages 84–92. Springer, 2015.
+13. Prannay Khosla, Piotr Teterwak, Chen Wang, Aaron Sarna, Yonglong Tian, Phillip Isola, Aaron Maschinot, Ce Liu, and Dilip Krishnan. Supervised contrastive learning. arXiv preprint arXiv:2004.11362, 2020.
+14. Long Lan, Xinchao Wang, Gang Hua, Thomas S Huang, and Dacheng Tao. Semionline multi-people tracking by re-identiﬁcation. International Journal of Computer Vision, pages 1–19, 2020.
+15. Laura Leal-Taix´e, Anton Milan, Ian Reid, Stefan Roth, and Konrad Schindler. Motchallenge 2015: Towards a benchmark for multi-target tracking. arXiv preprint arXiv:1504.01942, 2015.
+
+16
+
+Authors Suppressed Due to Excessive Length
+
+16. Ang Li, Meghana Thotakuri, David A Ross, Joa˜o Carreira, Alexander Vostrikov, and Andrew Zisserman. The ava-kinetics localized human actions video dataset. arXiv preprint arXiv:2005.00214, 2020.
+17. Dangwei Li, Xiaotang Chen, Zhang Zhang, and Kaiqi Huang. Learning deep context-aware features over body and latent parts for person re-identiﬁcation. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 384–393, 2017.
+18. Wei Li, Rui Zhao, Tong Xiao, and Xiaogang Wang. Deepreid: Deep ﬁlter pairing neural network for person re-identiﬁcation. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 152–159, 2014.
+19. Weiyang Liu, Yandong Wen, Zhiding Yu, and Meng Yang. Large-margin softmax loss for convolutional neural networks. In ICML, volume 2, page 7, 2016.
+20. Anton Milan, Laura Leal-Taix´e, Ian Reid, Stefan Roth, and Konrad Schindler. Mot16: A benchmark for multi-object tracking. arXiv preprint arXiv:1603.00831, 2016.
+21. Wanli Ouyang, Xiaogang Wang, Xingyu Zeng, Shi Qiu, Ping Luo, Yonglong Tian, Hongsheng Li, Shuo Yang, Zhe Wang, Chen-Change Loy, et al. Deepid-net: Deformable deep convolutional neural networks for object detection. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 2403–2412, 2015.
+22. Bo Pang, Yizhuo Li, Yifan Zhang, Muchen Li, and Cewu Lu. Tubetk: Adopting tubes to track multi-object in a one-step training model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 6308– 6318, 2020.
+23. Jinlong Peng, Changan Wang, Fangbin Wan, Yang Wu, Yabiao Wang, Ying Tai, Chengjie Wang, Jilin Li, Feiyue Huang, and Yanwei Fu. Chained-tracker: Chaining paired attentive regression results for end-to-end joint multiple-object detection and tracking. In European Conference on Computer Vision, pages 145–161. Springer, 2020.
+24. Bryan James Prosser, Wei-Shi Zheng, Shaogang Gong, Tao Xiang, Q Mary, et al. Person re-identiﬁcation by support vector ranking. In BMVC, volume 2, page 6, 2010.
+25. Rui Qian, Tianjian Meng, Boqing Gong, Ming-Hsuan Yang, Huisheng Wang, Serge Belongie, and Yin Cui. Spatiotemporal contrastive video representation learning. arXiv preprint arXiv:2008.03800, 2020.
+26. Shuai Shao, Zijian Zhao, Boxun Li, Tete Xiao, Gang Yu, Xiangyu Zhang, and Jian Sun. Crowdhuman: A benchmark for detecting human in a crowd. arXiv preprint arXiv:1805.00123, 2018.
+27. Bing Shuai, Andrew G Berneshawi, Davide Modolo, and Joseph Tighe. Multiobject tracking with siamese track-rcnn. arXiv preprint arXiv:2004.07786, 2020.
+28. Kihyuk Sohn. Improved deep metric learning with multi-class n-pair loss objective. In Proceedings of the 30th International Conference on Neural Information Processing Systems, pages 1857–1865, 2016.
+29. Robert Stone et al. Centertrack: An ip overlay network for tracking dos ﬂoods. In USENIX Security Symposium, volume 21, page 114, 2000.
+30. Chen Sun, Fabien Baradel, Kevin Murphy, and Cordelia Schmid. Learning video representations using contrastive bidirectional transformer. arXiv preprint arXiv:1906.05743, 2019.
+31. ShiJie Sun, Naveed Akhtar, HuanSheng Song, Ajmal Mian, and Mubarak Shah. Deep aﬃnity network for multiple object tracking. IEEE transactions on pattern analysis and machine intelligence, 43(1):104–119, 2019.
+
+Semi-TCL: Semi-Supervised Track Contrastive Representation Learning
+
+17
+
+32. Yonglong Tian, Chen Sun, Ben Poole, Dilip Krishnan, Cordelia Schmid, and Phillip Isola. What makes for good views for contrastive learning. arXiv preprint arXiv:2005.10243, 2020.
+33. Hao Wang, Yitong Wang, Zheng Zhou, Xing Ji, Dihong Gong, Jingchao Zhou, Zhifeng Li, and Wei Liu. Cosface: Large margin cosine loss for deep face recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 5265–5274, 2018.
+34. Yongxin Wang, Kris Kitani, and Xinshuo Weng. Joint object detection and multiobject tracking with graph neural networks. arXiv preprint arXiv:2006.13164, 5, 2020.
+35. Zhongdao Wang, Liang Zheng, Yixuan Liu, and Shengjin Wang. Towards real-time multi-object tracking. arXiv preprint arXiv:1909.12605, 2(3):4, 2019.
+36. Nicolai Wojke, Alex Bewley, and Dietrich Paulus. Simple online and realtime tracking with a deep association metric. In 2017 IEEE international conference on image processing (ICIP), pages 3645–3649. IEEE, 2017.
+37. Yu Wu, Yutian Lin, Xuanyi Dong, Yan Yan, Wanli Ouyang, and Yi Yang. Exploit the unknown gradually: One-shot video-based person re-identiﬁcation by stepwise learning. In The IEEE Conference on Computer Vision and Pattern Recognition (CVPR), June 2018.
+38. Zhirong Wu, Yuanjun Xiong, Stella X Yu, and Dahua Lin. Unsupervised feature learning via non-parametric instance discrimination. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pages 3733–3742, 2018.
+39. Mingze Xu, Chenyou Fan, Yuchen Wang, Michael S Ryoo, and David J Crandall. Joint person segmentation and identiﬁcation in synchronized ﬁrst-and third-person videos. In ECCV, 2018.
+40. Jinrui Yang, Wei-Shi Zheng, Qize Yang, Ying-Cong Chen, and Qi Tian. Spatialtemporal graph convolutional network for video-based person re-identiﬁcation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 3289–3299, 2020.
+41. Dong Yi, Zhen Lei, Shengcai Liao, and Stan Z Li. Deep metric learning for person re-identiﬁcation. In 2014 22nd International Conference on Pattern Recognition, pages 34–39. IEEE, 2014.
+42. Yifu Zhang, Chunyu Wang, Xinggang Wang, Wenjun Zeng, and Wenyu Liu. Fairmot: On the fairness of detection and re-identiﬁcation in multiple object tracking. arXiv preprint arXiv:2004.01888, 2020.
+43. Liang Zheng, Zhi Bie, Yifan Sun, Jingdong Wang, Chi Su, Shengjin Wang, and Qi Tian. Mars: A video benchmark for large-scale person re-identiﬁcation. In European Conference on Computer Vision, pages 868–884. Springer, 2016.
+

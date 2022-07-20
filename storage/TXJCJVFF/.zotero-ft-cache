@@ -1,0 +1,1640 @@
+Transforming Model Prediction for Tracking
+Christoph Mayer Martin Danelljan Goutam Bhat Matthieu Paul Danda Pani Paudel Fisher Yu Luc Van Gool
+Computer Vision Lab, D-ITET, ETH Zu¨rich, Switzerland
+
+arXiv:2203.11192v1 [cs.CV] 21 Mar 2022 NFS
+
+Abstract
+Optimization based tracking methods have been widely successful by integrating a target model prediction module, providing effective global reasoning by minimizing an objective function. While this inductive bias integrates valuable domain knowledge, it limits the expressivity of the tracking network. In this work, we therefore propose a tracker architecture employing a Transformer-based model prediction module. Transformers capture global relations with little inductive bias, allowing it to learn the prediction of more powerful target models. We further extend the model predictor to estimate a second set of weights that are applied for accurate bounding box regression. The resulting tracker relies on training and on test frame information in order to predict all weights transductively. We train the proposed tracker end-to-end and validate its performance by conducting comprehensive experiments on multiple tracking datasets. Our tracker sets a new state of the art on three benchmarks, achieving an AUC of 68.5% on the challenging LaSOT [20] dataset. The code and trained models are available at https://github.com/visionml/pytracking
+1. Introduction
+Generic visual object tracking is one of the fundamental problems in computer vision. The task involves estimating the state of the target object in every frame of a video sequence, given only the initial target location. One of the key problems in object tracking is learning to robustly detect the target object, given the scarce annotation. Among exiting methods, Discriminative Correlation Filters (DCF) [1, 5, 13, 14, 24, 29, 46, 54] have achieved much success. These approaches learn a target model to localize the target in each frame, by minimizing a discriminative objective function. The target model, often set to a convolutional kernel, provides a compact and generalizable representation of the tracked object, leading to the popularity of DCFs.
+The objective function in DCF integrates both foreground and background knowledge over the previous
+
+66.9
+
+66.7
+
+66.4
+
+TrDiMP
+
+66.2
+
+TransT
+
+63.9
+
+65.2
+64.7 SuperDiMP
+
+ToMP-50+  IoUNet
+
+ToMP-50
+ ToMP-101
+KeepTrack STARK-ST101
+STARK-ST50
+
+63.9
+
+SiamRCNN
+
+63.1 63.9 64.7
+
+66.4 67.1
+
+68.5
+
+LaSOT
+
+Figure 1. Performance improvements when transforming the model optimizer based tracker SuperDiMP [12] ( ) step-by-step. First, we replace the model optimizer by a Transformer based model predictor ( ). Secondly, we replace the probabilistic IoUNet by a new regressor and predict its weights with the same model predictor ( ). The performance (success AUC) is reported on NFS [23] and LaSOT [20] and compared with recent trackers ( ). ToMP-50 and ToMP-101 refer to the different employed backbones ResNet-50 [28] and ResNet-101 [28].
+
+frames, providing effective global reasoning when learning the model. However, it also imposes severe inductive bias on the predicted target model. Since the target model is obtained by solely minimizing an objective over the previous frames, the model predictor has limited ﬂexibility. For instance, it cannot integrate any learned priors in the predicted target model. On the other hand, Transformers have also been shown to provide strong global reasoning across multiple frames, thanks to the use of self and cross attention. Consequently, Transformers have been applied to generic object tracking [7, 59, 63, 67] with considerable success.
+In this work, we propose a novel tracking framework that aims at bridging the gap between DCF and Transformer based trackers. Our approach employs a compact target model for localizing the target, as in DCF. The weights of this model are however obtained using a Transformer-based model predictor, allowing us to learn more powerful target models, compared to DCFs. This is achieved by introducing novel encodings of the target state, allowing the Transformer to effectively utilize this information. We further extend our model predictor to generate weights for a bounding
+
+1
+
+box regressor network, in order to condition its predictions on the current target. Our proposed approach ToMP obtains signiﬁcant improvement in tracking performance compared to state-of-the-art DCF-based methods, while also outperforming recent Transformer based trackers (see Fig. 1).
+Contributions: In summary, our main contributions are the following: i) We propose a novel Transformer-based model prediction module in order to replace traditional optimization based model predictors. ii) We extend the model predictor to estimate a second set of weights that are applied for bounding box regression. iii) We develop two novel encodings that incorporate target location and target extent allowing the Transformer-based model predictor to utilize this information. iv) We propose a parallel two stage tracking procedure at test time to decouple target localization and bounding box regression in order to achieve robust and accurate target detection. v) We perform a comprehensive set of ablation experiments to assess the contribution of each building block of our tracking pipeline and evaluate it on seven tracking benchmarks. The proposed tracker ToMP sets a new state of the art on three including LaSOT [20] where it achieves an AUC of 68.5% (see Fig. 1). In addition we show that our tracker ToMP outperforms other Transformer based trackers for every attribute of LaSOT [20].
+2. Related Work
+Discriminative Model Prediction: DCF based approaches learn a target model to distinguish the target from background by minimizing an objective. For long Fouriertransform based solvers were predominant for DCF based trackers [5, 15, 29, 46]. Danelljan et al. [13] employed a two layer Perceptron as target model and use Conjugate Gradient to solve the optimization problem. Recently, multiple methods have been introduced that enable end-toend training by casting the tracking problem into a metalearning problem [1, 58, 72]. These methods are based on the idea of unrolling the iterative optimization algorithm for a ﬁxed number of iterations and to integrate it in the tracking pipeline to allow end-to-end training. Bhat et al. [1] learn a discriminative feature space and predict the weights of the target model based on the target state in the initial frame and reﬁne the weights with an optimization algorithm.
+Transformers for Tracking: Recently, several trackers have been introduced that use Transformers [7, 59, 63, 67]. Transformers are typically employed to predict discriminative features to localize the target object and regress its bounding box. The training features are processed by the Transformer Encoder whereas the Transformer Decoder fuses training and test features using cross attention layers to compute discriminative features [7, 59, 67].
+DTT [67] feeds these features to two networks that predict the location and the bounding box of the target. In con-
+
+trast, TransT [7] employs a feature fusion network that consists of multiple self and cross attention modules. The fused output features are fed into a target classiﬁer and a bounding box regressor. TrDiMP [59] adopts the DiMP [1] model predictor to produce the model weights given the output features of the Transformer Encoder as training samples. Afterwards, the target model computes the target score map by applying the predicted weights on the output features produced by the Transformer Decoder. TrDiMP adopts the probabilistic IoUNet [16] for bounding box regression. Similar to our tracker, TrDiMP encodes target state information but integrates it via two different cross attention modules in the Decoder instead of using two encoding modules in front of the Transformer.
+In contrast to the aforementioned Transformer based trackers, STARK [63] adopts the Transformer architecture from DETR [6]. Instead of fusing the training and test features in the Transformer Decoder they are stacked and processed jointly by the full Transformer. A single objectquery then produces the Decoder output that is fused with the Transformer Encoder features. These features are then further processed to directly predict the bounding box of the target. In contrast, our tracker employs the same Transformer architecture from DETR [6] but to replace the model optimizer. In the end, our resulting Transformer-based model predictor estimates the weights of two separate models: the target classiﬁer and the bounding box regressor.
+3. Method
+In this work, we propose a Transformer-based target model prediction network for tracking called ToMP. We ﬁrst revisit existing optimization based model predictors and discuss their limitations in Sec. 3.1. Next, we describe our Transformer-based model prediction approach in Sec. 3.2. We extend this approach to perform joint target classiﬁcation and bounding box regression in Sec. 3.3. Finally, we detail our ofﬂine training procedure and online tracking pipeline in Sec. 3.4 and Sec. 3.5, respectively.
+3.1. Background
+One of the popular paradigms for visual object tracking is discriminative model prediction based tracking. These approaches, visualized in Fig. 2a, use a target model to localize the target object in the test frame. The weights (parameters) of this target model are obtained from the model optimizer, using the training frames and their annotation. While a variety of target models are used in the literature [1, 13, 33, 46, 54, 58, 72], discriminative trackers share a common base formulation to produce the target model weights. This involves solving an optimization problem such that the target model produces the desired target states yi ∈ Y for the training samples Strain ∈ {(xi, yi)}m i=1. Here, xi ∈ X refers to a deep feature map of frame i and m
+
+2
+
+TesTteFsrtaFmraeme TraTinraininginFgraFmraems es
+
+Backbone Backbone
+
+Backbone Backbone
+
+TargTeatrgMeot dMeol del ModMeol  deTl argTeatrgSectoSrecsores WeiWghetisghts
+MoMdeol dOepl tOimpitzimerizer
+
+TestTFersatmFerame TrainTirnaginFinragmFerasmes
+
+Backbone Backbone
+
+Backbone Backbone
+
+ModMeol Pderel dPircetodrictor
+Test TFerasmt Fer  ame  EncoEdnincgoding
+
+TargeTt aSrcgoerteSscores
+
+TargeTtaSrgtaeteS  tate  EncoEdnincgoding
+
+TransTforarmnsefor
+rmer
+ EncoEdenrcoder TargeTt aMrgoedteMl odel
+TransTforarmnsefor
+rmer
+ DecoDdercoder ModeMl  odel  WeighWtseights
+
+(a) Tracker with optimization based model prediction.
+
+(b) Proposed tracker with Transformer based model prediction.
+
+Figure 2. Comparison between trackers that employ optimization based model prediction and our Transformer-based model prediction. The model optimizer [ ] in Fig. 2a is replaced by the model predictor in Fig. 2b that consists of the proposed modules [ , , , ].
+
+denotes the total number of training frames. The optimization problem reads as follows,
+
+w = arg min
+
+f (h(w˜; x), y) + λg(w˜). (1)
+
+w˜
+
+(x,y)∈Strain
+
+Here, the objective consists of the residual function f which computes an error between the target model output h(w˜; x) and the ground truth label y. g(w˜) denotes the regularization term weighted by a scalar λ, while w represents the optimal weights of the target model. Note that the training set Strain contains the annotated ﬁrst frame, as well as the previous tracked frames with the tracker’s predictions being used as pseudo-labels.
+Learning the target model by explicitly minimizing the objective of (1) provides a robust target model that can distinguish the target from the previously seen background. However, such a strategy suffers from notable limitations. The optimization based methods compute the target model using only limited information available in previously tracked frames. That is, they cannot integrate learned priors in the target model prediction so as to minimize future failures. Similarly, these methods typically lack the possibility to utilize the current test frame in a transductive manner when computing the model weights to improve tracking performance. The optimization based methods also require setting multiple optimizer hyper-parameters, and can overﬁt/underﬁt on the training samples. Another limitation of optimization based trackers is their procedure that produces the discriminative features. Usually, the features provided to the target model are simply the extracted test features. Instead of reinforced features by using the target state information contained in the training frames. Extracting such enhanced features would allow reliable differentiation between the target and background regions in the test frame.
+
+3.2. Transformer-based Target Model Prediction
+
+In order to overcome the aforementioned limitations of optimization based target localization approaches, we propose to replace the model optimizer by a novel target model
+
+predictor based on Transformers (see Fig. 2b). Instead of explicitly minimizing an objective as stated in (1), our approach learns to directly predict the target model purely from data by end-to-end training. This allows the model predictor to integrate target speciﬁc priors in the predicted model so that it can focus on characteristic features of the target, in addition to the features that allow to differentiate the target from the seen background. Furthermore, our model predictor also utilizes the current test frame features, in addition to the previous training features, to predict the target model in a transductive manner. As a result, the model predictor can utilize the current frame information to predict a more suitable target model. Finally, instead of applying the target model on a ﬁxed feature space, deﬁned by the pre-trained feature extractor, our approach can utilize the target information to dynamically construct a more discriminative feature space for every frame.
+An overview of the proposed tracker employing the Transformer-based model prediction is shown in Fig. 2b. Similar to the optimization based trackers, it consists of a test and training branch. We ﬁrst encode the target state information in the training frames and fuse it with the deep image features [ ]. Similarly, we also add an encoding to the test frame in order to mark it as test frame [ ]. The features from both the training and test branches are then jointly processed in the Transformer Encoder [ ] that produces enhanced features by reasoning globally across frames. Next, the Transformer Decoder [ ] predicts the target model weights [ ] using the output of the Transformer Encoder. Finally, the predicted target model is applied on the enhanced test frame features to localize the target. Next, we describe the main components in our tracking pipeline.
+Target Location Encoding: We propose a target location encoding that allows the model predictor to incorporate the target state information from the training frames, when predicting the target model. In particular, we use the embedding efg ∈ R1×C that represents foreground. Together with a Gaussian yi ∈ RH×W ×1 centered at the target location,
+
+3
+
+Backbone
+
+Test  Frame
+
++ xtest etest µ(etest)
+
+Training Frames
+
+Backbone
+
+++
+
+xi
+
+d1
+
+d2
+
+(di)
+
+y1
+
+y2
+
+(yi, efg) efg
+
+v1
+
+v2
+
+vtest
+
+Target Classi cation
+
+wcls h(wcls; ztest)
+
+yˆtest
+
+Tenc([v1, v2, vtest])
+
+ztest
+
+z1
+
+z2
+
+ztest
+
+⇤
+
+efg
+
+w
+
+Tdec([z1, z2, ztest], efg)
+
+Linear
+
+wcls
+
+wbbreg
+
++ CNN
+
+dˆtest
+
+Feature Extraction and Target Encoding
+
+Transformer-based Model Prediction
+
+Bounding Box Regression
+
+Figure 3. Overview of the entire ToMP tracking pipeline for joint model prediction. First, the training [ ] and test [ ] features are extracted using a backbone. Then the target location [ ] and bounding box [ ] encodings are added to the training features. For the test frame the test embedding is encoded [ ] and added to the test features. The features are then concatenated and jointly processed by the Transformer-based model predictor that produces the weights used for target classiﬁcation [ ] and bounding box regression [ ].
+fi
+
+we deﬁne the target encoding function
+
+ψ(yi, efg) = yi · efg,
+
+(2)
+
+where ”·” denotes point-wise multiplication with broadcasting. Note, that Him = s · H and Wim = s · W correspond to the spatial dimension of the image patch and s to the stride
+of the backbone network used to extract the deep features x ∈ RH×W ×C . Next, we combine the target encoding and the deep image features x as follows
+
+vi = xi + ψ(yi, efg).
+
+(3)
+
+This provides us the training frame features vi ∈ RH×W ×C which contain encoded target state information. Similarly, we also add a test encoding to identify the features corresponding to the test frame as,
+
+vtest = xtest + µ(etest),
+
+(4)
+
+where µ(·) repeats the token etest for each patch of xtest. Transformer Encoder: We aim to predict our target model using the foreground and background information from both the training, as well as the test frames. To achieve this, we use a Transformer Encoder [6, 56] module to ﬁrst jointly process the features from the training frames and the test frame. The Transformer Encoder serves two purposes in our approach. First, as described later, it computes the features used by the Transformer Decoder module to predict the target model. Secondly, inspired by STARK [63], our Transformer Encoder also outputs enhanced test frame
+
+features, which serve as the input to the target model when
+localizing the target. Given multiple encoded training features vi ∈
+RH×W ×C and an encoded test feature vtest ∈ RH×W ×C , we reshape the features to R(H·W )×C and concatenate all m training features vi and the test feature vtest along the ﬁrst dimension. These concatenated features are then processed
+jointly in a Transformer Encoder
+
+[z1, . . . , zm, ztest] = Tenc([v1, . . . , vm, vtest]). (5)
+
+The Transformer Encoder consists of multi-headed selfattention modules [56] that enable it to reason globally across a full frame and even across multiple training and test frames. In addition, the encoded target state identiﬁes foreground and background regions and enables the Transformer to differentiate between both regions.
+Transformer Decoder: The outputs of the Transformer Encoder (zi and ztest) are used as inputs for the Transformer Decoder [6, 56] to predict the target model weights
+
+w = Tdec([z1, . . . , zm, ztest], efg).
+
+(6)
+
+Note that the inputs zi and ztest are obtained by jointly reasoning over the whole training and test samples, allowing us to predict a discriminative target model. We use the same learned foreground embedding efg as used for target state encoding as input query of the Transformer Decoder such that the Decoder predicts the target model weights.
+Target Model: We use the DCF target model to obtain the target classiﬁcation scores
+
+h(w, ztest) = w ∗ ztest.
+
+(7)
+
+4
+
+Here, the weights of the convolution ﬁlter w ∈ R1×C are predicted by the Transformer Decoder. Note that the target model is applied on the output test features ztest of the Transformer Encoder. These features are obtained after joint processing of training and test frames, and thus support the target model to reliably localize the target.
+
+3.3. Joint Localization and Box Regression
+
+In the previous section, we presented our Transformer
+
+based architecture for predicting the target model. Although
+
+the target model can localize the object center in each frame,
+
+a tracker needs to also estimate an accurate bounding box of
+
+the target. DCF based trackers typically employ a dedicated
+
+bounding box regression network [13] for this task. While it
+
+is possible to follow a similar strategy, we decide to predict
+
+both models jointly since target localization and bounding
+
+box regression are related tasks that can beneﬁt from one
+
+another. In order to achieve this, we extend our model as
+
+follows. First, instead of only using the target center loca-
+
+tion when generating the target state encoding, we also en-
+
+code target size information to provide a richer input to our
+
+model predictor. Secondly, we extend our model predictor
+
+to estimate weights for a bounding box regression network,
+
+in addition to the target model weights. The resulting track-
+
+ing architecture is visualized in Fig. 3. Next, we describe
+
+each of these changes in detail.
+
+Target Extent Encoding: In addition to the extracted deep image features xi and the target location encoding ψ(yi, efg), we add another encoding to incorporate information about the bounding box of the target. In order to encode the bounding box bi = {bxi , byi , bwi , bhi } encompassing the target object in the training frame i, we adopt the ltrb
+
+representation [22, 55, 62, 67]. First, we map each location
+
+(jx, jy) on the feature map xi back to the image domain
+
+using (kx, ky) = (
+
+s 2
+
++s·jx,
+
+s 2
+
++ s · jy). Then, we com-
+
+pute the normalized distance of each remapped location to
+
+the four sides of the bounding box bi as follows,
+
+li = (kx − bxi )/Wim, ti = (ky − byi )/Him,
+
+ri = (kx − bxi − bwi )/Wim, bi = (ky − byi − bhi )/Him,
+
+(8)
+
+where Wim = s · W and Him = s · H. These four sides are
+used to produce the dense bounding box representation d = (l, t, r, b), where d ∈ RH×W ×4. In this representation, we
+
+encode the bounding box using a Multi-Layer Perceptron
+
+(MLP) φ and thereby increase the number of dimensions
+
+from 4 to C before adding the obtained encoding to Eq. (3)
+
+such that
+
+vi = xi + ψ(yi, efg) + φ(di).
+
+(9)
+
+Here, vi is the resulting feature map which is used as input to the Transformer Encoder, see Fig. 3.
+Model Prediction: We extend our architecture to predict weights for the target model, as well as bounding box re-
+
+gression. Concretely, we pass the output w of the Transformer Decoder through a linear layer to obtain the weights for bounding box regression wbbreg and target classiﬁcation wcls. The weights wcls are then directly used within the target model h(wcls; ztest) as before. The weights wbbreg, on the other hand, are used to condition the output test features ztest of the Transformer Encoder with target information for bounding box regression, as explained next.
+Bounding Box Regression: To make the encoder output features ztest target aware, we follow Yan et al. [63] and ﬁrst compute an attention map wbbreg ∗ ztest using the predicted weights wbbreg. The attention weights are then multiplied point-wise with the test features ztest before feeding them into a Convolutional Neural Network (CNN). The last layer of the CNN uses an exponential activation function to produce the normalized bounding box prediction in the same ltrb representation as described in Eq. (8). In order to obtain the ﬁnal bounding box estimation, we ﬁrst extract the center location by applying the argmax(·) function on the target score map yˆtest predicted by the target model. Next, we query the dense bounding box prediction dˆtest at the center location of the target object to obtain the bounding box. We use two dedicated networks for target localization and bounding box regression in contrast to Yan et al. [63] that uses one network trying to predict both. This allows us as explained in Sec. 3.5 to decouple target localization from bounding box regression during tracking.
+3.4. Ofﬂine Training
+In this section, we describe the protocol to train the proposed tracker ToMP. Similar to recent end-to-end trained discriminative trackers [1, 16], we sample multiple training and test frames from a video sequence to form training subsequences. In particular, we use two training frames and one test frame. In contrast to recent Transformer based trackers [7, 63, 67] but similar to DCF based trackers [1, 13, 16], we keep the same spatial resolution for training and test frames. We pair each image Ii with the corresponding bounding box bi. We use the target state of the training frames to encode target information and use the bounding box of the test frame only to supervise training by computing two losses based on the predicted bounding boxes and the derived center location of the target in the test frame.
+We employ the target classiﬁcation loss from DiMP [1] that consists of different losses for background and foreground regions. Further, we employ the generalized Intersection over Union loss [52] using the ltrb bounding box representation [55] to supervise bounding box regression
+Ltot = λclsLcls(yˆ, y) + λgiouLgiou(dˆ, d), (10)
+where λcls and λgiou are scalars weighting the contribution of each loss. Note that in contrast to FCOS [55] and related trackers [22] we omit an additional centerness loss since
+
+5
+
+it would be redundant in addition to our classiﬁcation loss that serves the same purpose. A detailed study examining the impact of centerness is available in the supplementary. Training Details: We train our tracker on the training splits of the LaSOT [20], GOT10k [31], Trackingnet [50] and MS-COCO [43] datasets. We sample 40k sub-sequences and train for 300 epochs on two Nvidia Titan RTX GPUs. We use ADAMW [45] with a learning rate of 0.0001 that we decay by a factor of 0.2 after 150 and 250 epochs and weight decay of 0.0001. We set λcls = 100 and λgiou = 1. We construct a training sub-sequence by randomly sampling two training frames and a test frame from a 200 frame window within a video sequence. We then extract the image patches after randomly translating and scaling the image relative to the target bounding box. Moreover, we use random image ﬂipping and color jittering for data augmentation. We set the spatial resolution of the target scores to 18 × 18 and set the search area scale factor to 5.0. Further training and architecture details are provided in the supplementary Sec. A.
+3.5. Online Tracking
+During tracking, we use the annotated ﬁrst frame, as well as previously tracked frames as our training set Strain. While we always keep the initial frame and its annotation, we include one previously tracked frame and replace it with the most recent frame that achieves a target classiﬁer conﬁdence higher than a threshold. Hence, the training set Strain contains at most two frames.
+We observed that incorporating previous tracking results in Strain improves the target localization considerably.. However, including predicted bounding box estimations degrades the bounding box regression performance due to inaccurate predictions, see Sec. 4.1. Hence, we run the model predictor twice. First, we include intermediate predictions in Strain to obtain the classiﬁer weights. In the second pass, we only use the annotated initial frame to predict the bounding box. Note that for efﬁciency both steps can be performed in parallel in a single forward pass. In particular, we reshape the feature map corresponding to two training and one test frame to a sequence and duplicate it. Then, we stack both in the batch dimension to process them jointly with the model predictor. To only allow attention between the initial frame with ground truth annotation and the test frame when predicting the model for bounding box regression, we make use of the so-called key padding mask that allows to ignore certain keys when computing attention.
+4. Experiments
+We evaluate our proposed tracking architecture ToMP on seven benchmarks. Our approach is based on PyTorch 1.7 and is developed within the PyTracking [12] frame work. PyTracking is available under the GNU GPL 3.0 license. On a single Nvidia RTX 2080Ti GPU, ToMP-101
+
+and ToMP-50 achieve 19.6 and 24.8 FPS and use a ResNet101 [28] and ResNet-50 [28] as backbone respectively.
+
+4.1. Ablation Study
+We perform a comprehensive analysis of the proposed tracker. First, we analyze the contribution of the different proposed target state encodings and then examine the effect of different inference settings. Finally, we report the performance achieved when replacing the target classiﬁer or the bounding box regressor of SuperDiMP with ours. All ablation experiments in this part use a ResNet-50 as backbone.
+Target State Encoding: In order to analyze the effect of the different target state encodings we train different variants of our network and evaluate them on multiple datasets. The ﬁrst ﬁve rows of Tab. 1 correspond to versions with different target location encodings. All other settings are kept the same. In addition to the foreground and test embedding, we include a learned background embedding (instead of setting ebg = 0) to our analysis as follows: ψ(yi, efg, ebg) = yi · efg + (1 − yi) · ebg. However, Tab. 1 shows (4th vs. 5th row) that adding such a learned background embedding decreases the tracking performance. We further observe that setting the foreground embedding efg = 0 (1st row) and only relying on the target extent encoding φ(·) still achieves high tracking performance but clearly lacks behind all other versions that include the foreground embedding. We conclude that using only the foreground encoding efg and the test encoding etest leads to the best performance (4th row).
+In the second part of Tab. 1 we choose the best settings for the target location encoding and remove either the target extent encoding φ(·) or decouple the Transformer Decoder query from the foreground embedding efg. We observe that using a separate query (6th row) decreases the overall performance. Similarly, we notice that incorporating target extent information via the proposed encoding is crucial. Otherwise, the performance drops signiﬁcantly (7th row).
+Model Predictor: Since our model predictor estimates two different model weights, it seems natural to use two different Transformer queries: one to produce the target model
+
+efg ebg etest φ(·) qdec = efg LaSOT NFS OTB
+
+1  
+
+2
+
+
+
+3
+
+
+
+4
+
+
+
+5
+
+n.a.
+
+66.0 64.8 68.2
+
+67.1 66.6 70.0
+
+67.1 66.3 69.4
+
+67.6 66.9 70.1
+
+67.4 66.0 69.5
+
+6
+
+
+
+7
+
+
+
+
+
+66.0 66.2 69.9
+
+
+
+63.1 64.2 64.0
+
+Table 1. For efg, ebg and etest learning the embedding is denoted by whereas  means setting it to zero. Using the encoding φ(·) is denoted by whereas  refers to omitting it. For qdec = efg the symbol means sharing the learned embedding efg for encoding and querying the Decoder wheres  means learning two separate embeddings for both tasks. (Our ﬁnal model is in the 4th row).
+
+6
+
+Number of Decoder queries
+1 2
+
+Linear Layer 
+
+Decoder query qdec
+qdec = efg qdec = efg
+
+LaSOT NFS OTB
+67.6 66.9 70.1 63.7 62.8 67.9
+
+Table 2. Analysis of different model predictor architectures and its impact on the tracking performance in terms of success AUC.
+
+Two Stage Model Prediction
+n.a.
+
+Previous Tracking Results
+
+
+
+
+LaSOT NFS OTB
+65.7 65.3 67.8 67.6 66.9 70.1 62.0 64.8 62.8
+
+Table 3. Analysis of different inference settings an of their impact on the tracking performance in terms of success AUC.
+
+Model Predictor
+DiMP [1] ToMP ToMP
+
+Bounding Box Regressor
+Prob. IoUNet [16] Prob. IoUNet [16]
+ToMP
+
+LaSOT LaSOT NFS UAV ExtSub
+63.1 64.8 67.7 43.7 64.7 65.2 65.0 45.2 67.6 66.9 69.0 45.4
+
+Table 4. Impact of replacing DiMP [1] and the probabilistic IoUNet [16] with ToMP for localization and box regression.
+
+weights and the other to obtain the bounding box regressor weights. However, this involves decoupling the query from the foreground embedding efg and the experiments in Tab. 2 show a signiﬁcant performance drop for this case.
+Inference Settings: During online tracking, we use the initial frame and its annotation as training frames. In addition, we include the most recent frame and its target prediction if the classiﬁer conﬁdence is above a certain threshold. Tab. 3 shows that including previous tracking results leads to higher tracking performance than using only the initial frame. Disabling the described two stage model prediction approach and predicting the weights of the target model and bounding box regressor at once decreases the tracking performance drastically (-5.6 AUC on LaSOT). The reason is the sensitivity of the bounding box predictor to inaccurate predicted boxes that are encoded and used for training.
+Transforming Model Prediction Step-by-Step: Our model predictor can estimate model weights for the target model and bounding box regressor. In this part, we will transform an optimization based tracker step-by-step to assess the impact of each transformation step. Tab. 4 shows that replacing the model optimizer in SuperDiMP (1st row) with our proposed model predictor to only predict the target model (2nd row) outperforms SuperDiMP on three out of four datasets. Our tracker ToMP that jointly predicts model weights for target localization and bounding box regression (3rd row) achieves the best performance on all four datasets. We conclude that predicting the weights of the target model improves the performance and likewise predicting the weights of the bounding box regressor. Note that we report the average over ﬁve runs for all trackers based on the probabilistic IoUNet due to its stochasticity.
+
+Success AUC Gain
+
+4.2. Comparison to the State of the Art
+We compare our tracker ToMP on seven tracking benchmarks. The same settings and parameters are used for all datasets. We recompute the metrics of all trackers using the raw predictions if available or otherwise report the results given in the respective paper.
+LaSOT [20]: First, we compare ToMP on the large-scale LaSOT dataset (280 test sequences with 2500 frames on average). The success plot in Fig. 5a shows the overlap precision OPT as a function of the threshold T . Trackers are ranked w.r.t. their area-under-the-curve (AUC) score, shown in the legend. Tab. 5 shows more results including precision and normalized precision for each tracker. Both versions of ToMP with different backbones outperform the recent trackers STARK [63], TransT [7], TrDiMP [59] and DTT [67] in AUC and sets a new state-of-the-art result. Note that even ToMP with ResNet-50 outperforms STARKST101 with ResNet-101 (67.6 vs 67.1). Fig. 4 shows the success AUC gain of ToMP compared to recent Transformer based trackers for different attributes annotated in LaSOT [20]. We want to highlight that ToMP outperforms TransT [7] and TrDiMP [59] on each attribute by more than one percent point. Similarly, ToMP achieves higher performance than STARK-ST101 for every attribute. It achieves the highest gain over STARK for Background Clutter, showing the disadvantage of using small templates instead of training frames with a large ﬁeld of view that allow not only to leverage target, but also background information.
+LaSOTExtSub [19]: This dataset is an extension of LaSOT. It only contains test sequences assigned to 15 new classes with 10 videos each. The sequences contain 2500 frames on average showing challenging tracking scenarios of small, fast moving objects with distrac-
+
+ToMP ToMP STARK Keep STARK Alpha
+
+Siam Tr Super
+
+STM
+
+Pr
+
+101 50 ST101 Track ST50 Reﬁne TransT R-CNN DiMP DiMP SAOT Track DTT DiMP
+
+[63] [48] [63] [64] [7] [57] [59] [12] [73] [22] [67] [16]
+
+Precision
+
+73.5 72.2
+
+Norm. Prec 79.2 78.0
+
+Success (AUC) 68.5 67.6
+
+72.2 70.2 71.2 76.9 77.2 76.3 67.1 67.1 66.4
+
+68.0 69.0 73.2 73.8 65.3 64.9
+
+68.4 66.3 65.3 - 63.3 - 60.8 72.2 73.0 72.2 70.8 69.3 - 68.8 64.8 63.9 63.1 61.6 60.6 60.1 59.8
+
+Table 5. Comparison on the LaSOT [20] test set ordered by AUC.
+
+7 6 5
+
+ToMP-101 vs TransT [4.38] ToMP-101 vs TrDiMP [4.04] ToMP-101 vs STARK-ST101 [1.58]
+
+4
+
+3
+
+2
+
+1
+
+0
+
+MIlolutmioninaBtluiorn
+
+VariatFiounll
+
+OBcaccluksgiroonund
+
+Clutter Partial
+
+OccluCsaiomnAesrpaeMctoRtiaotnion
+
+ChaSncgaele
+
+VariatioDneformation
+
+RotationOut-of-VLoiewwResolutionFastVMieowtipoonint Change
+
+Figure 4. Per attribute analysis on LaSOT [20] between ToMP and recent Transformer based trackers. The bar heights correspond to the gain of our tracker and the legend shows the average gain.
+
+7
+
+Overlap Precision [%] Overlap Precision [%]
+
+90
+
+Success plot
+
+70
+
+Success plot
+
+80
+
+60
+
+70
+
+60 50 40 30 20 10
+
+TTooMMPP 15001[6[678.6.5] ] KSSATSTSSPrrreTTiuTlaDapDAAeMpnmhiipRReMMTsaTrKKrTPRRPra--DaSS-e5[c[Cc6iTT6f0kMikN4153n[[P.N00.e[6599610[9][[][7666.6.[6.8366541]].7...]1498.]1]]] ]
+
+50
+
+40
+
+30 20 10
+
+KTTSLDADSTeTuiooiaaMMOepMMSmpUePMiaPPTRr[mr[[P3D4a3N9Rc1i7M15.k+P.2.400P6N+[]]14][[[844[3[3.345524..5.]7.640.]]9]] ]
+
+00
+
+0.2 Ov0e.r4lap thres0h.6old 0.8
+
+1
+
+00
+
+0.2 Ov0e.r4lap thres0h.6old 0.8
+
+1
+
+(a) LaSOT [20]
+
+(b) LaSOTExtSub [19]
+
+Figure 5. Success plots, showing OPT , on LaSOT [20] and LaSOTExtSub [19] and AUC is reported in the legend.
+
+ToMP ToMP STARK
+
+STARK Siam Alpha STM
+
+Tr Keep Super Pr Siam
+
+101 50 ST101 TransT ST50 R-CNN Reﬁne Track DTT DiMP Track DiMP DiMP FC++
+
+[63] [7] [63] [57] [64] [22] [67] [59] [48] [12] [16] [62]
+
+Precision
+
+78.9 78.6 - 80.3 - 80.0 78.3 76.7 78.9 73.1 73.8 73.3 70.4 70.5
+
+Norm. Prec 86.4 86.2 86.9 86.7 86.1 85.4 85.6 85.1 85.0 83.3 83.5 83.5 81.6 80.0
+
+Success (AUC) 81.5 81.2 82.0 81.4 81.3 81.2 80.5 80.3 79.6 78.4 78.1 78.1 75.8 75.4
+
+Table 6. Comparison on the TrackingNet [50] test set.
+
+ToMP ToMP Keep
+
+STARK
+
+STARK Super Pr STM Siam Siam
+
+101 50 Track CRACT ST101 TrDiMP TransT ST50 DiMP DiMP Track AttN R-CNN KYS DiMP
+
+[48] [21] [63] [59] [7] [63] [12] [16] [22] [68] [57] [2] [1]
+
+UAV123 66.9 69.0 69.7 66.4 68.2 67.5 69.1 69.1 67.7 68.0 64.7 65.0 64.9 – 65.3
+
+OTB-100 70.1 70.1 70.9 72.6 68.1 71.1 69.4 68.5 70.1 69.6 71.9 71.2 70.1 69.5 68.4
+
+NFS
+
+66.7 66.9 66.4 62.5 66.2 66.2 65.7 65.2 64.8 63.5 – – 63.9 63.5 62.0
+
+Table 7. Comparison with the state of the art on the OTB-100 [61],
+
+NFS [23] and UAV123 [49] datasets in terms of AUC score.
+
+tors present. Fig. 5b shows the success plot where the results of most trackers are obtained from [19], e.g., DaSiamRPN [74], SiamRPN++ [39], ATOM [13], DiMP [1] and LTMU [11]. ToMP exceeds the performance of all trackers except KeepTrack [48] that employs explicit distractor matching between frames. In particular, we outperform SuperDiMP [12] that uses a model optimizer (+2.2%).
+TrackingNet [50]: We evaluate ToMP on the large-scale TrackingNet dataset that contains 511 test sequences without publicly available ground-truth. An online evaluation server is used to obtain the tracking metrics shown in Tab. 6 by submitting the raw tracking results. Both versions of ToMP achieve competitive results close to the current state of the art. In particular, ToMP-101 achieves the second best performance in terms of AUC behind STARK [63], outperforming other Transformer based trackers such as TransT [7] and TrDiMP [59].
+UAV123 [49]: The UAV dataset consists of 123 test videos that contains small objects, target occlusion, and distractors. Tab. 7 shows the achieved results in terms of success AUC. Again, ToMP achieves competitive results compared to the current state of the art achieved by KeepTrack [48].
+OTB-100 [61]: We also report results on the OTB-100 dataset that contains 100 short sequences. Multiple trackers achieve results above 70% AUC. Among them are both versions of ToMP, see Tab. 7. ToMP achieve the same performance as SuperDiMP [12] but slightly higher results than TransT [7] and slightly lower than TrDiMP [59].
+NFS [23]: We compete on the NFS dataset (30FPS version) containing 100 test videos. It contains fast motions
+
+ToMP ToMP STARK Super STARK 101 50 ST50 DiMP ST101 DPMT TRAT UPDT DiMP ATOM [63] [12, 35] [63] [35] [35] [3, 35] [1, 35] [13, 35]
+
+Accuracy 0.453 0.453 0.478.
+
+Robustness 0.814 0.789 0.799
+
+EAO
+
+0.309 0.297 0.308
+
+0.477 0.728 0.305
+
+0.481 0.492 0.464 0.465 0.457 0.775 0.745 0.744 0.755 0.734 0.303 0.303 0.280 0.278 0.274
+
+0.462 0.734 0.271
+
+Table 8. Comparison to the state of the art of bounding box only methods on VOT2020ST [35] in terms of EAO score.
+
+and challenging sequences with distractors. Both versions of ToMP exceed the performance of the current best method KeepTrack [48] by +0.5% and +0.3%, see Tab. 7.
+VOT2020 [35]: Finally, we evaluate on the 2020 edition of the Visual Object Tracking short-term challenge. We compare with the top methods in the challenge [35], as well as more recent methods. The dataset contains 60 videos annotated with segmentation masks. Since ToMP produces bounding boxes we only compare with trackers that produce the bounding boxes as well. The trackers are evaluated following the multi-start protocol and are ranked according to the EAO metric that is based on tracking accuracy and robustness, deﬁned using IoU overlap and failure rate respectively. The results in Tab. 8 show that ToMP-101 achieves the best overall performance, with the highest robustness and competitive accuracy compared to previous methods.
+
+4.3. Limitations
+
+Transformer Encoders consist of self-attention layers that compute similarity matrices between multiple training and test frame features and thus lead to a large memory footprint that impacts training and inference run-time. Thus, in future work this limitation should be addressed by evaluating alternatives such as [32, 34, 53] aiming at decreasing the memory burden. Another limiting factor of ToMP arises from challenging tracking sequences. In particular, distractors present while the target is occluded is a typical failure scenario of ToMP, since it is lacking explicit distractor handling as in KeepTrack [48].
+
+5. Conclusion
+We propose a novel tracking architecture employing a Transformer-based model predictor. The model predictor estimates the weights of the compact DCF target model to localize the target in the test frame. In addition, the predictor produces a second set of weights used for precise bounding box regression. To achieve this, we develop two new modules that encode target location and its bounding box in the training features. We conduct comprehensive experimental validation and analysis of ToMP on several challenging datasets, and set a new state of the art on three. Acknowledgments: This work was partly supported by the ETH Zu¨rich Fund (OK), Siemens Smart Infrastructure, the ETH Future Computing Laboratory (EFCL) ﬁnanced by a gift from Huawei Technologies, an Amazon AWS grant, and an Nvidia hardware grant.
+
+8
+
+References
+[1] Goutam Bhat, Martin Danelljan, Luc Van Gool, and Radu Timofte. Learning discriminative model prediction for tracking. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), October 2019. 1, 2, 5, 7, 8, 13, 15, 16
+[2] Goutam Bhat, Martin Danelljan, Luc Van Gool, and Radu Timofte. Know your surroundings: Exploiting scene information for object tracking. In Proceedings of the European Conference on Computer Vision (ECCV), August 2020. 8, 16
+[3] Goutam Bhat, Joakim Johnander, Martin Danelljan, Fahad Shahbaz Khan, and Michael Felsberg. Unveiling the power of deep tracking. In Proceedings of the European Conference on Computer Vision (ECCV), September 2018. 8, 16
+[4] Goutam Bhat, Felix Ja¨remo Lawin, Martin Danelljan, Andreas Robinson, Michael Felsberg, Luc Van Gool, and Radu Timofte. Learning what to learn for video object segmentation. In Proceedings of the European Conference on Computer Vision ECCV, August 2020. 15
+[5] David S. Bolme, J. Ross Beveridge, Bruce A. Draper, and Yui Man Lui. Visual object tracking using adaptive correlation ﬁlters. In CVPR, 2010. 1, 2
+[6] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kirillov, and Sergey Zagoruyko. Endto-end object detection with transformers. In Proceedings of the European Conference on Computer Vision (ECCV), pages 213–229, August 2020. 2, 4, 13
+[7] Xin Chen, Bin Yan, Jiawen Zhu, Dong Wang, Xiaoyun Yang, and Huchuan Lu. Transformer tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2021. 1, 2, 5, 7, 8, 16, 17
+[8] Yiwei Chen, Jingtao Xu, Jiaqian Yu, Qiang Wang, Byungin Yoo, and Jae Joon Han. AFOD: Adaptive focused discriminative segmentation tracker. In Proceedings of the European Conference on Computer Vision Workshops (ECCVW), August 2020. 15
+[9] Zedu Chen, Bineng Zhong, Guorong Li, Shengping Zhang, and Rongrong Ji. Siamese box adaptive network for visual tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2020. 16
+[10] Janghoon Choi, Junseok Kwon, and Kyoung Mu Lee. Visual tracking by tridentalign and context embedding. In Proceedings of the Asian Conference on Computer Vision (ACCV), November 2020. 16
+[11] Kenan Dai, Yunhua Zhang, Dong Wang, Jianhua Li, Huchuan Lu, and Xiaoyun Yang. High-performance longterm tracking with meta-updater. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2020. 8, 16
+[12] Martin Danelljan and Goutam Bhat. PyTracking: Visual tracking library based on PyTorch. https : / / github.com/visionml/pytracking, 2019. Accessed: 1/05/2021. 1, 6, 7, 8, 13, 14, 15, 16, 18
+
+[13] Martin Danelljan, Goutam Bhat, Fahad Shahbaz Khan, and Michael Felsberg. ATOM: Accurate tracking by overlap maximization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2019. 1, 2, 5, 8, 16
+[14] Martin Danelljan, Goutam Bhat, Fahad Shahbaz Khan, and Michael Felsberg. ECO: efﬁcient convolution operators for tracking. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR), June 2017. 1, 16
+[15] Martin Danelljan, Andreas Robinson, Fahad Shahbaz Khan, and Michael Felsberg. Beyond correlation ﬁlters: Learning continuous convolution operators for visual tracking. In Proceedings of the European Conference on Computer Vision (ECCV), October 2016. 2, 16
+[16] Martin Danelljan, Luc Van Gool, and Radu Timofte. Probabilistic regression for visual tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2020. 2, 5, 7, 8, 16, 17
+[17] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. Imagenet: A large-scale hierarchical image database. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 2009. 13
+[18] Xingping Dong, Jianbing Shen, Ling Shao, and Fatih Porikli. Clnet: A compact latent network for fast adjusting siamese trackers. In Proceedings of the European Conference on Computer Vision (ECCV), August 2020. 16
+[19] Heng Fan, Hexin Bai, Liting Lin, Fan Yang, Peng Chu, Ge Deng, Sijia Yu, Mingzhen Huang, Juehuan Liu, Yong Xu, et al. Lasot: A high-quality large-scale single object tracking benchmark. International Journal of Computer Vision (IJCV), 129(2):439–461, 2021. 7, 8, 17, 18
+[20] Heng Fan, Liting Lin, Fan Yang, Peng Chu, Ge Deng, Sijia Yu, Hexin Bai, Yong Xu, Chunyuan Liao, and Haibin Ling. Lasot: A high-quality benchmark for large-scale single object tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2019. 1, 2, 6, 7, 8, 13, 14, 15, 16, 17, 18
+[21] Heng Fan and Haibin Ling. Cract: Cascaded regressionalign-classiﬁcation for robust visual tracking. arXiv preprint arXiv:2011.12483, 2020. 8, 16
+[22] Zhihong Fu, Qingjie Liu, Zehua Fu, and Yunhong Wang. Stmtrack: Template-free visual tracking with space-time memory networks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2021. 5, 7, 8, 16
+[23] Hamed Kiani Galoogahi, Ashton Fagg, Chen Huang, Deva Ramanan, and Simon Lucey. Need for speed: A benchmark for higher frame rate object tracking. In ICCV, 2017. 1, 8, 13, 16, 17
+[24] Hamed Kiani Galoogahi, Ashton Fagg, and Simon Lucey. Learning background-aware correlation ﬁlters for visual tracking. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), October 2017. 1
+[25] Junyu Gao, Tianzhu Zhang, and Changsheng Xu. Graph convolutional tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2019. 16
+
+9
+
+[26] Dongyan Guo, Yanyan Shao, Ying Cui, Zhenhua Wang, Liyan Zhang, and Chunhua Shen. Graph attention tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2021. 16
+[27] Dongyan Guo, Jun Wang, Ying Cui, Zhenhua Wang, and Shengyong Chen. Siamcar: Siamese fully convolutional classiﬁcation and regression for visual tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2020. 16
+[28] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2016. 1, 6, 15
+[29] Joa˜o F. Henriques, Rui Caseiro, Pedro Martins, and Jorge Batista. High-speed tracking with kernelized correlation ﬁlters. IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI), 37(3):583–596, 2015. 1, 2
+[30] Lianghua Huang, Xin Zhao, and Kaiqi Huang. Globaltrack: A simple and strong baseline for long-term tracking. In Proceedings of the Conference on Artiﬁcial Intelligence (AAAI), February 2020. 16
+[31] Lianghua Huang, Xin Zhao, and Kaiqi Huang. Got-10k: A large high-diversity benchmark for generic object tracking in the wild. IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI), 43(5):1562–1577, 2021. 6
+[32] Angelos Katharopoulos, Apoorv Vyas, Nikolaos Pappas, and Franc¸ois Fleuret. Transformers are RNNs: Fast autoregressive transformers with linear attention. In Proceedings of the International Conference on Machine Learning (ICML), pages 5156–5165, July 2020. 8
+[33] Dai Kenan, Wang Dong, Lu Huchuan, Sun Chong, and Li Jianhua. Visual tracking via adaptive spatially-regularized correlation ﬁlters. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 2019. 2
+[34] Nikita Kitaev, Lukasz Kaiser, and Anselm Levskaya. Reformer: The efﬁcient transformer. In Proceedings of the International Conference on Learning Representations (ICLR), 2020. 8
+[35] Matej Kristan, Alesˇ Leonardis, Jiˇr´ı Matas, Michael Felsberg, Roman Pﬂugfelder, Joni-Kristian Ka¨ma¨ra¨inen, Martin Danelljan, Luka Cˇ ehovin Zajc, Alan Lukezˇicˇ, Ondrej Drbohlav, Linbo He, Yushan Zhang, Song Yan, Jinyu Yang, Gustavo Ferna´ndez, and et al. The eighth visual object tracking vot2020 challenge results. In Proceedings of the European Conference on Computer Vision Workshops (ECCVW), August 2020. 8, 15, 16
+[36] Matej Kristan, Ales Leonardis, Jiri Matas, Michael Felsberg, Roman Pfugfelder, Luka Cehovin Zajc, Tomas Vojir, Goutam Bhat, Alan Lukezic, Abdelrahman Eldesokey, Gustavo Fernandez, and et al. The sixth visual object tracking vot2018 challenge results. In Proceedings of the European Conference on Computer Vision Workshops (ECCVW), September 2018. 16
+[37] Matej Kristan, Jir´ı Matas, Alesˇ Leonardis, Michael Felsberg, Roman Pﬂugfelder, Joni-Kristian Ka¨ma¨ra¨inen, Luka Cehovin Zajc, Ondrej Drbohlav, Alan Lukezic, Amanda Berg,
+
+Abdelrahman Eldesokey, Jani Ka¨pyla¨, Gustavo Ferna´ndez, and et al. The seventh visual object tracking vot2019 challenge results. In Proceedings of the IEEE/CVF International Conference on Computer Vision Workshop (ICCVW), October 2019. 16
+[38] Matej Kristan, Jiˇr´ı Matas, Alesˇ Leonardis, Michael Felsberg, Roman Pﬂugfelder, Joni-Kristian Ka¨ma¨ra¨inen, Hyung Jin Chang, Martin Danelljan, Luka Cehovin, Alan Lukezˇicˇ, Ondrej Drbohlav, Jani Ka¨pyla¨, Gustav Ha¨ger, Song Yan, Jinyu Yang, Zhongqun Zhang, and Gustavo Ferna´ndez. The ninth visual object tracking vot2021 challenge results. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) Workshops, pages 2711–2738, October 2021. 16
+[39] Bo Li, Wei Wu, Qiang Wang, Fangyi Zhang, Junliang Xing, and Junjie Yan. Siamrpn++: Evolution of siamese visual tracking with very deep networks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2019. 8, 16
+[40] Siyuan Li, Zhi Zhang, Ziyu Liu, Anna Wang, Linglong Qiu, and Feng Du. Tlpg-tracker: Joint learning of target localization and proposal generation for visual tracking. In Proceedings of the International Joint Conference on Artiﬁcial Intelligence, IJCAI, July 2020. 16
+[41] Yiming Li, Changhong Fu, Fangqiang Ding, Ziyuan Huang, and Geng Lu. Autotrack: Towards high-performance visual tracking for uav with automatic spatio-temporal regularization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2020. 16
+[42] Bingyan Liao, Chenye Wang, Yayun Wang, Yaonong Wang, and Jun Yin. Pg-net: Pixel to global matching network for visual tracking. In Proceedings of the European Conference on Computer Vision (ECCV), August 2020. 16
+[43] Tsung-Yi Lin, Michael Maire, Serge J. Belongie, Lubomir D. Bourdev, Ross B. Girshick, James Hays, Pietro Perona, Deva Ramanan, Piotr Dolla´r, and C. Lawrence Zitnick. Microsoft COCO: common objects in context. In Proceedings of the European Conference on Computer Vision (ECCV), 2014. 6
+[44] Yuan Liu, Ruoteng Li, Yu Cheng, Robby T. Tan, and Xiubao Sui. Object tracking using spatio-temporal networks for future prediction location. In Proceedings of the European Conference on Computer Vision (ECCV), August 2020. 16
+[45] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In Proceedings of the International Conference on Learning Representations (ICLR), 2019. 6
+[46] Alan Lukezic, Toma´s Voj´ır, Luka Cehovin Zajc, Jiri Matas, and Matej Kristan. Discriminative correlation ﬁlter tracker with channel and spatial reliability. International Journal of Computer Vision (IJCV), 126(7):671–688, 2018. 1, 2
+[47] Ziang Ma, Linyuan Wang, Haitao Zhang, Wei Lu, and Jun Yin. RPT: learning point set representation for siamese visual tracking. In Proceedings of the European Conference on Computer Vision Workshops (ECCVW), August 2020. 15, 16
+[48] Christoph Mayer, Martin Danelljan, Danda Pani Paudel, and Luc Van Gool. Learning target candidate association to keep track of what not to track. In Proceedings of the IEEE/CVF
+
+10
+
+International Conference on Computer Vision (ICCV), pages 13444–13454, October 2021. 7, 8, 16, 17, 18 [49] Matthias Mueller, Neil Smith, and Bernard Ghanem. A benchmark and simulator for uav tracking. In Proceedings of the European Conference on Computer Vision (ECCV), October 2016. 8, 16, 17 [50] Matthias Mu¨ller, Adel Bibi, Silvio Giancola, Salman AlSubaihi, and Bernard Ghanem. Trackingnet: A large-scale dataset and benchmark for object tracking in the wild. In Proceedings of the European Conference on Computer Vision (ECCV), 2018. 6, 8 [51] Hyeonseob Nam and Bohyung Han. Learning multi-domain convolutional neural networks for visual tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2016. 16 [52] Hamid Rezatoﬁghi, Nathan Tsoi, JunYoung Gwak, Amir Sadeghian, Ian Reid, and Silvio Savarese. Generalized intersection over union: A metric and a loss for bounding box regression. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2019. 5 [53] Zhuoran Shen, Mingyuan Zhang, Haiyu Zhao, Shuai Yi, and Hongsheng Li. Efﬁcient attention: Attention with linear complexities. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV), pages 3531–3539, January 2021. 8 [54] Chong Sun, Dong Wang, Huchuan Lu, and Ming-Hsuan Yang. Correlation tracking via joint discrimination and reliability learning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 2018. 1, 2 [55] Zhi Tian, Chunhua Shen, Hao Chen, and Tong He. FCOS: Fully convolutional one-stage object detection. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), October 2019. 5, 14 [56] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Ł ukasz Kaiser, and Illia Polosukhin. Attention is all you need. In Advances in Neural Information Processing Systems (NeurIPS), 2017. 4 [57] Paul Voigtlaender, Jonathon Luiten, Philip H.S. Torr, and Bastian Leibe. Siam R-CNN: Visual tracking by redetection. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2020. 7, 8, 16 [58] Guangting Wang, Chong Luo, Xiaoyan Sun, Zhiwei Xiong, and Wenjun Zeng. Tracking by instance detection: A metalearning approach. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2020. 2, 16 [59] Ning Wang, Wengang Zhou, Jie Wang, and Houqiang Li. Transformer meets tracker: Exploiting temporal context for robust visual tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2021. 1, 2, 7, 8, 16, 18 [60] Qiang Wang, Li Zhang, Luca Bertinetto, Weiming Hu, and Philip H.S. Torr. Fast online object tracking and segmentation: A unifying approach. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2019. 16
+
+[61] Yi Wu, Jongwoo Lim, and Ming-Hsuan Yang. Object tracking benchmark. IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI), 37(9):1834–1848, 2015. 8, 13, 16, 17
+[62] Yinda Xu, Zeyu Wang, Zuoxin Li, Ye Yuan, and Gang Yu. Siamfc++: Towards robust and accurate visual tracking with target estimation guidelines. In Proceedings of the Conference on Artiﬁcial Intelligence (AAAI), February 2020. 5, 8, 16
+[63] Bin Yan, Houwen Peng, Jianlong Fu, Dong Wang, and Huchuan Lu. Learning spatio-temporal transformer for visual tracking. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), pages 10448–10457, October 2021. 1, 2, 4, 5, 7, 8, 14, 15, 16, 18
+[64] Bin Yan, Xinyu Zhang, Dong Wang, Huchuan Lu, and Xiaoyun Yang. Alpha-reﬁne: Boosting tracking performance by precise bounding box estimation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2021. 7, 8, 15, 16, 18
+[65] Bin Yan, Haojie Zhao, Dong Wang, Huchuan Lu, and Xiaoyun Yang. ’skimming-perusal’ tracking: A framework for real-time and robust long-term tracking. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), October 2019. 16
+[66] Tianyu Yang, Pengfei Xu, Runbo Hu, Hua Chai, and Antoni B. Chan. Roam: Recurrently optimizing tracking model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2020. 16
+[67] Bin Yu, Ming Tang, Linyu Zheng, Guibo Zhu, Jinqiao Wang, Hao Feng, Xuetao Feng, and Hanqing Lu. High-performance discriminative tracking with transformers. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), pages 9856–9865, October 2021. 1, 2, 5, 7, 8, 16
+[68] Yuechen Yu, Yilei Xiong, Weilin Huang, and Matthew R. Scott. Deformable siamese attention networks for visual object tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2020. 8, 16
+[69] Zhipeng Zhang, Yihao Liu, Xiao Wang, Bing Li, and Weiming Hu. Learn to match: Automatic matching network design for visual tracking. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), pages 13339–13348, October 2021. 16
+[70] Zhipeng Zhang, Houwen Peng, Jianlong Fu, Bing Li, and Weiming Hu. Ocean: Object-aware anchor-free tracking. In Proceedings of the European Conference on Computer Vision (ECCV), August 2020. 16
+[71] Zikai Zhang, Bineng Zhong, Shengping Zhang, Zhenjun Tang, Xin Liu, and Zhaoxiang Zhang. Distractor-aware fast tracking via dynamic convolutions and mot philosophy. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), June 2021. 16
+[72] Linyu Zheng, Ming Tang, Yingying Chen, Jinqiao Wang, and Hanqing Lu. Learning feature embeddings for discriminant model based tracking. In Proceedings of the European Conference on Computer Vision (ECCV), August 2020. 2, 16
+
+11
+
+[73] Zikun Zhou, Wenjie Pei, Xin Li, Hongpeng Wang, Feng Zheng, and Zhenyu He. Saliency-associated object tracking. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), pages 9866–9875, October 2021. 7, 16
+[74] Zheng Zhu, Qiang Wang, Li Bo, Wei Wu, Junjie Yan, and Weiming Hu. Distractor-aware siamese networks for visual object tracking. In Proceedings of the European Conference on Computer Vision (ECCV), September 2018. 8, 16
+12
+
+Appendices
+
+In this supplementary material, we ﬁrst provide details about training, model architecture and inference in Sec. A. Further, we report visual results such as a comparison to state-of-the-art trackers, a comparison of different model predictors and failure cases of our tracker in Sec. B. Afterwards, we provide more detailed results of the experiments shown in the main paper in Sec. C.
+A. Training, Architecture and Inference
+First, we provide additional details about the training followed by a detailed description of the architectures employed and ﬁnally we provide further inference details.
+A.1. Training and Architecture Details
+For training we produce the target states y by using a Gaussian with standard deviation 1/4 relative to the base target size and by settting τ = 0.05 to differentiate between foreground and background regions in the corresponding classiﬁcation loss lcls adopted from DiMP [1]. For
+
+Video Frame
+
+SuperDiMP
+
+#0037
+
+ToMP-101
+
+#0051
+
+#0162
+
+Figure 6. Visual comparison of the target score maps resulting from different model predictors.
+
+Two Stage
+
+Previous Conﬁdence
+
+Model Prediction Tracking Results Threshold η
+
+0.85 0.90 0.95
+
+LaSOT NFS OTB
+67.3 66.9 70.3 67.6 66.9 70.1 67.4 66.0 69.8
+
+Table 9. Analysis of different inference settings an of their impact on the tracking performance in terms of AUC of the success curve.
+
+the model predictor we extract features with a stride of 16 from the third block of the ResNet that we use as backbone. We initialize the backbone with the ofﬁcial weights obtained by training the backbone on ImageNet [17] and freeze the batch norm statistics during training. Since we use a channel dimension of 256 for the Transformer and the ResNet features have 1024 channels we employ an single convolutional layer to decrease the number of channels before feeding the features into the Transformer Encoder. The Transformer Encoder consists of layers containing multi-headed self attention and a feed-forward network. We use eight heads and a hidden dimension of 2048 for the feed-forward network. Furthermore, we use Dropout with probability 0.1 and layer normalization. The Transformer settings are adopted from DETR [6]. The predicted target model weights for classiﬁcation and bounding box regression consist of a single 1 × 1 ﬁlter with 256 channels. The bounding box regression CNN consists of four convolution-instance-normalization-ReLU layers and a ﬁnal convolution layer, followed by an exponential activation. The MLP for target extent encoding φ consists of three layers (4 → 64 → 256 → 256) where each layer consists of a linear projection, batch normalization and ReLU activation except the last that only consist of a linear projection. The region-encoding tokens efg and etest are 256 dimensional learnable embeddings.
+A.2. Inference Details
+In order to decide whether a previous tracking result should be used for training of not we use the maximal value of the target score map produced by the target model. In particular, we select the sample if its conﬁdence value is above a certain threshold η. Tab. 9 shows that the chosen threshold of 0.9 leads to high performance on LaSOT [20], NFS [23] and OTB-100 [61]. Furthermore, we follow SuperDiMP [12] and enter in the target not found state if the maximal value of the target score map is bellow 0.25. More-
+
+training frames
+1 initial 1 initial + 1 recent
+2 initial + 1 recent 1 initial + 2 recent 1 initial + 3 recent 1 initial + 4 recent 1 initial + 5 recent
+
+NFS OTB UAV LaSOT LaSOTExtSub
+
+65.3 67.8 68.7 65.7
+
+43.7
+
+66.9 70.1 69.0 67.6
+
+45.4
+
+67.6 70.5 67.2 68.0
+
+45.4
+
+66.7 70.8 69.4 67.6
+
+44.4
+
+66.8 70.5 69.2 67.6
+
+44.2
+
+67.2 70.1 68.2 67.3
+
+44.7
+
+66.8 70.1 69.1 67.2
+
+43.9
+
+Speed [FPS]
+26.2 24.8
+20.5 21.8 17.6 13.2 11.3
+
+Table 10. Comparison of different number of training samples in success AUC.
+
+Classiﬁcation
+Classiﬁcation Centerness Classiﬁcation · Centerness
+
+Lcenterness 
+
+NFS
+66.9
+65.8 62.7 63.7
+
+OTB
+70.1
+69.2 66.3 67.8
+
+UAV
+69.0
+67.3 67.4 68.7
+
+LaSOT
+67.6
+67.9 64.4 65.8
+
+LaSOTExtSub
+45.4
+45.5 41.3 45.3
+
+Table 11. Impact of centerness scores on training and inference.
+
+13
+
+#0200 #0090
+
+#0784 #1136
+
+#1660 #1407
+
+#0002 #0006
+
+#0412 #0362
+
+#0746 #1343
+
+#0001 #0030
+
+#1522 #0686
+
+#4919 #1194
+
+#0010 #0003
+
+#1263 #0616
+
+#1853 #1223
+
+Annotation
+
+SuperDiMP
+
+STARK-ST101
+
+ToMP-101
+
+Figure 7. Visual comparison of different trackers (ToMP-101, SuperDiMP [12] and STARK-ST101 [63]) on different LaSOT [20] sequences.
+
+over, we use the same spatial resolution of the target scores of 18 × 18 and the same search area scale factor of 5.0 during inference and training.
+Furthermore, we study the effect of using more than two training frames stored in the sample memory. Instead of using only one initial and one recent training frame to predict the network weights we test the impact of increasing the number of recent training frames and of using multiple initial training frames. We increase the number of initial training frames with ground truth bounding box annotations using an augmentation (vertical ﬂipping and random translation). Tab. 10 shows the results for different combinations of multiple initial and recent training frames. Note, that we use the same network weights for all experiments trained with one initial and one recent recent frame in all cases. We observer that using more training frames can improve the tracking performance but decreases the run-time. Furthermore, we observe that the tracker greatly beneﬁts from including at least one recent frame for training.
+A.3. Centerness
+Our proposed bounding box regression component is inspired by FCOS [55] but in contrast to FCOS we omit an auxiliary centerness branch. The classiﬁcation head of FCOS is trained to predict a high score for almost every region inside the bounding box. The centerness branch is
+
+therefore needed to identify the center location of the object, used to select the bounding box offsets. In contrast, our classiﬁcation branch is directly trained to accurately locate the object’s center. The additional centerness branch is therefore redundant. Nonetheless, we train our best model with a centerness head and Lcenterness and report the results in Tab. 11 (2nd-4th rows). The 1st row shows the performance when omitting centerness for training. We achieve comparable results when using the model trained with centerness but applying only the classiﬁcation scores to localize the target (2nd row). Using only the centerness scores
+
+Video Frame
+
+Centerness Scores Classi cation Scores
+
+Figure 8. Visual Comparison between centerness and classiﬁcation scores.
+
+14
+
+ToMP ToMP
+
+STARK STARK Ocean Alpha
+
+Fast
+
+101+AR 50 +AR RPT ST50+AR ST101+AR Plus Reﬁne AFOD LWTL Ocean
+
+[35, 47] [63]
+
+[63] [8, 35] [35, 64] [35] [4, 35] [35]
+
+EAO
+
+0.497
+
+Accuracy 0.750
+
+Robustness 0.798
+
+0.496 0.754 0.793
+
+0.530 0.700 0.869
+
+0.505 0.759 0.817
+
+0.497 0.763 0.789
+
+0.491 0.482 0.472 0.463 0.461 0.685 0.754 0.713 0.719 0.693 0.842 0.777 0.795 0.798 0.803
+
+Table 12. Comparison to the state of the art of segmentation only methods on VOT2020ST [35] in terms of EAO score.
+
+decreases the performance (3rd row) because centerness often fails to identify the target among distractors (see Fig. 8). Finally, we follow FCOS and multiply the classiﬁcation and centerness scores point-wise to retrieve the target object (4th row). We conclude that omitting the centerness branch for training and during inference to localize the target achieves the best tracking performance.
+B. Visual Results
+In this part we provide visual results of our tracker. First, we show three frames of different sequences where our tracker outperforms the state of the art. Secondly, we compare the produced target score map of our tracker with score maps obtained by optimization based model prediction. Finally, we show some failure cases of our tracker.
+B.1. Visual Comparison to the State of the Art
+Fig. 7 shows three frames of eight different LaSOT [20] sequences where each frame contains the ground truth an-
+
+#0012
+
+#0586
+
+#0776
+
+#0016
+
+#0146
+
+#0926
+
+#0003 #1218
+
+#0781 #1512
+
+#1877 #2126
+
+Annotation
+
+ToMP-101
+
+Figure 9. Visualization of failure cases of our tracker.
+
+notation of the target object and the predictions of three different trackers: SuperDiMP [12], STARK-ST101 [63] and ToMP-101. We observe that our tracker produces in most sequences more robust and in some more accurate bounding box predictions than the related methods. In particular it achieves solid robustness for scenarios where distractors are present but the target object is at least partially visible and not undergoing a full occlusion.
+B.2. Target Model Prediction
+Fig. 6 shows the target score maps produced by the target model when using two different model predictors for three different sequences. In detail we compare the target score map produced by SuperDiMP [12] that adopts the DiMP [1] model predictor with optimized settings. In particular it uses a slightly smaller search area factor of 6 instead of 5 and a target score resolution of 22 instead of 18. Note, that our tracker uses 5 and 18 similar to DiMP [1] as stated Sec. A.2. We observe that our model predictor leads to much cleaner and unambiguous target localization than DiMP. While the former often produces multiple local maxima for distractors, our methods is able to almost fully suppress these. An important design choice that enables this is the transductive model weight and test feature prediction produced by our Transformer based model predictor. However, the cleaner score maps come with the risk, that once the target is lost and a distractor is tracked instead recovering is less likely since our tracker effectively suppresses distractors. Similarly, our method learns to produce a score map containing a Gaussian such that overall the maximum score values are higher than by SuperDiMP. Thus, we chose a relatively high threshold to decide whether to use a previous prediction as training sample or not.
+B.3. Failure Cases
+Fig. 9 shows failure cases of our tracker. In particular, it shows three frames of four different LaSOT [20] sequences containing the ground truth annotations and the predicted bounding boxes of our tracker using a ResNet-101 [28] as backbone. To summarize, our tracker typically fails if object similar to the targets so called distractors are present. While the sole presence of distractors typically does not lead to tracking failure, our tracker shows difﬁculties in sequences where the target is occluded and distractors are present (1st and 3rd row). Instead of detecting that the target is occluded the tracker starts to track a distractor instead. Another challenging scenario are sequences where the target and a distractor approach each other (2nd row in Fig. 9) or one occludes the other (4th row in Fig. 9). The model then detects only a single object instead of two in both scenarios. Once they diverge again and the tracker detects two objects it typically fails to reliably differentiate between the target and the distractor.
+
+15
+
+Overlap Precision [%] Overlap Precision [%] Overlap Precision [%]
+
+100
+
+Success plot
+
+100
+
+Success plot
+
+100
+
+Success plot
+
+80
+
+80
+
+80
+
+60 40 20 00
+
+KTTPSTTSDSADUECrrrTeCuTiooCPiaaDaDMOeMpODMMSOnmiipePMMiMTTsTaPP[TR5rrTP5Pmra[[0[PDa5355[6c[NRc6i4.6[10k4M5126k+P9.7..5[00]3[5P2N..+[661]5]1.6][5[38][]966[5.][.67.0796775]].6..]7.702.]]9]]]
+0.2 Ov0e.r4lap thres0h.6old
+
+0.8
+
+60 40
+
+KTUSTTreuooPDepDMMipeMTPPTrPr[Da7[ci07M51k.0400P.[]717[[]077[.0079..0]11.]]1]
+
+1
+
+20 00
+
+SPEDCADrTCiCiaaDMOOSOmiPMiMTa[R56Pm[0[P9656NR.[80616+P..]2[83N+6].]49[[6].6659]..86]]
+0.2 Ov0e.r4lap thres0h.6old
+
+0.8
+
+60
+
+1
+
+40 20 00
+
+TTKTTSPDAUCErrrTeCuooCPiDaDMOepODMMOniipePMMMTsTPP[T5rTP4Pr[[0[Da5645[5[c6i3.6[808M5166k5.6..600]8[1P4..[63]2]1.6][[93]]666][..54664]..6]89.]]7]
+0.2 Ov0e.r4lap thres0h.6old
+
+0.8
+
+1
+
+(a) UAV123 [49]
+
+(b) OTB-100 [61]
+
+(c) NFS [23]
+
+Figure 10. Success plots on the UAV123 [49], OTB-100 [61] and NFS [23] datasets in terms of overall AUC score, reported in the legend.
+
+ToMP ToMP Keep STARK Tr
+
+STARK Super
+
+101 50 Track ST101 DiMP TransT SAOT ST50 DiMP
+
+[48] [63] [59] [7] [73] [63] [12]
+
+UAV123 66.9 69.0 69.7 68.2 67.5 69.1 69.1 –
+
+67.7
+
+OTB-100 70.1 70.1 70.9 68.1 71.1 69.4 68.5 71.4 70.1
+
+NFS
+
+66.7 66.9 66.4 66.2 66.2 65.7 65.2 65.6 64.8
+
+Pr Siam STM
+
+Siam
+
+Retina FCOS
+
+DiMP R-CNN Track DiMP KYS RPN++ ATOM UPDT MAML MAML
+
+[16] [57] [22] [1] [2] [39] [13] [3] [58] [58]
+
+68.0 64.9 64.7 65.3 – 61.3 64.2 54.5 –
+
+–
+
+69.6 70.1 71.9 68.4 69.5 69.6 66.9 70.2 71.2 70.4
+
+63.5 63.9 – 62.0 63.5 – 58.4 53.7 –
+
+–
+
+Auto Auto Ocean STN Match Track
+[70] [44] [69] [41]
+
+UAV123 – 64.9 – 67.1
+
+OTB-100 68.4 69.3 71.4 –
+
+NFS
+
+–
+
+–
+
+–
+
+–
+
+Siam BAN
+[9]
+63.1 69.6 59.4
+
+Siam CAR [27]
+61.4 – –
+
+ECO DCFST PG-NET CRACT [14] [72] [42] [21]
+
+53.2 –
+
+–
+
+66.4
+
+69.1 70.9 69.1 72.6
+
+46.6 64.1
+
+–
+
+62.5
+
+GCT [25]
+50.8 64.8
+–
+
+Siam GAT CLNet TLPG [26] [18] [40]
+64.6 63.3 – 71.0 – 69.8
+– 54.3 –
+
+Siam AttN [68]
+65.0 71.2
+–
+
+Siam
+
+DaSiam
+
+FC++ MDNet CCOT RPN
+
+[62] [51] [15] [74]
+
+–
+
+– 51.3 57.7
+
+68.3 67.8 68.2 65.8
+
+– 41.9 48.8 –
+
+Table 13. Comparison with state-of-the-art on the OTB-100 [61], NFS [23] and UAV123 [49] datasets in terms of overall AUC score.
+
+ToMP ToMP STARK Keep STARK Alpha
+
+Siam Tr Super
+
+101 50 ST101 Track ST50 Reﬁne TransT R-CNN DiMP Dimp
+
+[63] [48] [63] [64] [7] [57] [59] [12]
+
+LaSOT 68.5 67.6 67.1 67.1 66.4 65.3 64.9 64.8 63.9 63.1
+
+STM
+
+Pr DM
+
+SAOT Track DTT DiMP Track
+
+[73] [22] [67] [16] [71]
+
+61.6 60.6 60.1 59.8 58.4
+
+Auto Match TLPG
+[69] [40]
+58.3 58.1
+
+TACT [10]
+57.5
+
+LTMU [11]
+57.2
+
+DiMP Ocean [1] [70]
+LaSOT 56.9 56.0
+
+Siam AttN [68]
+56.0
+
+Siam CRACT FC++
+[21] [62]
+54.9 54.4
+
+Siam GAT [26]
+53.9
+
+PG FCOS Global
+
+DaSiam Siam Siam
+
+Siam Retina Siam
+
+NET MAML Track ATOM RPN BAN CAR CLNet RPN++ MAML Mask ROAM++ SPLT
+
+[42] [58] [30] [13] [74]† [9] [27] [18] [39]† [58] [60]† [66] [65]
+
+53.1 52.3 52.1 51.5 51.5 51.4 50.7 49.9 49.6 48.0 46.7 44.7 42.6
+
+Table 14. Comparison with state-of-the-art on the LaSOT [20] test set in terms of overall AUC score. The symbol † marks results that were produced by Fan et al. [20] otherwise they are obtained directly from the ofﬁcial paper.
+
+C. Experiments
+We provide more detailed experiments to complement the comparison to the state of-the art performed in the main paper. And provide results for the VOT2020ST [35] challenge when using AlphaReﬁne [64] on top of our method in order to compare with methods that produce a segmentation mask as output.
+C.1. VOT2020 with AlphaReﬁne
+In contrast to previous years where the sequences in the VOT short-term challenge were annotated with bounding boxes [36, 37] the sequences of the more recent challenges contain segmentation mask annotations [35, 38] of
+
+the target in each frame. In the main paper we compare our method with methods that produce bounding boxes. Thus, in addition, we compare our method on the VOT2020 short-term challenge to methods that produce a segmentation mask in each frame. Since our method produces only a bounding box, we use AlphaReﬁne [64] that is able to produce a segmentation mask give the bounding box. Tab. 12 shows that our method achieves competitive results. In particular ToMP-101 achieves the same EAO (for more details on EAO we refer the reader to [35]) as STARKST101+AR [63] that employs AlphaReﬁne too. Nonetheless, RPT [47] achieves higher EAO than our tracker. In particular it scores a higher robustness but a lower accuracy than our trackers.
+
+16
+
+Overlap Precision [%]
+
+90
+
+Success plot
+
+80
+
+70
+
+60 50 40 30 20 10 00
+
+TTKSSATSTSSPDTLDOTrrAreTTiuToolMicaDapDMMAACeMpeMMnmhTiipRRUTePMaMrTsaPPTa5rKKnrTPR[RPr[a--c05D5aSS-e5[[ck[C75c67iTT6[f0kM15i.5kN6[4.153n525[00[6P..N00.e[6]509]891.61[0[99]].[[][766466.]6[.[6.83]6766541]].8.7...]14968..]1]]]5]]]
+0.2 Ov0e.r4lap thres0h.6old
+
+0.8
+
+(a) Success
+
+Distance Precision [%]
+
+90 80 70 60 50 40 30 20 10 1 00
+
+Normalized Precision plot
+
+TTKSSATTSSSPDLTODTrrAreTTiuToolMicaDapDMMAACeMpeMMnmhTiipRRUTePMaMrTsaPPTa5rKKnrTPR[RPr[a--c06D6aSS-e5[[ck[C66c76iTT7[f0kM15i.6kN5[3.153n056[00[5P..N00.e[6]618]601.71[9[08]].[[][777977.]7[.[3.82]7876322]].9.6...]23802..]9]]2]]]]
+
+0.1 Locati0o.2n error th0r.e3shold 0.4
+
+0.5
+
+(b) Normalized Precision
+
+Figure 11. Success and normalized precision plots on LaSOT [20]. Our approach outperforms all other methods by a large margin in AUC,
+
+reported in the legend.
+70
+
+Success plot
+
+70
+
+Normalized Precision plot
+
+60
+
+60
+
+Distance Precision [%]
+
+Overlap Precision [%]
+
+50
+
+50
+
+40
+
+30
+
+KTTeooeMMpPPTrac15k00[14[84[.4525.]4.9] ]
+
+20 10
+
+SLDADSTTuiiaaMMOpSmUePMiaRr[m[[P3D43N9R1i7M.+P.2.4P6N+]]][[4[33354..7.60]]]
+
+00
+
+0.2 Ov0e.r4lap thres0h.6old 0.8
+
+(a) Success
+
+40
+
+30
+
+20
+
+10
+
+1
+
+00
+
+KTTeooeMMpPPTrac15k00[16[15[.757.8]6.]1] SLDADSTTuiiaaMMOpSmUePMiaRr[m[[P5D54N1R3i9M.+P.2.6P6N+]]][[5[44685..3.03]]]
+
+0.1 Locati0o.2n error th0r.e3shold 0.4
+
+0.5
+
+(b) Normalized Precision
+
+Figure 12. Success and normalized precision plots on LaSOTExtSub [19]. Our approach outperforms all other methods by a large margin in AUC, reported in the legend.
+
+C.2. UAV123, OTB-100 and NFS
+To complement the results detailed in the paper, we provide the success plots for the UAV123 [49] dataset in Fig. 10a, the OTB-100 [61] dataset in Fig. 10b and the NFS [23] dataset in Fig. 10c. Fig. 10a shows that KeepTrack [48] and PrDiMP50 [16] achieve higher robustness than our tracker (T < 0.6) but that our trackers together with TransT [7] reaches the highest accuracy among all trackers (T > 0.7) compensating for the lower robustness. Fig. 10b reveals similar conclusions on OTB-100. For NFS
+
+Fig. 10c shows that our tracker is almost as robust as KeepTrack [48] but achieves superior accuracy leading to a new state of the art. While we reported only the methods with the highest performances on these datasets in the main paper, we compare our method in Tab. 13 with additional related methods.
+C.3. LaSOT and LaSOTExtSub
+In addition to the success plots, we provide the normalized precision plots on the LaSOT [20] test set in Fig. 11 the LaSOTExtSub [19] test set in Fig. 12. The normalized
+
+17
+
+Illumination Partial
+
+Motion Camera
+
+Background Viewpoint Scale Full Fast
+
+Low
+
+Aspect
+
+Variation Occlusion Deformation Blur Motion Rotation Clutter Change Variation Occlusion Motion Out-of-View Resolution Ration Change Total
+
+LTMU
+
+56.5
+
+54.0
+
+57.2
+
+55.8 61.6 55.1
+
+49.9
+
+56.7
+
+57.1
+
+49.9 44.0
+
+52.7
+
+51.4
+
+PrDiMP50
+
+63.7
+
+56.9
+
+60.8
+
+57.9 64.2 58.1
+
+54.3
+
+59.2
+
+59.4
+
+51.3 48.4
+
+55.3
+
+53.5
+
+STMTrack
+
+65.2
+
+57.1
+
+64.0
+
+55.3 63.3 60.1
+
+54.1
+
+58.2
+
+60.6
+
+47.8 42.4
+
+51.9
+
+50.3
+
+SuperDiMP
+
+67.8
+
+59.7
+
+63.4
+
+62.0 68.0 61.4
+
+57.3
+
+63.4
+
+62.9
+
+54.1 50.7
+
+59.0
+
+56.4
+
+TrDiMP
+
+67.5
+
+61.1
+
+64.4
+
+62.4 68.1 62.4
+
+58.9
+
+62.8
+
+63.4
+
+56.4 53.0
+
+60.7
+
+58.1
+
+Siam R-CNN
+
+64.6
+
+62.2
+
+65.2
+
+63.1 68.2 64.1
+
+54.2
+
+65.3
+
+64.5
+
+55.3 51.5
+
+62.2
+
+57.1
+
+TransT
+
+65.2
+
+62.0
+
+67.0
+
+63.0 67.2 64.3
+
+57.9
+
+61.7
+
+64.6
+
+55.3 51.0
+
+58.2
+
+56.4
+
+AlphaReﬁne
+
+69.4
+
+62.3
+
+66.3
+
+65.2 70.0 63.9
+
+58.8
+
+63.1
+
+65.4
+
+57.4 53.6
+
+61.1
+
+58.6
+
+STARK-ST50 66.8
+
+64.3
+
+66.9
+
+62.9 69.0 66.1
+
+57.3
+
+67.8
+
+66.1
+
+58.7 53.8
+
+62.1
+
+59.4
+
+STARK-ST101 67.5
+
+65.1
+
+68.3
+
+64.5 69.5 66.6
+
+57.4
+
+68.8
+
+66.8
+
+58.9 54.2
+
+63.3
+
+59.6
+
+KeepTrack
+
+69.7
+
+64.1
+
+67.0
+
+66.7 71.0 65.3
+
+61.2
+
+66.9
+
+66.8
+
+60.1 57.7
+
+64.1
+
+62.0
+
+ToMP-50
+
+66.8
+
+64.9
+
+68.5
+
+64.6 70.2 67.3
+
+59.1
+
+67.2
+
+67.5
+
+59.3 56.1
+
+63.7
+
+61.1
+
+ToMP-101
+
+69.0
+
+65.3
+
+69.4
+
+65.2 71.7 67.8
+
+61.5
+
+69.2
+
+68.4
+
+59.1 57.9
+
+64.1
+
+62.5
+
+55.1
+
+57.2
+
+58.6
+
+59.8
+
+58.8
+
+60.6
+
+61.6
+
+63.1
+
+62.3
+
+63.9
+
+63.4
+
+64.8
+
+63.2
+
+64.9
+
+64.1
+
+65.3
+
+64.9
+
+66.4
+
+65.6
+
+67.1
+
+65.9
+
+67.1
+
+66.5
+
+67.6
+
+67.2
+
+68.5
+
+Table 15. LaSOT [20] attribute-based analysis. Each column corresponds to the results computed on all sequences in the dataset with the corresponding attribute.
+
+precision score NPrD measures the percentage of frames where the normalized distance (relative to the target size) between the predicted and ground-truth target center location is less than a threshold D ∈ [0, 0.5]. The ranking is determined by computing the AUC of each tracker. The AUC is reported in the legend of Figs. 11b and 12b. We compare our tracker on LaSOT with the state of the art in Tab. 14 and show their performance if available in Fig. 11. In Fig. 12 we show results of methods produced by Fan et al. [19] except KeepTrack [48] and SuperDiMP [12] that we obtained from Mayer et al. [48].
+C.3.1 Attributes
+To support the attribute based analysis in the main paper, where we compared the performance of our tracker with other Transformer based trackers, we provide the detailed analysis for multiple trackers and ToMP in Tab. 15. ToMP101 achieves the best performance on all but three. It achieves the second best results for Motion Blur behind KeepTrack [48] and similar to AlphaReﬁne [64]. Further ToMP-101 achieves the third best for Full Occlusion behind KeepTrack [48] and ToMP-50. Similarly it scores third for Illumination Variation behind KeepTrack [48] and AlphaReﬁne [64]. We further observe, that discriminative model prediction based methods such as TrDiMP [59], SuperDiMP [12], AlphaReﬁne [64], KeepTrack [48] and ToMP all outperform STARK [63] on the attribute Background Clutter showing the advantage of using full training samples during tracking instead of cropped templates that mainly cover the centered target.
+
+18
+

@@ -1,0 +1,220 @@
+JavaScript needs to be enabled for this application to run correctly
+This is the Enhanced Reader view. For maximum accessibility screen reader users should use the HTML format which is available on the article page for most content.
+
+    Outline
+    Cited by
+    Figures (7)
+
+1 / 11
+Previous  PDF Next  PDF
+Article start
+Person search: New paradigm of person re-identi fi cation: A survey and
+outlook of recent works
+Khawar Islam
+FloppyDisk.AI, Karachi, Pakistan
+a b s t r a c t a r t i c l e i n f o
+Article history:
+Received 18 June 2020
+Accepted 24 June 2020
+Available online 30 June 2020
+Keywords:
+Person re-identi fi cation
+Person search
+Literature survey
+Metric learning
+Loss functions
+Person Search (PS) has become a major fi eld because of its need in community and in the fi eld of research among
+researchers. This task aims to fi nd a probe person from whole scene which shows great signi fi cance in video sur-
+veillance fi eld to track lost people, re-identi fi cation, and veri fi cation of person. In last few years, deep learning has
+played unremarkable role for the solution of re-identi fi cation problem. Deep learning shows incredible perfor-
+mance in person (re-ID) and search. Researchers experience more fl exibility in proposing new methods and
+solve challenging issues such as low resolution, pose variation, background clutter, occlusion, viewpoints, and
+low illumination. Specially, convolutional neural network (CNN) achieves breakthrough performance and ex-
+tracts useful patterns and characteristics. Development of new framework takes substantial efforts; hard work
+and computation cost are required to acquire excellent results. This survey paper includes brief discussion
+about feature representation learning and deep metric learning with novel loss functions. We thoroughly review
+datasets with performance analysis on existing datasets. Finally, we are reviewing current solutions for further
+consideration.
+© 2020 The Author. Published by Elsevier B.V. This is an open access article under the CC BY-NC-ND license
+(http://creativecommons.org/licenses/by-nc-nd/4.0/).
+1. Introduction
+As an essential and demanding problem in computer vision, person
+re-ID [1,2] and person search [3] have emerged an independent topic
+and fast-growing topic in computer vision that deals with person re-
+trieval in videos and digital images. Deep learning has become a major
+technique for researchers; the victory of deep learning methods has
+conducted new wave into person re-identi fi cation, moving towards to
+a research highlight. Person (re-ID) has been broadly used in academic
+community and large-scale industry implementation, such as public
+safety, tracking of person in widespread public parks, universities and
+streets, behavior analysis and surveillance. From the perspective of
+video surveillance community, the energizing and most critical issue
+of person search is to correctly match a probe person that has been ob-
+served in cameras at different locations under heavy intensive changes
+in pose, viewpoints and lighting has more signi fi cance importance in re-
+search community.
+There are mostly two major techniques of person retrieval. One
+method is to match an investigated person with the gallery of manually
+cropped persons which is little far from real-world applications (see
+Fig. 1). While person search is an advanced and exacting task which
+seeks to identify person from whole scene of images which is closer to
+real world implementation. Another technique is person search (PS) de-
+tects all persons and recognize the probe person in an image exclusive
+of proposal and bounding box that is divergent from person re-ID (see
+Fig. 2). Nevertheless, person search is near to physical world and quite
+demanding but as automated pedestrian's detection makes incorrect
+detection and unbalanced images. That's why: solving complex prob-
+lems of person re-ID and person search are extremely hard job due to
+human posture, light, video camera position, low resolution, occlusion,
+viewpoints, pose estimation and different variations in images [5 – 10].
+Biometric signs like face and walking style are impossible to detect
+and track a person in low resolution of cameras [11,12]. The re-
+identi fi cation and person search task only rely on visual appearance
+[13,17]. Although several detectors achieve well on lighting and occlu-
+sion free situation, some of them produce imperfectly on the task of de-
+tecting person. This is because of above aforementioned issues in person
+search. Moreover, the knowledge of person search is very little because
+previous accomplishment is focused on person (re-ID) problems. (See
+Fig. 3.)
+This paper proposes an extensive and in-depth review on person
+search. Our survey objective is to make comprehensively six parts of
+person search methods, including feature learning, architectural design,
+deep metric learning, and loss function design. Apart from taxonomi-
+cally discussing the previous person search techniques, we extensively
+explore previous datasets of person search. We comprehensively exam-
+ine the performance of person search techniques and present ongoing
+promising directions for future work.
+Image and Vision Computing 101 (2020) 103970
+E-mail address: khawar512@gmail.com.
+https://doi.org/10.1016/j.imavis.2020.103970
+0262-8856/© 2020 The Author. Published by Elsevier B.V. This is an open access article under the CC BY-NC-ND license (http://creativecommons.org/licenses/by-nc-nd/4.0/).
+Contents lists available at ScienceDirect
+Image and Vision Computing
+j o u r n a l h o m e p a g e : w w w . e l s e v i e r . c o m / l o c a t e / i m a v i s
+Khawar Islam
+[1,2]
+[3]
+Fig. 1
+Fig. 2
+[5
+–
+10]
+[11,12]
+13,17
+Fig. 3
+1.1. Background and scope
+The history of person search is comparatively little. Recent work on
+person search is mainly about person retrieval using hand-crafted fea-
+tures and deep learning techniques in images [4,11]. Before the wide-
+spread of deep learning, commonness in shape and human body
+appearance-based features are utilized [11]. Upon the rapid progression
+of CNN, various deep learning-based person search approaches have
+emerged. However, mostly surveys and researches emphasizing hardly
+on person (re-ID). In order to take fi rst step, Yuanlu et al. [11] put for-
+ward the fi rst step to introduce the person search uniqueness, a Gauss-
+ian Generative Model (GMM) to catch commonness between persons,
+and provide a baseline result in order to investigate and explore more
+about person (re-ID). Later, Tong et al. [4] proposed and suggested an ef-
+fective person search technique which cooperatively handles person
+detection and (re-ID) in same convolutional neural network.
+Completely different from the GMM and Fisher vector used in [11],
+Jinfu Yang et al. [31] use hand crafted features [14] for pedestrian detec-
+tion and retrieval in images. SSD [72] and faster r-cnn [65] are two
+major detectors in pedestrian detection. Some pedestrian detection ap-
+proaches [4,40,54 – 56,59] utilize Faster R-CNN, some researchers modify
+[65] and proposed more accurate pedestrian detector [62]. Further-
+more, feature learning [20,22,31], multi-scale feature learning [3,30,
+56], architecture designs [4,31], loss functions [54 – 62], major contribu-
+tion [21,22] and convolutional neural networks [48,49] are also utilized
+for person search. A brief timeline illustrated in Fig. 4.
+We have precisely and thoroughly selected remarkable and distin-
+guished papers published in outstanding journals and top venue confer-
+ences. This survey focuses on the rapid advancement in person search in
+last four to six years. In addition to this, some other correlated work is
+also comprised to make our work more understanding and helpful in
+this fi eld. We restrict this survey paper only for person search tech-
+niques and little discussion about recent work in person (re-ID). Other
+than that, some work related to person (re-ID), such as re-
+identi fi cation in two separate steps will also be included in our
+discussion.
+1.2. Comparison with previous surveys
+Several remarkable person (re-ID) surveys have been published. The
+particular comprise numerous reviews on the person retrieval under
+certain conditions, such as heterogeneous person (re-ID) [73,78],
+open-world and closed-world settings [15,74], hand-crafted features
+and deep learning techniques for image and video-based [74], tradi-
+tional approaches [76], and gait based person (re-ID) [7,77]. In addition
+to these subject speci fi c person (re-ID) surveys and reviews, numerous
+numbers of general person (re-ID) surveys [1,10,15,16,75,79]. Among
+these, Srikrishnaet al. [1] extensively evaluate performance of single
+and multi-shot (re-ID) with metric learning, including feature extrac-
+tion, ranking techniques, evaluate methods on new large-scale dataset
+and 16 publicly available datasets. Bahramet al. [75] gives comprehen-
+sive survey on person (re-ID) using deep neural networks: he men-
+tioned some guidelines and limitations. Moreover, Mohammad et al.
+[79] brie fl y discussed many aspects of person (re-ID), covering intra/
+inter camera, spatial features, textual and appearance descriptors, and
+datasets. Similarly, Di et al. [80] thoroughly reviewed many deep
+models, including identi fi cation, veri fi cation, deep metric learning,
+video-based and data augmentation based deep models. Furthermore,
+he broadly reviewed previous person (re-ID) in several years, datasets
+and discussed future insights. From the viewpoint of person search
+(re-ID), these surveys do not discuss and focus on person search. We
+are introducing a systematic and complete review of deep learning algo-
+rithms that mutually handle person detection and re-ID. This survey is
+focused by critical and in-depth analysis of person search. We sum up
+existing person search algorithms based on six different angles: feature
+Fig. 1. Simpli fi ed view of person re-identi fi cation (re-ID): full scene images were taken from different source of camera, after cropped all persons from images then match an image of
+manually cropped person.
+Fig. 2. Overview of person search: fi nding person from whole scene of images without proposal and bounding boxes.
+Fig. 3. Number of research publications on top conferences and journals over recent years.
+Year wise distribution shows the signi fi cant importance in last two years.
+2 K. Islam / Image and Vision Computing 101 (2020) 103970
+[4,11]
+[11]
+[11]
+[4]
+[11]
+[31]
+[14]
+[72]
+[65]
+[4,40,54
+56,59]
+[65]
+[62]
+[20,22,31]
+[3,30,
+56]
+[4,31]
+[54
+62]
+[21,22]
+[48,49]
+Fig. 4
+73,78
+15,74
+74
+76
+7,77
+1,10,15,16,75,79
+[1]
+75
+79
+80
+Previous  PDF Next  PDF
+Back to reading
+Article info Hide
+Recommended Articles
+Cross-modal feature extraction and integration based RGBD saliency detection
+Liang Pan, … +3 … , Chenggang Yan
+Image and Vision Computing • September 2020
+Preview View PDF Save PDF
+Collaborative representation of blur invariant deep sparse features for periocular recognition from smartphones
+Kiran Raja, Raghavendra Ramachandra and Christoph Busch
+Image and Vision Computing • September 2020
+Preview View PDF Save PDF
+Deep features for person re-identification on metric learning
+Wanyin Wu, … +3 … , Jun Cheng
+Pattern Recognition • February 2021
+Preview View PDF Save PDF

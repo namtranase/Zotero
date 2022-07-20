@@ -1,0 +1,632 @@
+Probabilistic two-stage detection
+
+arXiv:2103.07461v1 [cs.CV] 12 Mar 2021
+
+Xingyi Zhou 1 Vladlen Koltun 2 Philipp Kra¨henbu¨ hl 1
+
+Input
+
+Features
+
+Abstract
+
+P(C1 | O1)
+
+We develop a probabilistic interpretation of twostage object detection. We show that this probabilistic interpretation motivates a number of common empirical training practices. It also suggests changes to two-stage detection pipelines. Specifically, the ﬁrst stage should infer proper objectvs-background likelihoods, which should then inform the overall score of the detector. A standard region proposal network (RPN) cannot infer this likelihood sufﬁciently well, but many one-stage detectors can. We show how to build a probabilistic two-stage detector from any state-of-the-art one-stage detector. The resulting detectors are faster and more accurate than both their one- and two-stage precursors. Our detector achieves 56.4 mAP on COCO test-dev with single-scale testing, outperforming all published results. Using a lightweight backbone, our detector achieves 49.2 mAP on COCO at 33 fps on a Titan Xp, outperforming the popular YOLOv4 model.
+1. Introduction
+Object detection aims to ﬁnd all objects in an image and identify their locations and class likelihoods (Girshick et al., 2014). One-stage detectors jointly infer the location and class likelihood in a probabilistically sound framework (Lin et al., 2017b; Liu et al., 2016; Redmon & Farhadi, 2017). They are trained to maximize the log-likelihood of annotated ground-truth objects, and predict proper likelihood scores at inference. A two-stage detector ﬁrst ﬁnds potential objects and their location (Uijlings et al., 2013; Zitnick & Dolla´r, 2014; Ren et al., 2015) and then (in the second stage) classiﬁes these potential objects. The ﬁrst stage is designed to maximize recall (Ren et al., 2015; He et al., 2017; Cai & Vasconcelos, 2018), while the second stage maximizes a classiﬁcation objective over regions ﬁltered by the ﬁrst stage. While the second stage has a probabilistic interpretation, the combination of the two stages does not.
+1UT Austin 2Intel Labs. Correspondence to: Xingyi Zhou <zhouxy@cs.utexas.edu>.
+
+P(O1) b1
+P(O2) (a) Ffiirrsstt ssttaaggee: Object likelihood
+
+box : score : Eo∼P(O1)[P(C1 | o1)] b2
+box : score : Eo∼P(O2)[P(C2 | o2)]
+P(C2 | O2) (b) Secondsesctaogned: stage Conditional classiﬁcation
+
+Figure 1. Illustration of our framework. A class-agnostic one-stage detector predicts object likelihood. A second stage then predicts a classiﬁcation score conditioned on a detection. The ﬁnal detection score combines the object likelihood and the conditional classiﬁcation score.
+In this paper, we develop a probabilistic interpretation of two-stage detectors. We present a simple modiﬁcation of standard two-stage detector training by optimizing a lower bound to a joint probabilistic objective over both stages. A probabilistic treatment suggests changes to the two-stage architecture. Speciﬁcally, the ﬁrst stage needs to infer a calibrated object likelihood. The current region proposal network (RPN) in two-stage detectors is designed to maximize the proposal recall, and does not produce accurate likelihoods. However, full-ﬂedged one-stage detectors can.
+We build a probabilistic two-stage detector on top of stateof-the-art one-stage detectors. For each one-stage detection, our model extracts region-level features and classiﬁes them. We use either a Faster R-CNN (Ren et al., 2015) or a cascade classiﬁer (Cai & Vasconcelos, 2018) in the second stage. The two stages are trained together to maximize the log-likelihood of ground-truth objects. At inference, our detectors use this ﬁnal log-likelihood as the detection score.
+A probabilistic two-stage detector is faster and more accurate than both its one- and two-stage precursors. Compared to two-stage anchor-based detectors (Cai & Vasconcelos, 2018), our ﬁrst stage is more accurate and allows the detector to use fewer proposals in RoI heads (256 vs. 1K), making the detector both more accurate and faster overall. Compared to single-stage detectors, our ﬁrst stage uses a leaner head design and only has one output class for dense imagelevel prediction. The speedup due to the drastic reduction in the number of classes more than makes up for the additional
+
+Probabilistic two-stage detection
+
+costs of the second stage. Our second stage makes full use of years of progress in two-stage detection (Cai & Vasconcelos, 2018; Chen et al., 2019a) and yields a signiﬁcant increase in detection accuracy over one-stage baselines. It also easily scales to large-vocabulary detection.
+Experiments on COCO (Lin et al., 2014), LVIS (Gupta et al., 2019), and Objects365 (Shao et al., 2019) demonstrate that our probabilistic two-stage framework boosts the accuracy of a strong CascadeRCNN model by 1-3 mAP, while also improving its speed. Using a standard ResNeXt101-DCN backbone with a CenterNet (Zhou et al., 2019a) ﬁrst stage, our detector achieves 50.2 mAP on COCO testdev. With a strong Res2Net-101-DCN-BiFPN (Gao et al., 2019a; Tan et al., 2020b) backbone and self-training (Zoph et al., 2020), it achieves 56.4 mAP with single-scale testing, outperforming all published results. Using a small DLABiFPN backbone and lower input resolution, we achieve 49.2 mAP on COCO at 33 fps on a Titan Xp, outperforming the popular YOLOv4 model (43.5 mAP at 33 fps) on the same hardware. Code and models are release at https: //github.com/xingyizhou/CenterNet2.
+2. Related Work
+One-stage detectors jointly predict an output class and location of objects densely throughout the image. RetinaNet (Lin et al., 2017b) classiﬁes a set of predeﬁned sliding anchor boxes and handles the foreground-background imbalance by reweighting losses for each output. FCOS (Tian et al., 2019) and CenterNet (Zhou et al., 2019a) eliminate the need of multiple anchors per pixel and classify foreground/background by location. ATSS (Zhang et al., 2020b) and PAA (Kim & Lee, 2020) further improve FCOS by changing the deﬁnition of foreground and background. GFL (Li et al., 2020b) and Autoassign (Zhu et al., 2020a) change the hard foreground-background assignment to a weighted soft assignment. AlignDet (Chen et al., 2019c) uses a deformable convolution layer before the output to gather richer features for classiﬁcation and regression. RepPoint (Yang et al., 2019) and DenseRepPoint (Yang et al., 2020) encode bounding boxes as the outline of a set of points and use the features of the point set for classiﬁcation. BorderDet (Qiu et al., 2020) pools features along the bounding box for better localization. Most one-stage detectors have a sound probabilistic interpretation.
+While one-stage detectors have achieved competitive performance (Zhang et al., 2020b; Kim & Lee, 2020; Zhang et al., 2019; Li et al., 2020b; Zhu et al., 2020a), they usually rely on heavier separate classiﬁcation and regression branches than two-stage models. In fact, they are no longer faster than their two-stage counterparts if the vocabulary (i.e., the set of object classes) is large (as in the LVIS or Objects365 datasets). Also, one-stage detectors only use the local fea-
+
+ture of the positive cell for regression and classiﬁcation, which is sometimes misaligned with the object (Chen et al., 2019c; Song et al., 2020).
+Our probabilistic two-stage framework retains the probabilistic interpretation of one-stage detectors, but factorizes the probability distribution over multiple stages, improving both accuracy and speed.
+Two-stage detectors ﬁrst use a region proposal network (RPN) to generate coarse object proposals, and then use a dedicated per-region head to classify and reﬁne them. FasterRCNN (Ren et al., 2015; He et al., 2017) uses two fullyconnected layers as the RoI heads. CascadeRCNN (Cai & Vasconcelos, 2018) uses three cascaded stages of FasterRCNN, each with a different positive threshold so that the later stages focus more on localization accuracy. HTC (Chen et al., 2019a) utilizes additional instance and semantic segmentation annotations to enhance the inter-stage feature ﬂow of CascadeRCNN. TSD (Song et al., 2020) decouples the classiﬁcation and localization branches for each RoI.
+Two-stage detectors are still more accurate in many settings (Gupta et al., 2019; Sun et al., 2020; Kuznetsova et al., 2018). Currently, all two-stage detectors use a relatively weak RPN that maximizes the recall of the top 1K proposals, and does not utilize the proposal score at test time. The large number of proposals slows the system down, and the recall-based proposal network does not directly offer the same clear probabilistic interpretation as one-stage detectors. Our framework addresses this, and integrates a strong class-agnostic single-stage object detector with later classiﬁcation stages. Our ﬁrst stage uses fewer, but higher quality, regions, yielding both faster inference and higher accuracy.
+Other detectors. A family of object detectors identify objects via points in the image. CornerNet (Law & Deng, 2018) detects the top-left and bottom-right corners and groups them using an embedding feature. ExtremeNet (Zhou et al., 2019b) detects four extreme points and groups them using an additional center point. Duan et al. (2019) detect the center point and use it to improve corner grouping. Corner Proposal Net (Duan et al., 2020) uses pairwise corner groupings as region proposals. CenterNet (Zhou et al., 2019a) detects the center point and regresses the bounding box parameters from it.
+DETR (Carion et al., 2020) and Deformable DETR (Zhu et al., 2020c) remove the dense output in a detector, and instead use a Transformer (Vaswani et al., 2017) that directly predicts a set of bounding boxes.
+The major difference between point-based detectors, DETR, and conventional detectors lies in the network architecture. Point-based detectors use a fully-convolutional network (Newell et al., 2016; Yu et al., 2018), usually with symmetric downsampling and upsampling layers, and pro-
+
+Probabilistic two-stage detection
+
+(H, W,4) (H, W, C)
+
+(H, W,4) (H, W,1)
+
+(K, C)
+
+(H, W,4) (H, W,1)
+
+(K′, C)
+
+Detection heads
+
+RPN
+
+Proposals Detection heads
+
+Class-agnostic detection heads
+
+Proposals
+
+Detection heads
+
+(a) one-stage detector
+
+(b) two-stage detector
+
+(c) Probabilistic two-stage detector
+
+Figure 2. Illustration of the structural differences between existing one-stage and two-stage detectors and our probabilistic two-stage
+
+framework. (a) A typical one-stage detector applies separate heavy classiﬁcation and regression heads and produces a dense classiﬁcation
+
+map. (b) A typical two-stage detector uses a light proposal network and extracts many (K) region features for classiﬁcation. (c) Our
+
+probabilistic two-stage framework uses a one-stage detector with shared heads to produce region proposals and extracts a few (K ) regions
+
+for classiﬁcation. The proposal score from the ﬁrst stage is used in the second stage in a probabilistically sound framework. Typically,
+
+K < K H ×W.
+
+duce a single feature map with a small stride (i.e., stride 4). DETR-style detectors (Carion et al., 2020; Zhu et al., 2020c) use a transformer as the decoder. Conventional one- and two-stage detectors commonly use an image classiﬁcation network augmented by lightweight upsampling layers, and produce multi-scale features (FPN) (Lin et al., 2017a).
+3. Preliminaries
+An object detector aims to predict the location bi ∈ R4 and class-speciﬁc likelihood score si ∈ R|C| for any object i for a predeﬁned set of classes C. The object location bi is most often described by two corners of an axis-aligned bounding box (Ren et al., 2015; Carion et al., 2020) or through an equivalent center+size representation (Tian et al., 2019; Zhou et al., 2019a; Zhu et al., 2020c). The main difference between object detectors lies in their representation of the class likelihood, reﬂected in their architectures.
+One-stage detectors (Redmon & Farhadi, 2018; Lin et al., 2017b; Tian et al., 2019; Zhou et al., 2019a) jointly predict the object location and likelihood score in a single network. Let Li,c = 1 indicate a positive detection for object candidate i and class c, and let Li,c = 0 indicate background. Most one-stage detectors (Lin et al., 2017b; Tian et al., 2019; Zhou et al., 2019a) then parametrize the class likelihood as a Bernoulli distribution using an independent sigmoid per class: si(c) = P (Li,c = 1) = σ(wc fi), where fi ∈ RC is a feature produced by the backbone and wc is a classspeciﬁc weight vector. During training, this probabilistic interpretation allows one-stage detectors to simply maximize the log-likelihood log(P (Li,c)) or the focal loss (Lin et al., 2017b) of ground-truth annotations. One-stage detectors differ from each other in the deﬁnition of positive Lˆi,c = 1 and negative Lˆi,c = 0 samples. Some use anchor overlap (Lin et al., 2017b; Zhang et al., 2020b; Kim & Lee, 2020), others use locations (Tian et al., 2019). However, all optimize log-likelihood and use the class probability to score boxes. All directly regress to bounding box coordinates.
+
+Two-stage detectors (Ren et al., 2015; Cai & Vasconcelos, 2018) ﬁrst extract potential object locations, called object proposals, using an objectness measure P (Oi). They then extract features for each potential object, classify them into C classes or background P (Ci|Oi = 1) with Ci ∈ C ∪ {bg}, and reﬁne the object location. Each stage is supervised independently. In the ﬁrst stage, a Region Proposal Network (RPN) learns to classify annotated objects bi as foreground and other boxes as background. This is commonly done through a binary classiﬁer trained with a log-likelihood objective. However, an RPN deﬁnes background regions very conservatively. Any prediction that overlaps an annotated object 30% or more may be considered foreground. This label deﬁnition favors recall over precision and accurate likelihood estimation. Many partial objects receive a large proposal score. In the second stage, a softmax classiﬁer learns to classify each proposal into one of the foreground classes or background. The classiﬁer uses a log-likelihood objective, with foreground labels consisting of annotated objects and background labels coming from high-scoring ﬁrst-stage proposals without annotated objects close-by. During training, this categorical distribution is implicitly conditioned on positive detections of the ﬁrst stage, as it is only trained and evaluated on them. Both the ﬁrst and second stage have a probabilistic interpretation, and under their positive and negative deﬁnition estimate the log-likelihood of objects or classes respectively. However, the entire detector does not. It combines multiple heuristics and sampling strategies to independently train the ﬁrst and second stages (Cai & Vasconcelos, 2018; Ren et al., 2015). The ﬁnal output comprises boxes with classiﬁcation scores si(c) = P (Ci|Oi = 1) of the second stage alone.
+Next, we develop a simple probabilistic interpretation of two-stage detectors that considers the two stages as part of a single class-likelihood estimate. We show how this affects the design of the ﬁrst stage, and how to train the two stages efﬁciently.
+
+Probabilistic two-stage detection
+
+4. A probabilistic interpretation of two-stage detection
+For each image, our goal is to produce a set of K detections as bounding boxes b1, . . . , bK with an associated class distribution sk(c) = P (Ck = c) for classes c ∈ C ∪ {bg} or background to each object k. In this work, we keep the bounding-box regression unchanged and only focus on the class distribution. A two-stage detector factorizes this distribution into two parts: A class-agnostic object likelihood P (Ok) (ﬁrst stage) and a conditional categorical classiﬁcation P (Ck|Ok) (second stage). Here Ok = 1 indicates a positive detection in the ﬁrst stage, while Ok = 0 corresponds to background. Any negative ﬁrst-stage detection Ok = 0 leads to a background Ck = bg classiﬁcation: P (Ck = bg|Ok = 0) = 1. In a multi-stage detector (Cai & Vasconcelos, 2018), the classiﬁcation is done by an ensemble of multiple cascaded stages, while two-stage detectors use a single classiﬁer (Ren et al., 2015). The joint class distribution of the two-stage model then is
+
+P (Ck) = P (Ck|Ok = o)P (Ok = o). (1)
+o
+
+Training objective. We train our detectors using maximum likelihood estimation. For annotated objects, we maximize
+
+log P (Ck) = log P (Ck|Ok = 1) + log P (Ok = 1), (2)
+
+which reduces to independent maximum-likelihood objectives for the ﬁrst and second stage respectively.
+
+For the background class, the maximum-likelihood objective does not factorize:
+
+log P (bg) = log (P (bg|Ok = 1)P (Ok = 1) + P (Ok = 0)) .
+
+This objective ties the ﬁrst- and second-stage probability estimates in their loss and gradient computation. An exact evaluation requires a dense evaluation of the second stage for all ﬁrst-stage outputs, which would slow down training prohibitively. We instead derive two lower bounds to the objective, which we jointly optimize. The ﬁrst lower bound uses Jensen’s inequality log (αx1 + (1 − α)x2) ≥ α log(x1) + (1 − α) log(x2) with α = P (Ok = 1), x1 = P (bg|Ok = 1), and x2 = 1:
+
+log P (bg) ≥ P (Ok = 1) log (P (bg|Ok = 1)) . (3)
+
+This lower bound maximizes the log-likelihood of background of the second stage for any high-scoring object in the ﬁrst stage. It is tight for P (Ok = 1) → 0 or P (bg|Ok = 1) → 1, but can be arbitrarily loose for P (Ok = 1) > 0 and P (bg|Ok = 1) → 0. Our second bound involves just the ﬁrst-stage objective:
+
+log P (bg) ≥ log (P (Ok = 0)) .
+
+(4)
+
+It uses P (bg|Ok = 1)P (Ok = 1) ≥ 0 with the monotonicity of the log. This bound is tight for P (bg|Ok = 1) → 0. Ideally, the tightest bound is obtained by using the maximum of Eq. (3) and Eq. (4). This lower bound is within ≤ log 2 of the actual objective, as shown in the supplementary material. In practice however, we found optimizing both bounds jointly to work better.
+With lower bound Eq. (4) and the positive objective Eq. (2), ﬁrst-stage training reduces to a maximum-likelihood estimate with positive labels at annotated objects and negative labels for all other locations. It is equivalent to training a binary one-stage detector, or an RPN with a strict negative deﬁnition that encourages likelihood estimation and not recall.
+Detector design. The key difference between our formulation and standard two-stage detectors lies in the use of the class-agnostic detection P (Ok) in the detection score Eq. (1). In our probabilistic formation, the classiﬁcation score is multiplied by the class-agnostic detection score. This requires a strong ﬁrst stage detector that not only maximizes the proposal recall (Ren et al., 2015; Uijlings et al., 2013), but also predicts a reliable object likelihood for each proposal. In our experiments, we use strong one-stage detectors to estimate this log-likelihood, as described in the next section.
+5. Building a probabilistic two-stage detector
+The core component of a probabilistic two-stage detector is a strong ﬁrst stage. This ﬁrst stage needs to predict an accurate object likelihood that informs the overall detection score, rather than maximizing the object coverage. We experiment with four different ﬁrst-stage designs based on popular one-stage detectors. For each, we highlight the design choices needed to convert them from a single-stage detector to a ﬁrst stage in a probabilistic two-stage detector.
+RetinaNet (Lin et al., 2017b) closely resembles the RPN of traditional two-stage detectors with three critical differences: a heavier head design (4 layers vs. 1 layer in RPN), a stricter positive and negative anchor deﬁnition, and the focal loss. Each of these components increases RetinaNet’s ability to produce calibrated one-stage detection likelihoods. We use all of these in our ﬁrst-stage design. RetinaNet by default uses two separate heads for bounding box regression and classiﬁcation. In our ﬁrst-stage design, we found it sufﬁcient to have a single shared head for both tasks, as object-or-not classiﬁcation is easier and requires less network capacity. This speeds up inference.
+CenterNet (Zhou et al., 2019a) ﬁnds objects as keypoints located at their center, then regresses to box parameters. The original CenterNet operates at a single scale, whereas
+
+Probabilistic two-stage detection
+
+conventional two-stage detectors use a feature pyramid (FPN) (Lin et al., 2017a). We upgrade CenterNet to multiple scales using an FPN. Speciﬁcally, we use the RetinaNetstyle ResNet-FPN as the backbone (Lin et al., 2017b), with output feature maps from stride 8 to 128 (i.e., P3P7). We apply a 4-layer classiﬁcation branch and regression branch (Tian et al., 2019) to all FPN levels to produce a detection heatmap and bounding box regression map. During training, we assign ground-truth center annotations to speciﬁc FPN levels based on the object size, within a ﬁxed assignment range (Tian et al., 2019). Inspired by GFL (Li et al., 2020b), we add locations in the 3 × 3 neighborhood of the center that already produce high-quality bounding boxes (i.e., with a regression loss < 0.2) as positives. We use the distance to boundaries as the bounding box representation (Tian et al., 2019), and use the gIoU loss for bounding box regression (Rezatoﬁghi et al., 2019). We evaluate both one-stage and probabilistic two-stage versions of this architecture. We refer to the improved CenterNet as CenterNet*.
+ATSS (Zhang et al., 2020b) models the class likelihood of a one-stage detector with an adaptive IoU threshold for each object, and uses centerness (Tian et al., 2019) to calibrate the score. In a probabilistic two-stage baseline, we use ATSS (Zhang et al., 2020b) as is, and multiply the centerness and the foreground classiﬁcation score for each proposal. We again merge the classiﬁcation and regression heads for a slight speedup.
+GFL (Li et al., 2020b) uses regression quality to guide the object likelihood training. In a probabilistic two-stage baseline, we remove the integration-based regression and only use the distance-based regression (Tian et al., 2019) for consistency, and again merge the two heads.
+The above one-stage architectures infer P (Ok). For each, we combine them with the second stage that infers P (Ck|Ok). We experiment with two basic second-stage designs: FasterRCNN (Ren et al., 2015) and CascadeRCNN (Cai & Vasconcelos, 2018).
+Hyperparameters. A two-stage detector (Ren et al., 2015) typically uses FPN levels P2-P6 (stride 4 to stride 64), while most one-stage detectors use FPN levels P3-P7 (stride 8 to stride 128). To make it compatible, we use levels P3-P7 for both one- and two-stage detectors. This modiﬁcation slightly improves the baselines. Following Wang et al. (2019), we increase the positive IoU threshold in the second stage from 0.5 to 0.6 for Faster RCNN (and 0.6, 0.7, 0.8 for CascadeRCNN) to compensate for the IoU distribution change in the second stage. We use a maximum of 256 proposal boxes in the second stage for probabilistic two-stage detectors, and use the default 1K boxes for RPN-based models unless stated otherwise. We also increase the NMS
+
+threshold from 0.5 to 0.7 for our probabilistic detectors as we use fewer proposals. These hyperparameter-changes is necessary for probabilistic detectors, but we found they do not improve the RPN-based detector in our experiments.
+We implement our method based on detectron2 (Wu et al., 2019). Our default model follows the standard setting in detectron2 (Wu et al., 2019). Speciﬁcally, we train the network with the SGD optimizer for 90K iterations (1x schedule). The base learning rate is 0.02 for two-stage detectors and 0.01 for one-stage detectors, and is dropped by 10x at iterations 60K and 80K. We use multi-scale training with the short edge in the range [640,800] and the long edge up to 1333. During training, we set the ﬁrst-stage loss weight to 0.5 as one-stage detectors are typically trained with learning rate 0.01. During testing, we use a ﬁxed short edge at 800 and long edge up to 1333.
+We instantiate our probabilistic two-stage framework on four different backbones. We use a default ResNet-50 (He et al., 2016) model for most ablations and comparisons among design choices, and then compare to state-of-the-art methods using the same large ResNeXt-32x8d-101-DCN (Xie et al., 2017) backbone, and use a lightweight DLA (Yu et al., 2018) backbone for a real-time model. We also integrate the most recent advances (Zoph et al., 2020; Tan et al., 2020b; Gao et al., 2019a) and design an extra-large backbone for the high-accuracy regime. Further details about each backbone are in the supplement.
+6. Results
+We evaluate our framework on three large detection datasets: COCO (Lin et al., 2014), LVIS (Gupta et al., 2019), and Objects365 (Gao et al., 2019b). Details of each dataset can be found in the supplement. We use COCO to perform ablation studies and comparisons to the state of the art. We use LVIS and Objects365 to test the generality of our framework, particularly in the large-vocabulary regime. In all datasets, we report the standard mAP. Runtimes are reported on a Titan Xp GPU with PyTorch 1.4.0 and CUDA 10.1.
+Table 1 compares one- and two-stage detectors to corresponding probabilistic two-stage detectors designed via our framework. The ﬁrst block of the table shows the performance of the original reference two-stage detectors, FasterRCNN and CascadeRCNN. The following blocks show the performance of four one-stage detectors (discussed in Section 5) and the corresponding probabilistic two-stage detectors, obtained when using the respective one-stage detector as the ﬁrst stage in a probabilistic two-stage framework. For each one-stage detector, we show two versions of probabilistic two-stage models, one based on FasterRCNN and one based on CascadeRCNN.
+All probabilistic two-stage detectors outperform their one-
+
+Probabilistic two-stage detection
+
+mAP Tfirst Ttot
+
+FasterRCNN-RPN (original) 37.9 46ms 55ms CascadeRCNN-RPN (original) 41.6 48ms 78ms
+
+RetinaNet (Lin et al., 2017b) FasterRCNN-RetinaNet CascadeRCNN-RetinaNet
+
+37.4 82ms 82ms 40.4 60ms 63ms 42.6 61ms 69ms
+
+GFL (Li et al., 2020b) FasterRCNN-GFL CascadeRCNN-GFL
+
+40.2 51ms 51ms 41.7 46ms 50ms 42.7 46ms 57ms
+
+ATSS (Zhang et al., 2020b) FasterRCNN-ATSS CascadeRCNN-ATSS
+
+39.7 56ms 56ms 41.5 47ms 50ms 42.7 47ms 57ms
+
+CenterNet* FasterRCNN-CenterNet CascadeRCNN-CenterNet
+
+40.2 51ms 51ms 41.5 46ms 50ms 42.9 47ms 57ms
+
+Table 1. Performance and runtime of a number of two-stage detectors, one-stage detectors, and corresponding probabilistic twostage detectors (our approach). Results on COCO validation. Top block: two-stage FasterRCNN and CascadeRCNN detectors. Other blocks: Four one-stage detectors, each with two corresponding probabilistic two-stage detectors, one based on FasterRCNN and one based on CascadeRCNN. For each detector, we list its ﬁrststage runtime (Tfirst) and total runtime (Ttot). All results are reported using standard Res50-1x with multi-scale training.
+
+stage and two-stage precursors. Each probabilistic two-stage FasterRCNN model improves upon its one-stage precursor by 1 to 2 percentage points in mAP, and outperforms the original two-stage FasterRCNN by up to 3 percentage points in mAP. More interestingly, each two-stage probabilistic FasterRCNN is faster than its one-stage precursor due to the leaner head design. A number of probabilistic two-stage FasterRCNN models are faster than the original two-stage FasterRCNN, due to more efﬁcient FPN levels (P3-P7 vs. P2-P6) and because the probabilistic detectors use fewer proposals (256 vs. 1K). We observe similar trends with the CascadeRCNN models.
+
+The CascadeRCNN-CenterNet design performs best among these probabilistic two-stage models. We thus adopt this basic structure in the following experiments and refer to it as CenterNet2 for brevity.
+
+Real-time models. Table 2 compares our real-time model to other real-time detectors. CenterNet2 outperforms realtime-FCOS (Tian et al., 2020) by 1.6 mAP with the same backbone and training schedule, and is only 4 ms slower. Using the same FCOS-based backbone with longer training schedules (Tan et al., 2020b; Bochkovskiy et al., 2020), it improves upon the original CenterNet (Zhou et al., 2019a) by 7.7 mAP, and comfortably outperforms the popular YOLOv4 (Bochkovskiy et al., 2020) and EfﬁcientDetB2 (Tan et al., 2020b) detectors with 45.6 mAP at 40 fps.
+
+Backbone Epochs mAP Runtime
+
+FCOS-RT DLA-BiFPN-P3 48 42.1 21ms CenterNet2 DLA-BiFPN-P3 48 43.7 25ms
+
+CenterNet
+
+DLA
+
+230 37.6 18ms
+
+YOLOV4 CSPDarknet-53 300 43.5 30ms
+
+EfﬁcientDet EfﬁcientNet-B2 500 43.5 23ms*
+
+EfﬁcientDet EfﬁcientNet-B3 500 46.8 37ms*
+
+CenterNet2 DLA-BiFPN-P3 288 45.6 25ms
+
+CenterNet2 DLA-BiFPN-P5 288 49.2 30ms
+
+Table 2. Performance of real-time object detectors on COCO validation. Top: we compare CenterNet2 to realtime-FCOS under exactly the same setting. Bottom: we compare to detectors with different backbones and training schedules. *The runtime of EfﬁcientDet is taken from the original paper (Tan et al., 2020b) as the ofﬁcial model is not available. Other runtimes are measured on the same machine.
+
+Using a slightly different FPN structure and combining with self-training (Zoph et al., 2020), CenterNet2 gets 49.2 mAP at 33 fps. While most existing real-time detectors are onestage, here we show that two-stage detectors can be as fast as one-stage designs, while delivering higher accuracy.
+
+State-of-the-art comparison. Table 3 compares our large models to state-of-the-art detectors on COCO test-dev. Using a “standard” large backbone ResNeXt101-DCN, CenterNet2 achieves 50.2 mAP, outperforming all existing models with the same backbone, both one- and two-stage. Note that CenterNet2 outperforms the corresponding CascadeRCNN model with the same backbone by 1.4 percentage points in mAP. This again highlights the beneﬁts of a probabilistic treatment of two-stage detection.
+To push the state-of-the-art of object detection, we further switch to a stronger backbone Res2Net (Gao et al., 2019a) with BiFPN (Tan et al., 2020b), a larger input resolution (1280 × 1280 in training and 1560 × 1560 in testing) with heavy crop augmentation (ratio 0.1 to 2) (Tan et al., 2020b), and a longer schedule (8×) with self-training (Zoph et al., 2020) on COCO unlabeled images. Our ﬁnal model achieves 56.4 mAP with a single model, outperforming all published numbers in the literature. More details about the extra-large model can be found in the supplement.
+
+6.1. Ablation studies
+From FasterRCNN-RPN to FasterRCNN-RetinaNet. Table 4 shows the detailed road map from the default RPN-FasterRCNN to a probabilistic two-stage FasterRCNN with RetinaNet as the ﬁrst stage. First, switching to the RetinaNet-style FPN already gives a favorable improvement. However, directly multiplying the ﬁrst-stage probability here does not give an improvement, because the original RPN is weak and does not provide a proper likelihood. Mak-
+
+Probabilistic two-stage detection
+
+Backbone
+
+AP AP50 AP75 APS APM APL
+
+CornerNet (Law & Deng, 2018) CenterNet (Zhou et al., 2019a) Duan et al. (Duan et al., 2019) RepPoint (Yang et al., 2019) MAL (Ke et al., 2020) FreeAnchor (Zhang et al., 2019) CentripetalNet (Dong et al., 2020) FCOS (Tian et al., 2019) TridentNet (Li et al., 2019) CPN (Duan et al., 2020) SAPD (Zhu et al., 2020b) ATSS (Zhang et al., 2020b) BorderDet (Yang et al., 2019) GFL (Li et al., 2020b) PAA (Kim & Lee, 2020) TSD (Song et al., 2020) RepPointv2 (Yang et al., 2019) AutoAssign (Zhu et al., 2020a) Deformable DETR (Zhu et al., 2020c) CascadeRCNN (Cai & Vasconcelos, 2018) CenterNet* CenterNet2 (ours)
+
+Hourglass-104 Hourglass-104 Hourglass-104 ResNet101-DCN ResNeXt-101 ResNeXt-101 Hourglass-104 ResNeXt-101-DCN ResNet-101-DCN Hourglass-104 ResNeXt-101-DCN ResNeXt-101-DCN ResNeXt-101-DCN ResNeXt-101-DCN ResNeXt-101-DCN ResNeXt-101-DCN ResNeXt-101-DCN ResNeXt-101-DCN ResNeXt-101-DCN ResNeXt-101-DCN ResNeXt-101-DCN ResNeXt-101-DCN
+
+40.6 56.4 43.2 19.1 42.8 54.3 42.1 61.1 45.9 24.1 45.5 52.8 44.9 62.4 48.1 25.6 47.4 57.4 45.0 66.1 49.0 26.6 48.6 57.5 45.9 65.4 49.7 27.8 49.1 57.8 46.0 65.6 49.8 27.8 49.5 57.7 46.1 63.1 49.7 25.3 48.7 59.2 46.6 65.9 50.8 28.6 49.1 58.6 46.8 67.6 51.5 28.0 51.2 60.5 47.0 65.0 51.0 26.5 50.2 60.7 47.4 67.4 51.1 28.1 50.3 61.5 47.7 66.6 52.1 29.3 50.8 59.7 48.0 67.1 52.1 29.4 50.7 60.5 48.2 67.4 52.6 29.2 51.7 60.2 49.0 67.8 53.3 30.2 52.8 62.2 49.4 69.6 54.4 32.7 52.5 61.0 49.4 68.9 53.4 30.3 52.1 62.3 49.5 68.7 54.0 29.9 52.6 62.0 50.1 69.7 54.6 30.6 52.8 65.6 48.8 67.7 52.9 29.7 51.8 61.8 49.1 67.8 53.3 30.2 52.4 62.0 50.2 68.0 55.0 31.2 53.5 63.6
+
+CRCNN-ResNeSt (Zhang et al., 2020a) GFLV2 (Li et al., 2020a) DetectRS (Qiao et al., 2020) EfﬁcientDet-D7x (Tan et al., 2020b) ScaledYOLOv4 (Wang et al., 2020) CenterNet2 (ours)
+
+ResNeSt-200
+
+49.1 67.8 53.2 31.6 52.6 62.8
+
+Res2Net-101-DCN 50.6 69.0 55.3 31.3 54.3 63.5
+
+ResNeXt-101-DCN-RFP 53.3 71.6 58.5 33.9 56.5 66.9
+
+EfﬁcientNet-D7x-BiFPN 55.1 73.4 59.9 -
+
+-
+
+-
+
+CSPDarkNet-P7
+
+55.4 73.3 60.7 38.1 59.5 67.4
+
+Res2Net-101-DCN-BiFPN 56.4 74.0 61.6 38.7 59.7 68.6
+
+Table 3. Comparison to the state of the art on COCO test-dev. We list object detection accuracy with single-scale testing. We retrained our baselines, CascadeRCNN (ResNeXt-101-DCN) and CenterNet*, under comparable settings. Other results are taken from the original publications. Top: detectors with comparable backbones (ResNeXt-101-DCN) and training schedules (2x). Bottom: detectors with their best-ﬁt backbones, input size, and schedules.
+
+P3-P7 256p. 4 l. loss prob mAP Tfirst Ttot
+37.9 46ms 55ms
+38.6 38ms 45ms 38.5 38ms 45ms 38.3 38ms 40ms 38.9 60ms 70ms 38.6 60ms 63ms 39.1 60ms 63ms
+40.4 60ms 63ms
+Table 4. A detailed ablation between FasterRCNN-RPN (top) and a probabilistic two-stage FasterRCNN-RetinaNet (bottom). FasterRCNN-RetinaNet changes the FPN levels (P2-P6 to P3-P7), uses 256 instead of 1000 proposals, a 4-layer ﬁrst-stage head, a stricter IoU threshold with focal loss (loss), and multiplies the ﬁrst and second stage probabilities (prob). All results are reported using standard Res50-1x with multi-scale training.
+ing the RPN stronger by adding layers makes it possible to
+
+mAP
+
+CascadeRCNN-RPN (P3-P7)
+
+42.1
+
+CascadeRCNN-RPN w. prob.
+
+42.1
+
+CascadeRCNN-CenterNet
+
+42.1
+
+CascadeRCNN-CenterNet w. prob. (Ours) 42.9
+
+Table 5. Ablation of our probabilistic modeling (w. prob.) of CascadeRCNN with the default RPN and CenterNet proposal.
+
+use fewer proposals in the second stage, but does not improve accuracy. Switching to the RetinaNet loss (a stricter IoU threshold and focal loss), the proposal quality is improved, yielding a 0.5 mAP improvement over the original RPN loss. With the improved proposals, incorporating the ﬁrst-stage score in our probabilistic framework signiﬁcantly boosts accuracy to 40.4.
+Table 5 reports similar ablations on CascadeRCNN. The observations are consistent: multiplying the ﬁrst-stage probabilities with the original RPN does not improve accuracy,
+
+Probabilistic two-stage detection
+
+Figure 3. Visualization of region proposals on COCO validation, contrasting CascadeRCNN and its probabilistic counterpart, CascadeRCNN-CenterNet (or CenterNet2). Left: region proposals from the ﬁrst stage of CascadeRCNN (RPN). Right: region proposals from the ﬁrst stage of CenterNet2. For clarity, we only show regions with score >0.3.
+
+CascadeRCNN
+
+CenterNet2
+
+#prop. mAP AR Runtime mAP AR Runtime
+
+1000 512 256 128 64
+
+42.1 62.4 41.9 60.4 41.6 57.4 40.8 53.7 39.6 49.2
+
+66ms 56ms 48ms 45ms 42ms
+
+43.0 70.8 42.9 69.0 42.9 66.6 42.7 63.5 42.1 59.7
+
+75ms 61ms 57ms 54ms 52ms
+
+Table 6. Accuracy-runtime trade-off of using different numbers of proposals (#prop.) on COCO validation. We show the overall mAP, the proposal recall (AR), and runtime for both the original CascadeRCNN and our probabilistic two-stage detector (CenterNet2). The results are reported with Res50-1x and multi-scale training. We highlight the default number of proposals in gray .
+
+mAP mAPr mAPc mAPf Runtime
+
+GFL (Li et al., 2020b) 18.5 6.9 15.8 26.6 69ms
+
+CenterNet*
+
+19.1 7.8 16.3 27.4 69ms
+
+CascadeRCNN
+
+24.0 7.6 22.9 32.7 100ms
+
+CenterNet2
+
+26.7 12.0 25.4 34.5 60ms
+
+CenterNet2 w. FedLoss 28.2 18.8 26.4 34.4 60ms
+
+Table 7. Object detection results on LVIS v1 validation. The experiments are conducted with Res50-1x, multi-scale training, and repeat-factor sampling (Gupta et al., 2019).
+
+while using a strong one-stage detector can. This suggests that both ingredients in our design are necessary: a stronger proposal network and incorporating the proposal score.
+
+mAP mAP50 mAP75 Runtime
+
+GFL (Li et al., 2020b) 18.8 28.1 20.2 56ms
+
+CenterNet*
+
+18.7 27.5 20.1 55ms
+
+CascadeRCNN
+
+21.7 31.7 23.4 67ms
+
+CenterNet2
+
+22.6 31.6 24.6 56ms
+
+Table 8. Object detection results on Objects365. The experiments are conducted with Res50-1x, multi-scale training, and class-aware sampling (Shen et al., 2016).
+
+6.2. Large vocabulary detection
+Tables 7 and 8 report object detection results on LVIS (Gupta et al., 2019) and Objects365 (Shao et al., 2019), respectively. CenterNet2 improves on the CascadeRCNN baselines by 2.7 mAP on LVIS and 0.8 mAP on Objects365, showing the generality of our approach. On both datasets, two-stage detectors (CascadeRCNN, CenterNet2) outperform one-stage designs (GFL, CenterNet) by signiﬁcant margins: 5-8 mAP on LVIS and 3-4 mAP on Objects365. On LVIS, the runtime of one-stage detectors increases by ∼ 30% compared to COCO, as the number of categories grows from 80 to 1203. This is due to the dense classiﬁcation heads. On the other hand, the runtime of CenterNet2 only increases by 5%. This highlights the advantages of probabilistic two-stage detection in large-vocabulary settings.
+Two stage-detectors allow using a more dedicated classiﬁcation loss in the second stage. In the supplement, we propose a federated loss for handling the federated construction of LVIS. The results are highlighted in Table 7.
+
+Trade-off in the number of proposals. Table 6 shows how the mAP, proposal average recall (AR), and runtime change when using a different numbers of proposals for the original RPN-based CascadeRCNN and CenterNet2. Both CascadeRCNN and CenterNet2 get faster with fewer proposals. However, the accuracy of the original CascadeRCNN drops steeply as the number of proposals decreases, while our detector performs well even with relatively few proposals. For example, CascadeCRNN drops by 1.3 mAP when using 128 instead of 1000 proposals, while CenterNet2 only loses 0.3 mAP. The average recall of 128 CenterNet2 proposals is higher than 1000 RPN ones.
+
+7. Conclusion
+We developed a probabilistic interpretation of two-stage detection. This interpretation motivates the use of a strong ﬁrst stage that learns to estimate object likelihoods rather than maximize recall. These likelihoods are then combined with the classiﬁcation scores from the second stage to yield principled probabilistic scores for the ﬁnal detections. Probabilistic two-stage detectors are both faster and more accurate than their one- or two-stage counterparts. Our work paves the way for an integration of advances in both oneand two-stage designs that combines accuracy with speed.
+
+Probabilistic two-stage detection
+
+References
+Bochkovskiy, A., Wang, C.-Y., and Liao, H.-Y. M. Yolov4: Optimal speed and accuracy of object detection. arXiv:2004.10934, 2020.
+Cai, Z. and Vasconcelos, N. Cascade r-cnn: Delving into high quality object detection. In CVPR, 2018.
+Carion, N., Massa, F., Synnaeve, G., Usunier, N., Kirillov, A., and Zagoruyko, S. End-to-end object detection with transformers. arXiv:2005.12872, 2020.
+Chen, K., Pang, J., Wang, J., Xiong, Y., Li, X., Sun, S., Feng, W., Liu, Z., Shi, J., Ouyang, W., et al. Hybrid task cascade for instance segmentation. In CVPR, 2019a.
+Chen, K., Wang, J., Pang, J., Cao, Y., Xiong, Y., Li, X., Sun, S., Feng, W., Liu, Z., Xu, J., Zhang, Z., Cheng, D., Zhu, C., Cheng, T., Zhao, Q., Li, B., Lu, X., Zhu, R., Wu, Y., Dai, J., Wang, J., Shi, J., Ouyang, W., Loy, C. C., and Lin, D. MMDetection: Open mmlab detection toolbox and benchmark. arXiv:1906.07155, 2019b.
+Chen, Y., Han, C., Wang, N., and Zhang, Z. Revisiting feature alignment for one-stage object detection. arXiv:1908.01570, 2019c.
+Chen, Y., Zhang, Z., Cao, Y., Wang, L., Lin, S., and Hu, H. Reppoints v2: Veriﬁcation meets regression for object detection. In Neural Information Processing Systems, 2020.
+Dong, Z., Li, G., Liao, Y., Wang, F., Ren, P., and Qian, C. Centripetalnet: Pursuing high-quality keypoint pairs for object detection. In CVPR, 2020.
+Duan, K., Bai, S., Xie, L., Qi, H., Huang, Q., and Tian, Q. Centernet: Object detection with keypoint triplets. ICCV, 2019.
+Duan, K., Xie, L., Qi, H., Bai, S., Huang, Q., and Tian, Q. Corner proposal network for anchor-free, two-stage object detection. arXiv:2007.13816, 2020.
+Gao, S., Cheng, M.-M., Zhao, K., Zhang, X.-Y., Yang, M.H., and Torr, P. H. Res2net: A new multi-scale backbone architecture. TPAMI, 2019a.
+Gao, Y., Shen, H., Zhong, D., Wang, J., Liu, Z., Bai, T., Long, X., and Wen, S. A solution for densely annotated large scale object detection task. https://www.objects365.org/slides/ Obj365_BaiduVIS.pdf, 2019b.
+Girshick, R., Donahue, J., Darrell, T., and Malik, J. Rich feature hierarchies for accurate object detection and semantic segmentation. In CVPR, 2014.
+Gupta, A., Dollar, P., and Girshick, R. LVIS: A dataset for large vocabulary instance segmentation. In CVPR, 2019.
+He, K., Zhang, X., Ren, S., and Sun, J. Deep residual learning for image recognition. In CVPR, 2016.
+
+He, K., Gkioxari, G., Dolla´r, P., and Girshick, R. Mask r-cnn. In ICCV, 2017.
+Ke, W., Zhang, T., Huang, Z., Ye, Q., Liu, J., and Huang, D. Multiple anchor learning for visual object detection. In CVPR, 2020.
+Kim, K. and Lee, H. S. Probabilistic anchor assignment with iou prediction for object detection. In ECCV, 2020.
+Kuznetsova, A., Rom, H., Alldrin, N., Uijlings, J., Krasin, I., Pont-Tuset, J., Kamali, S., Popov, S., Malloci, M., Duerig, T., et al. The open images dataset v4: Uniﬁed image classiﬁcation, object detection, and visual relationship detection at scale. arXiv:1811.00982, 2018.
+Law, H. and Deng, J. Cornernet: Detecting objects as paired keypoints. In ECCV, 2018.
+Li, X., Wang, W., Hu, X., Li, J., Tang, J., and Yang, J. Generalized focal loss v2: Learning reliable localization quality estimation for dense object detection. arXiv preprint, 2020a.
+Li, X., Wang, W., Wu, L., Chen, S., Hu, X., Li, J., Tang, J., and Yang, J. Generalized focal loss: Learning qualiﬁed and distributed bounding boxes for dense object detection. In Neural Information Processing Systems, 2020b.
+Li, Y., Chen, Y., Wang, N., and Zhang, Z. Scale-aware trident networks for object detection. ICCV, 2019.
+Lin, T.-Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., Dolla´r, P., and Zitnick, C. L. Microsoft COCO: Common objects in context. In ECCV, 2014.
+Lin, T.-Y., Dolla´r, P., Girshick, R. B., He, K., Hariharan, B., and Belongie, S. J. Feature pyramid networks for object detection. In CVPR, 2017a.
+Lin, T.-Y., Goyal, P., Girshick, R., He, K., and Dolla´r, P. Focal loss for dense object detection. ICCV, 2017b.
+Liu, W., Anguelov, D., Erhan, D., Szegedy, C., Reed, S., Fu, C.-Y., and Berg, A. C. Ssd: Single shot multibox detector. In ECCV, 2016.
+Newell, A., Yang, K., and Deng, J. Stacked hourglass networks for human pose estimation. In ECCV, 2016.
+Qiao, S., Chen, L.-C., and Yuille, A. Detectors: Detecting objects with recursive feature pyramid and switchable atrous convolution. arXiv:2006.02334, 2020.
+Qiu, H., Ma, Y., Li, Z., Liu, S., and Sun, J. Borderdet: Border feature for dense object detection. ECCV, 2020.
+Redmon, J. and Farhadi, A. Yolo9000: better, faster, stronger. CVPR, 2017.
+Redmon, J. and Farhadi, A. Yolov3: An incremental improvement. arXiv:1804.02767, 2018.
+
+Probabilistic two-stage detection
+
+Ren, S., He, K., Girshick, R., and Sun, J. Faster r-cnn: Towards real-time object detection with region proposal networks. In Neural Information Processing Systems, 2015.
+Rezatoﬁghi, H., Tsoi, N., Gwak, J., Sadeghian, A., Reid, I., and Savarese, S. Generalized intersection over union: A metric and a loss for bounding box regression. In CVPR, 2019.
+Shao, S., Li, Z., Zhang, T., Peng, C., Yu, G., Zhang, X., Li, J., and Sun, J. Objects365: A large-scale, high-quality dataset for object detection. In ICCV, 2019.
+Shen, L., Lin, Z., and Huang, Q. Relay backpropagation for effective learning of deep convolutional neural networks. In ECCV, 2016.
+Song, G., Liu, Y., and Wang, X. Revisiting the sibling head in object detector. In CVPR, 2020.
+Sun, P., Kretzschmar, H., Dotiwalla, X., Chouard, A., Patnaik, V., Tsui, P., Guo, J., Zhou, Y., Chai, Y., Caine, B., et al. Scalability in perception for autonomous driving: An open dataset benchmark. CVPR, 2020.
+Tan, J., Wang, C., Li, B., Li, Q., Ouyang, W., Yin, C., and Yan, J. Equalization loss for long-tailed object recognition. In CVPR, 2020a.
+Tan, M., Pang, R., and Le, Q. V. Efﬁcientdet: Scalable and efﬁcient object detection. In CVPR, 2020b.
+Tian, Z., Shen, C., Chen, H., and He, T. FCOS: Fully convolutional one-stage object detection. In ICCV, 2019.
+Tian, Z., Shen, C., Chen, H., and He, T. Fcos: A simple and strong anchor-free object detector. TPAMI, 2020.
+Uijlings, J. R., Van De Sande, K. E., Gevers, T., and Smeulders, A. W. Selective search for object recognition. IJCV, 2013.
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., and Polosukhin, I. Attention is all you need. In Neural Information Processing Systems, 2017.
+Vu, T., Jang, H., Pham, T. X., and Yoo, C. D. Cascade rpn: Delving into high-quality region proposal network with adaptive convolution. NeurIPS 2019, 2019.
+Wang, C.-Y., Bochkovskiy, A., and Liao, H.-Y. M. Scaledyolov4: Scaling cross stage partial network. arXiv preprint arXiv:2011.08036, 2020.
+Wang, J., Chen, K., Yang, S., Loy, C. C., and Lin, D. Region proposal by guided anchoring. In CVPR, 2019.
+Wightman, R. efﬁcientdet-pytorch. https://github. com/rwightman/efficientdet-pytorch, 2020.
+
+Wu, Y., Kirillov, A., Massa, F., Lo, W.-Y., and Girshick, R. Detectron2. https://github.com/ facebookresearch/detectron2, 2019.
+Xie, S., Girshick, R., Dolla´r, P., Tu, Z., and He, K. Aggregated residual transformations for deep neural networks. In CVPR, 2017.
+Yang, Z., Liu, S., Hu, H., Wang, L., and Lin, S. Reppoints: Point set representation for object detection. ICCV, 2019.
+Yang, Z., Xu, Y., Xue, H., Zhang, Z., Urtasun, R., Wang, L., Lin, S., and Hu, H. Dense reppoints: Representing visual objects with dense point sets. In Neural Information Processing Systems, 2020.
+Yu, F., Wang, D., Shelhamer, E., and Darrell, T. Deep layer aggregation. In CVPR, 2018.
+Zhang, H., Wu, C., Zhang, Z., Zhu, Y., Zhang, Z., Lin, H., Sun, Y., He, T., Muller, J., Manmatha, R., Li, M., and Smola, A. Resnest: Split-attention networks. arXiv:2004.08955, 2020a.
+Zhang, S., Chi, C., Yao, Y., Lei, Z., and Li, S. Z. Bridging the gap between anchor-based and anchor-free detection via adaptive training sample selection. In CVPR, 2020b.
+Zhang, X., Wan, F., Liu, C., Ji, R., and Ye, Q. Freeanchor: Learning to match anchors for visual object detection. In Neural Information Processing Systems, 2019.
+Zhou, X., Wang, D., and Kra¨henbu¨hl, P. Objects as points. arXiv:1904.07850, 2019a.
+Zhou, X., Zhuo, J., and Kra¨henbu¨hl, P. Bottom-up object detection by grouping extreme and center points. In CVPR, 2019b.
+Zhu, B., Wang, J., Jiang, Z., Zong, F., Liu, S., Li, Z., and Sun, J. Autoassign: Differentiable label assignment for dense object detection. arXiv:2007.03496, 2020a.
+Zhu, C., Chen, F., Shen, Z., and Savvides, M. Soft anchorpoint object detection. ECCV, 2020b.
+Zhu, X., Hu, H., Lin, S., and Dai, J. Deformable convnets v2: More deformable, better results. CVPR, 2019a.
+Zhu, X., Hu, H., Lin, S., and Dai, J. Deformable ConvNets v2: More deformable, better results. In CVPR, 2019b.
+Zhu, X., Su, W., Lu, L., Li, B., Wang, X., and Dai, J. Deformable detr: Deformable transformers for end-to-end object detection. arXiv:2010.04159, 2020c.
+Zitnick, C. L. and Dolla´r, P. Edge boxes: Locating object proposals from edges. In ECCV, 2014.
+Zoph, B., Ghiasi, G., Lin, T.-Y., Cui, Y., Liu, H., Cubuk, E. D., and Le, Q. V. Rethinking pre-training and selftraining. In Neural Information Processing Systems, 2020.
+
+Probabilistic two-stage detection
+
+A. Tightness of lower bounds
+
+since α ≥ 0.
+
+We brieﬂy show that the max of the two lower bounds on the maximum likelihood objective is indeed quite tight. Recall the original training objective
+
+
+
+
+
+Case 2: P (Ok = 0) ≤ P (bg|Ok = 1) i.e. α ≤ β Here, we analyze the bound
+log P (bg) − B2 = log(β(1 − α) + α) − (1 − α) log β
+
+log
+
+P
+
+(bg)
+
+=
+
+log
+
+P 
+
+(bg|Ok
+
+=
+
+1)
+
+P
+
+(Ok
+
+=
+
+1)
+
++
+
+P
+
+(Ok
+
+=
+
+0) 
+
+.
+
+β
+
+1−α
+
+α
+
+We optimize two lower bounds
+
+since (1 − α) ≤ 1: log P (bg) − B2 ≤ log(β(1 − α) + α) − log β
+
+log P (bg) ≥ log (P (Ok = 0)) .
+B1
+and
+
+(5) since α ≤ β the above is maximal at the largest values α ≤ β since β ≤ 1 (hence at α = β again): log P (bg) − B2 ≤ log(2 − β) ≤ log 2
+
+log P (bg) ≥ P (Ok = 1) log (P (bg|Ok = 1)) (6)
+B2
+The combined bound is
+
+log P (bg) ≥ max(B1, B2).
+
+(7)
+
+This combined bound is within log(2) of the overall objective:
+log P (bg) ≤ max(B1, B2) + log(2).
+
+We start by simplifying the max operation when computing the gap between bound and true objective:
+
+log P (bg) − max(B1, B2) = log P (bg) − B1 if B1 ≥ B2
+log P (bg) − B2 otherwise ≤ log P (bg) − B1 if P (Ok = 0) ≥ P (bg|Ok = 1) .
+log P (bg) − B2 otherwise
+
+Here the last inequality holds by deﬁnition of the max (− max(a, b) ≤ −a and − max(a, b) ≤ −b). Let us analyze each case separately.
+
+Case 1: P (Ok = 0) ≥ P (bg|Ok = 1) i.e. α ≥ β Here, we analyze the bound
+log P (bg) − B1 = log(β(1 − α) + α) − log α
+Due to the monotonicity of the log the maximal value of the above expression for β ≤ α and 1 − α ≥ 0 is the largest possibble values β = α. Hence for any value β ≤ α :
+log P (bg) − B1 ≤ log(α(1 − α) + α) − log α = log(2 − α) ≤ log(2),
+
+Both parts of the max-bound come within log 2 of the actual objective. Most interestingly they are exactly log 2 away only at α = β → 0, where the objective value log(β(1 − α) + α) → −∞ is at negative inﬁnity, and are tighter than log 2 for all other values.
+B. Backbones and training details
+Default backbone. We implement our method based on detectron2 (Wu et al., 2019). Our default model follows the standatd Res50-1x setting in detectron2 (Wu et al., 2019). Speciﬁcally, we use ResNet-50 (He et al., 2016) as the backbone, and train the network with the SGD optimizer for 90K iterations (1x schedule). The base learning rate is 0.02 for two-stage detectors and 0.01 for one-stage detectors, and is dropped by 10x at iterations 60K and 80K. We use multiscale training with the short edge in the range [640,800] and the long edge up to 1333. During training, we set the ﬁrststage loss weight to 0.5 as one-stage detectors are typically trained with learning rate 0.01. During testing, we use a ﬁxed short edge at 800 and long edge up to 1333.
+Large backbone. Following recent works (Tian et al., 2019; Zhu et al., 2020a; Zhang et al., 2020b), we use ResNeXt-32x8d-101-DCN (Xie et al., 2017) as a large backbone. Deformable convolutions (Zhu et al., 2019b) are added to Res4-Res5 layers. It is trained with a 2x schedule (180K iterations with the learning rate dropped at 120K and 160K). We extend the scale augmentation to set the shorter edge in the range [480,960] for the large model (Zhang et al., 2019; Zhu et al., 2020a; Chen et al., 2020). The test scale is ﬁxed at 800 for the short edge and up to 1333 for the long edge.
+Real-time backbone. We follow real-time FCOS (Tian et al., 2020) and use DLA (Yu et al., 2018) with BiFPN (Tan et al., 2020b). We use 4 BiFPN layers with feature channels
+
+Probabilistic two-stage detection
+
+Detector CenterNet2 CascadeRCNN
+
+Loss
+
+AP box
+
+Softmax-CE
+
+26.9 ±0.05
+
+Sigmoid-CE
+
+26.6 ±0.00
+
+EQL (Tan et al., 2020a) 27.3 ±0.00
+
+FedLoss (Ours)
+
+28.2 ±0.05
+
+APrbox
+12.4 ±0.15 12.4 ±0.10 15.1 ±0.45 18.8 ±0.05
+
+APcbox
+25.4 ±0.15 25.1 ±0.05 25.9 ±0.20 26.4 ±0.00
+
+APfbox
+35.0 ±0.05 34.5 ±0.10 34.2 ±0.35 34.4 ±0.00
+
+Softmax-CE
+
+24.0 ±0.10
+
+Sigmoid-CE
+
+23.3 ±0.10
+
+EQL (Tan et al., 2020a) 25.7 ±0.01
+
+FedLoss (Ours)
+
+27.1 ±0.05
+
+7.6 ±0.10 8.2 ±0.30 15.5 ±0.25 16.1 ±0.10
+
+22.9 ±0.15 21.9 ±0.40 24.6 ±0.70 26.0 ±0.35
+
+32.7 ±0.05 31.5 ±0.25 31.5 ±0.45 33.0 ±0.25
+
+Table 9. Ablation experiments on different classiﬁcation losses on LVIS v1 validation. We show results with both our proposed detector (top) and the baseline detector (bottom). All models are ResNet50-1x with FPN P3-P7 and multi-scale training. We report mean and standard deviation over 2 runs.
+
+160 (Tian et al., 2020). The output FPN levels are reduced to 3 levels with stride 8-32. We train our model with scale augmentation and set the short edge in the range [256,608], with the long edge up to 900. We ﬁrst train with a 4x schedule (360K iterations with the learning rate dropped at the last 60K and 20K iterations) to compare with real-time FCOS (Tian et al., 2020). We then train with a long schedule that repeatedly ﬁne-tunes the model with the 4x schedule for 6 cycles (i.e., a total of 288 epochs). During testing, we set the short edge at 512 and the long edge up to 736 (Tian et al., 2020). We reduce the number of proposals to 128 for the second stage. Other hyperparameters are unchanged.
+C. Extra-large model details
+To push the state-of-the-art results for object detection, we integrate recent advances into our framework to design an extra-large model. Table.10 outlines our changes. Unless speciﬁed, we keep the test resolution as 800 × 1333 even when the training size changes. We ﬁrst switch the network backbone from ResNeXt-101-DCN to Res2Net-101DCN (Gao et al., 2019a). This speeds up training, and gives a decent 0.6 mAP improvement. Next, we change the data augmentation style from the Faster RCNN style (Wu et al., 2019; Chen et al., 2019b) (random resize short edge) to EfﬁcientDet style (Tan et al., 2020b), which involves resizing the original image and crop a square region from it. We ﬁrst use a crop size of 896 × 896, which is close to the original 800 × 1333. We use a large resizing range of [0.1, 2] following the implementation in Wightman (2020), and train with a 4× schedule (360k iterations). The stronger augmentation and longer schedule together improve the result to 51.4 mAP. Next, we change the crop size to 1280 × 1280, and add BiFPN (Tan et al., 2020b) to the backbone. We follow EfﬁcientDet (Tan et al., 2020b) to use 288 channels and 7 layers in the BiFPN that ﬁts the 1280 × 1280 input size. This brings the performance to 53.0 mAP. Finally, we use the technics in Zoph et al. (2020) to use COCO unlabeled images (Lin et al., 2014) for self-training. Speciﬁcally, we
+
+mAP
+
+CenterNet2
+
+49.9
+
++ Res2Net-101-DCN
+
+50.6
+
++ Square crop Aug & 4x schedule 51.2
+
++ train size 1280×1280 & BiFPN 52.9
+
++ ft. w/ self training 4x
+
+54.4
+
++ test size 1560×1560
+
+56.1
+
+Table 10. Road map from the large backbone to the extra-large backbone. We show COCO validation mAP.
+
+run a YOLOv4 (Wang et al., 2020) model on the COCO unlabeled images. We set all predictions with scores > 0.5 as pseudo-labels. We then concatenate this new data with the original COCO training set, and ﬁnetune our previous best model on the concatenated dataset for another 4× schedule. This model gives 54.4 mAP with test size 800×1333. When we increase the test size to 1560 × 1560, the performance further raises to 56.1 mAP on COCO validation and 56.4 mAP on COCO test-dev.
+We also combined part of these advanced training technics in our real-time model. Speciﬁcally, we use the EfﬁcientDetstyle square-crop augmentation, use the original FPN level P3-P7 (instead of P3-P5), and use self-training. These modiﬁcations improves our real-time model from 45.6mAP@ 25ms to 49.2 mAP@ 30ms.
+
+D. Federated Loss for LVIS
+LVIS annotates images in a federated way (Gupta et al., 2019). I.e., the images are only sparsely annotated. This leads to much sparser gradients, especially for rare classes (Tan et al., 2020a). On one hand, if we treat all unannotated objects as negatives, the resulting detector will be too pessimistic and ignore rare classes. On the other hand, if we only apply losses to annotated images the resulting classiﬁer will not learn a sufﬁciently strong background model. Furthermore, neither strategy reﬂects the natural distribution of positive and negative labels on a potential
+
+Probabilistic two-stage detection
+
+mAP Runtime
+
+FasterRCNN-CenterNet
+
+40.8
+
+GA RPN (Wang et al., 2019) 39.6
+
+Cascade RPN (Vu et al., 2019) 40.4
+
+50ms 75ms 97ms
+
+Table 11. Comparison to other proposal networks. All models are trained with Res50-1x without data augmentation. The models of GA RPN and Cascade RPN are from mmdetection (Chen et al., 2019b)
+
+test set. To remedy this, we choose a middle ground and apply a federated loss to a subset S of classes for each training image. S contains all positive annotations, but only a random subset of negatives.
+
+We sample the negative categories in proportion to their square-root frequency in the training set, and empirically set |S| = 50 in our experiments. During training, we use a binary cross-entropy loss on all classes in S and ignore classes outside of S. The set S is sampled per iteration. The same training image may be in different subsets of classes in consecutive iterations.
+
+Table 9 compares the proposed federated loss to baselines including the LVIS v0.5 challenge winner, the equalization loss (EQL) (Tan et al., 2020a). For EQL, we follow the authors’ settings in LVIS v0.5 to ignore the 900 tail categories. Switching from the default softmax to sigmoid incurs a slight performance drop. However, our federated loss more than makes up for this drop, and outperforms EQL and other baselines signiﬁcantly.
+
+E. Comparison with other proposal networks
+GA RPN (Wang et al., 2019) and CascadeRPN (Vu et al., 2019) also improves the original RPN, by using deformable convolutions (Zhu et al., 2019a) in the RPN layers (Wang et al., 2019) or using a cascade of proposal networks (Vu et al., 2019). We train a probablistic two-stage detector FasterRCNN-CenterNet under the same setting (FasterRCNN, Res50-1x, without data augmentation), and compare them in Table 11. Our model performs better than both proposal network, and runs faster.
+
+F. Dataset details
+We use the ofﬁcial release and the standard train/ validation splot. COCO (Lin et al., 2014) contains 118k training images, 5k validation images, and 20k test images for 80 categories. LVIS (V1) (Gupta et al., 2019) contains 100k training images and 20k validation images for 1203 categories. Objects365 (Shao et al., 2019) contains 600k training images and 30k validation images for 365 categories. All datasets collect images from the internet and provide accurate annotations.
+

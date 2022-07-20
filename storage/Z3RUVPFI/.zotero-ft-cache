@@ -1,0 +1,89 @@
+
+Skip to main content
+Cornell University
+We gratefully acknowledge support from
+the Simons Foundation and member institutions.
+arxiv logo > cs > arXiv:1905.10048
+
+Help | Advanced Search
+Search
+Computer Science > Computer Vision and Pattern Recognition
+(cs)
+[Submitted on 24 May 2019 ( v1 ), last revised 27 Apr 2020 (this version, v4)]
+Title: Beyond Intra-modality: A Survey of Heterogeneous Person Re-identification
+Authors: Zheng Wang , Zhixiang Wang , Yinqiang Zheng , Yang Wu , Wenjun Zeng , Shin'ichi Satoh
+Download PDF
+
+    Abstract: An efficient and effective person re-identification (ReID) system relieves the users from painful and boring video watching and accelerates the process of video analysis. Recently, with the explosive demands of practical applications, a lot of research efforts have been dedicated to heterogeneous person re-identification (Hetero-ReID). In this paper, we provide a comprehensive review of state-of-the-art Hetero-ReID methods that address the challenge of inter-modality discrepancies. According to the application scenario, we classify the methods into four categories -- low-resolution, infrared, sketch, and text. We begin with an introduction of ReID, and make a comparison between Homogeneous ReID (Homo-ReID) and Hetero-ReID tasks. Then, we describe and compare existing datasets for performing evaluations, and survey the models that have been widely employed in Hetero-ReID. We also summarize and compare the representative approaches from two perspectives, i.e., the application scenario and the learning pipeline. We conclude by a discussion of some future research directions. Follow-up updates are avaible at: this https URL 
+
+Comments: 	Accepted by IJCAI 2020. Project url: this https URL
+Subjects: 	Computer Vision and Pattern Recognition (cs.CV)
+Cite as: 	arXiv:1905.10048 [cs.CV]
+  	(or arXiv:1905.10048v4 [cs.CV] for this version)
+  	https://doi.org/10.48550/arXiv.1905.10048
+Focus to learn more
+arXiv-issued DOI via DataCite
+Journal reference: 	IJCAI 2020
+Submission history
+From: Zhixiang Wang [ view email ]
+[v1] Fri, 24 May 2019 06:27:32 UTC (1,807 KB)
+[v2] Mon, 22 Jul 2019 06:37:30 UTC (7,598 KB)
+[v3] Mon, 25 Nov 2019 13:39:39 UTC (4,088 KB)
+[v4] Mon, 27 Apr 2020 15:35:46 UTC (676 KB)
+Full-text links:
+Download:
+
+    PDF
+    Other formats 
+
+( license )
+Current browse context:
+cs.CV
+< prev   |   next >
+new | recent | 1905
+Change to browse by:
+cs
+References & Citations
+
+    NASA ADS
+    Google Scholar
+    Semantic Scholar
+
+DBLP - CS Bibliography
+listing | bibtex
+Zheng Wang
+Zhixiang Wang
+Yang Wu
+Jingdong Wang
+Shin'ichi Satoh
+a export bibtex citation Loading...
+Bookmark
+BibSonomy logo Mendeley logo Reddit logo ScienceWISE logo
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer ( What is the Explorer? )
+Litmaps Toggle
+Litmaps ( What is Litmaps? )
+scite.ai Toggle
+scite Smart Citations ( What are Smart Citations? )
+Code & Data
+Demos
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax ( What is MathJax? )
+
+    About
+    Help
+
+    contact arXiv Click here to contact arXiv Contact
+    subscribe to arXiv mailings Click here to subscribe Subscribe
+
+    Copyright
+    Privacy Policy
+
+    Web Accessibility Assistance
+
+    arXiv Operational Status
+    Get status notifications via email or slack
+

@@ -1,0 +1,76 @@
+
+Skip to main content
+Cornell University
+We gratefully acknowledge support from
+the Simons Foundation and member institutions.
+arXiv.org > cs > arXiv:2006.02609
+
+Help | Advanced Search
+Search
+Computer Science > Computer Vision and Pattern Recognition
+(cs)
+[Submitted on 4 Jun 2020]
+Title: Simple Unsupervised Multi-Object Tracking
+Authors: Shyamgopal Karthik , Ameya Prabhu , Vineet Gandhi
+Download PDF
+
+    Abstract: Multi-object tracking has seen a lot of progress recently, albeit with substantial annotation costs for developing better and larger labeled datasets. In this work, we remove the need for annotated datasets by proposing an unsupervised re-identification network, thus sidestepping the labeling costs entirely, required for training. Given unlabeled videos, our proposed method (SimpleReID) first generates tracking labels using SORT and trains a ReID network to predict the generated labels using crossentropy loss. We demonstrate that SimpleReID performs substantially better than simpler alternatives, and we recover the full performance of its supervised counterpart consistently across diverse tracking frameworks. The observations are unusual because unsupervised ReID is not expected to excel in crowded scenarios with occlusions, and drastic viewpoint changes. By incorporating our unsupervised SimpleReID with CenterTrack trained on augmented still images, we establish a new state-of-the-art performance on popular datasets like MOT16/17 without using tracking supervision, beating current best (CenterTrack) by 0.2-0.3 MOTA and 4.4-4.8 IDF1 scores. We further provide evidence for limited scope for improvement in IDF1 scores beyond our unsupervised ReID in the studied settings. Our investigation suggests reconsideration towards more sophisticated, supervised, end-to-end trackers by showing promise in simpler unsupervised alternatives. 
+
+Subjects: 	Computer Vision and Pattern Recognition (cs.CV)
+Cite as: 	arXiv:2006.02609 [cs.CV]
+  	(or arXiv:2006.02609v1 [cs.CV] for this version)
+Submission history
+From: Shyamgopal Karthik [ view email ]
+[v1] Thu, 4 Jun 2020 01:53:18 UTC (311 KB)
+Full-text links:
+Download:
+
+    PDF
+    Other formats 
+
+Current browse context:
+cs.CV
+< prev   |   next >
+new | recent | 2006
+Change to browse by:
+cs
+References & Citations
+
+    NASA ADS
+    Google Scholar
+    Semantic Scholar
+
+DBLP - CS Bibliography
+listing | bibtex
+Ameya Prabhu
+Vineet Gandhi
+a export bibtex citation Loading...
+Bookmark
+BibSonomy logo Mendeley logo Reddit logo ScienceWISE logo
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer ( What is the Explorer? )
+Litmaps Toggle
+Litmaps ( What is Litmaps? )
+scite.ai Toggle
+scite Smart Citations ( What are Smart Citations? )
+Code & Data
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax ( What is MathJax? )
+
+    About
+    Help
+
+    contact arXiv Click here to contact arXiv Contact
+    subscribe to arXiv mailings Click here to subscribe Subscribe
+
+    Copyright
+    Privacy Policy
+
+    Web Accessibility Assistance
+
+    arXiv Operational Status
+    Get status notifications via email or slack
+

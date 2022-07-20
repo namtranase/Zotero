@@ -1,0 +1,762 @@
+MOTR: End-to-End Multiple-Object Tracking with TRansformer
+Fangao Zeng *, Bin Dong ∗, Tiancai Wang ∗, Xiangyu Zhang, Yichen Wei
+MEGVII Technology {zengfangao, dongbin, wangtiancai, zhangxiangyu, weiyichen}@megvii.com
+
+arXiv:2105.03247v2 [cs.CV] 15 Sep 2021
+
+Abstract
+The key challenge in multiple-object tracking task is temporal modeling of the object under track. Existing tracking-bydetection methods adopt simple heuristics, such as spatial or appearance similarity. Such methods, in spite of their commonality, are overly simple and lack the ability to learn temporal variations from data in an end-to-end manner.
+In this paper, we present MOTR, a fully end-to-end multipleobject tracking framework. It learns to model the long-range temporal variation of the objects. It performs temporal association implicitly and avoids previous explicit heuristics. Built upon DETR (Carion et al. 2020), MOTR introduces the concept of “track query”. Each track query models the entire track of an object. It is transferred and updated frame-byframe to perform iterative predictions in a seamless manner. Tracklet-aware label assignment is proposed for one-to-one assignment between track queries and object tracks. Temporal aggregation network together with collective average loss is further proposed to enhance the long-range temporal relation. Experimental results show that MOTR achieves competitive performance and can serve as a strong Transformerbased baseline for future research. Code is available at https: //github.com/megvii-model/MOTR.
+1 Introduction
+Multiple-object tracking (MOT) is a class of visual object detection, where the task is not only localize all targets in each frame but also predict the moving trajectories of those objects in video sequences (Wojke et al. 2017; Bergmann et al. 2019). Most existing methods model the temporal motion, regarding to the appearance and position variances, in a separate manner. Usually, appearance variance is measured by the Re-ID similarity (Wang et al. 2020; Zhang et al. 2021) while the position variance is modeled via heuristic like Kalman Filtering (Bewley et al. 2016), making the learning of temporal motion not end-to-end. Besides, these methods, mainly following the tracking-by-detection paradigm, tend to require post-processes like IoU-matching (Bochinski et al. 2017) to explicitly associate the bounding box sequences as tracks, also making the whole pipeline not endto-end. In this paper, we aim to introduce a fully end-to-end
+*Equal contribution. This work is supported by The National Key Research and Development Program of China (No.2017YFA0700800) and Beijing Academy of Artiﬁcial Intelligence (BAAI).
+
+Image feature Object queries
+
+Transformer Decoder
+
+Set Prediction
+
+Box-i Box-j Box-k
+
+Sentence features
+…
+Hidden states
+
+(a) One-shot prediction in DETR.
+
+Word-1 Word-2 Word-N
+…
+
+Transformer Decoder
+
+…
+Sequence Prediction
+
+Iterative Update
+
+(b) Iterative prediction in machine translation.
+
+Multi-frame features
+…
+
+𝑇1 𝑇2 𝑇𝑁 … Track-i
+
+Track queries
+
+Transformer Decoder
+Iterative Update
+
+… Track-j … Track-k
+Set of Sequence Prediction
+
+(c) Iterative prediction of box sequences in MOTR.
+
+Figure 1: (a) DETR achieves end-to-end detection by interacting object queries with image features and performs oneto-one assignment between the updated queries and objects. (b) Machine translation approaches perform iterative predictions by recurrently updating the hidden states. (c) Inspired by both (a) and (b), MOTR performs set of sequence prediction by updating the track queries. Each track query represents a track. Best viewed the ﬁgure in color.
+
+MOT framework that jointly learns the temporal variances of both appearance and position, removing explicit associations, such as IoU and Re-ID matching.
+Recently, DETR (Carion et al. 2020; Zhu et al. 2020) was proposed for end-to-end object detection. It formulates the object detection as a set prediction problem. As shown in Fig. 1(a), object queries, served as a decoupled representation of objects, are input to the Transformer decoder and interacted with the image feature to update its representation. Bipartite matching is further adopted to achieve one-to-one assignment between the object queries and ground-truths (GTs), eliminating post-processes like NMS. Different from object detection, MOT can be regraded as a sequence prediction problem. How to perform sequence prediction on the
+
+end-to-end DETR system is an opening question. In the ﬁeld of machine translation, predicting sequence
+in an iterative manner is popular (Sutskever et al. 2014; Vaswani et al. 2017). Usually, a hidden state is introduced to encode context and iteratively interacts with sentence features for sequence prediction of translated words (see the Fig. 1(b)). Inspired by these advances in machine translation, we intuitively regard MOT as a problem of set of sequence prediction since MOT requires a set of object sequences. Each sequence corresponds to an object trajectory. Technically, we extend object query in DETR to track query for predicting object sequences. Track queries are served as the hidden states of object tracks. The representations of track queries are updated in Transformer decoder and used to predict the object trajectory in an iterative manner (see the Fig. 1(c)). Speciﬁcally, track queries are updated through self-attention and cross-attention by multi-frame features. The updated track queries are further used to predict the bounding boxes. All predictions of one track query naturally form the track of one object.
+To achieve the goal above, there are two main problems: 1) how to track one object by one track query; 2) how to deal with new-born and dead objects. For the ﬁrst problem, we technically introduce tracklet-aware label assignment (TALA) during training. It means that predictions of one track query are supervised by bounding box sequences with the same identity. For second problem, we employ a track query set of dynamic length. Queries of new-born objects are merged into the set while queries of dead objects are removed. We term such process as entrance and exit mechanism. In this way, explicit track associations like IoU matching are no longer required during inference. Moreover, with the iterative update of track query, temporal variances regarding to both appearance and position can be learned implicitly. To enhance the learning of long-range temporal motion, we further propose collective average loss (CAL) and temporal aggregation network (TAN). With the CAL, MOTR takes video clips as input during training. The parameters of MOTR are updated based on the overall loss calculated for the whole video clip. TAN introduces a shortcut for track query to aggregate historical information from its previous states via multi-head attention.
+MOTR is a simple online tracker. It is easy to developed based on DETR with small modiﬁcation on label assignment. It is a truly end-to-end MOT framework, requiring no post-processes, such as the track NMS or IoU matching employed in our concurrent works, TransTrack (Sun et al. 2020) and TrackFormer (Meinhardt et al. 2021). Experimental results on MOT16 and MOT17 datasets show that MOTR achieves promising performance.
+To summarize, our contributions are listed as below:
+• We present a fully end-to-end MOT framework, termed MOTR based on DETR. MOTR can implicitly learn the appearance and position variances in a joint manner.
+• We formulates MOT as a problem of set of sequence prediction. To solve it, track query is extended as the hidden state for iterative update and prediction.
+• TALA is proposed for one-to-one assignment between
+
+track queries and objects. An entrance and exit mechanism is introduced to deal with new-born and dead tracks.
+• CAL and TAN are further proposed to enhance the learning of long-range temporal motion.
+2 Related Work
+Transformer-based Architectures: Transformer (Vaswani et al. 2017) was ﬁrst introduced to aggregate information from the entire input sequence for machine translation. It mainly involves self-attention and cross-attention mechanisms. Since that, it was gradually introduced to many ﬁelds, such as speech processing (Li et al. 2019; Chang et al. 2020) and computer vision (Wang et al. 2018; Camgoz et al. 2020). Recently, DETR (Carion et al. 2020) combined convolutional neural network (CNN), Transformer and bipartite matching to perform end-to-end object detection. To achieve the fast convergence, Deformable DETR (Zhu et al. 2020) introduced deformable attention module into Transformer encoder and Transformer decoder. ViT (Dosovitskiy et al. 2021) built a pure Transformer architecture for image classiﬁcation. The image is divided into 16x16 patches, which serve as the input of Transformer-based network after linear projection. Further, Swin Transformer (Liu et al. 2021) proposed shifted windowing scheme to perform self-attention within local windows, bringing greater efﬁciency. Multiple-Object Tracking: Dominant MOT methods mainly followed the tracking-by-detection paradigm (Bewley et al. 2016; Leal-Taixe´ et al. 2016; Schulter et al. 2017; Sharma et al. 2018; Wojke et al. 2017). These approaches usually ﬁrst employ object detectors to localize objects in each frame and then perform track association between adjacent frames to generate the tracking results. SORT (Bewley et al. 2016) conducted track association by combining Kalman Filter (Welch et al. 1995) and Hungarian algorithm (Kuhn 1955). DeepSORT (Wojke et al. 2017) and Tracktor (Bergmann et al. 2019) introduced an extra cosine distance and compute the appearance similarity for track association. Track-RCNN (Shuai et al. 2020), JDE (Wang et al. 2020) and FairMOT (Zhang et al. 2021) further added a Re-ID branch on top of object detector in a joint training framework, incorporating object detection and Re-ID feature learning. Our concurrent works, TransTrack (Sun et al. 2020) and TrackFormer (Meinhardt et al. 2021) also develop Transformer-based frameworks for MOT. For direct comparison with them, please refer to Sec. 3.7. Iterative Sequence Prediction: Predicting sequence via sequence-to-sequence (seq2seq) together with encoderdecoder architecture is popular in machine translation (Sutskever et al. 2014; Vaswani et al. 2017) and text recognition (Shi et al. 2016). In such seq2seq framework, the input is encoded into intermediate representation by the encoder network. Then, a hidden state with task-speciﬁc context information, is introduced and iteratively interacted with the intermediate representation to generate target sequence through the decoder network. The iterative decode process contains several iterations. In each iteration, the hidden state decodes one element of the target sequence.
+
+3 Method
+3.1 Query in Object Detection
+DETR (Carion et al. 2020) introduced object queries, a ﬁxed-length set of learnable embeddings, to represent objects. Object queries are input to the Transformer decoder and interacted with image feature extracted from Transformer encoder to update their representation. Bipartite matching is further adopted to achieve one-to-one assignment between the updated object queries and ground-truths (GTs). Here, we simply write the object query as “detect query” to specify the query used for object detection.
+
+3.2 Detect Query and Track Query
+
+When adapting DETR framework from object detection to
+
+MOT, two main problem arise: 1) how to track one object
+
+by one track query; 2) how to adaptively track objects since
+
+each frame may introduce new-born and dead objects. In this
+
+paper, we extended the track queries from detect queries.
+
+Track queries can serve as hidden states to perform iterative
+
+tracking prediction. As shown in Fig. 2, the track query set
+
+is empty at initial frame T1. The ﬁxed-length detect queries (yellow boxes) in DETR are used to detect new-born objects
+
+(such as “3” at Ti). Detect queries assigned to new-born objects are updated and merged into the track query set at next
+
+frame. Track query set is of adaptive length and dynamically
+
+updated. Track queries assigned to dead objects (“2” at Tk) are removed from track query set.
+
+𝑇1
+
+𝑇𝑖
+
+𝑇𝑗
+
+𝑇𝑘
+
+Object-1
+
+Object-2
+
+1
+
+3
+
+2
+
+Object-3 Entrance
+
+Exit
+
+1
+
+1
+
+1
+
+Detect query
+
+2
+
+2
+
+3
+
+3
+
+Track query
+
+Figure 2: The update process of detect (object) queries and track queries under some typical MOT cases.
+
+3.3 Tracklet-Aware Label Assignment
+In DETR, one detect (object) query may be assigned to any one object in image since the label assignment is determined by performing bipartite matching between all detect queries and GTs. While in MOTR, detect queries are only used to detect the new-born objects and track queries predict these tracked objects. Here, we introduce the tracklet-aware label assignment (TALA) to achieve this goal.
+Generally, TALA consists of two strategies. For detect queries, we modify the assignment strategy in DETR as new-born-only, where bipartite matching is conducted between the detect queries and the GTs of new-born objects.
+
+For track queries, we design an target-consistent assign-
+ment strategy. Track queries are excluded from the bipar-
+tite matching and follow the same assignment of previous
+frames. Formally, we denote the predictions and GTs for frame Ti as Yi = {Ytir, Ydiet} and Yˆi = {Yˆtir, Yˆdiet}, respectively. Here, Ytir, Ydiet are the predictions of track queries and detect queries. Yˆtir and Yˆdiet are the corresponding GTs. The label assignment results between the predictions and
+GTs for track queries and detect queries can be written as ωi = {ωtir, ωdi et}, and can be formulated as:
+
+ωˆdi et = arg min
+ωdi et∈Ωi
+
+L(Ydiet|ωdiet , Yˆdiet))
+
+(1)
+
+ωtir =
+
+∅ ωtir−1 ∪ ωdi−et1
+
+i=1 2≤i≤N
+
+(2)
+
+Here, N is the length of video sequence and L is the pair-
+
+wise matching cost deﬁned in DETR. At the initial frame T1, ωt1r is empty since no objects are tracked previously while ωd1et is determined by the bipartite matching between Yˆd1et and Yd1et. At any frame Ti|2≤i≤N , ωdi et is still determined by the bipartite matching between Yˆdiet and Ydiet. ωtir is generated by merging ωtir−1 and ωdi−et1. It means that we follow the same assignment of frame Ti−1 for tracked objects. While for the new-born objects in Ti−1 frame, we merge the corresponding detect queries into the track query set of Ti. The detailed process that merges the detect queries into track
+
+query set will be described in Sec. 3.5.
+
+TALA strategy is simple and effective thanks to the pow-
+
+erful attention mechanism in Transformer. In practice, detect
+
+queries and track queries are ﬁrst concatenated together and
+
+input to the Transformer decoder to update their representa-
+
+tion. In Transformer decoder, the concatenated queries will
+
+interact with each other by self-attention and suppress those
+
+detect queries that detect the tracked objects. It is similar to
+
+the duplicate removal in DETR where duplicate boxes are
+
+suppressed with low scores.
+
+3.4 MOTR Architecture
+The overall architecture of MOTR is shown in Fig. 3. Video
+sequences are input to the convolutional neural network
+(CNN) (e.g. ResNet-50 (He et al. 2016)) and Transformer
+encoder in DETR (Carion et al. 2020) to extract the basic feature list f = {f1, f2, . . . , fN }. For the T1 frame, the basic feature f1 together with the ﬁxed-length detect queries qd are input to the Transformer decoder to generate the track queries qo1t. qo1t are used to generated the prediction Y1 for the T1 frame and passed through the query interaction module (QIM) to generate the updated track query set qt2 for the T2 frame. For any Ti frame, where i ∈ [2, N ], the updated track query set qti generated by the QIM from the Ti−1 frame and the detection query set qd will be concatenated. The concatenated query set together with the basic feature fi is input to the shared Transformer decoder to generate updated query set qoit and the prediction Yi for the Ti frame. For inference time, such process can be repeated for a whole video se-
+quence. During training phase, the label assignment of each
+frame between the predictions and GTs is determined by
+
+Video Sequence 𝑇1
+
+𝑌1 …Pre…ds 𝑌𝑖 …… 𝑌𝑁 Collective Average Loss
+
+𝑌෡1 …GT…s 𝑌෡𝑖 …… 𝑌෢𝑁
+
+Frame feature
+
+𝑌1
+
+𝑌𝑖
+
+𝑌𝑁
+
+Classification
+
+𝑇2
+
+CNN
+
+𝑞𝑜1𝑡
+
+QIM
+
+𝑞𝑜𝑖 𝑡
+
+QIM
+
+𝑞𝑜𝑁𝑡
+
+Regression
+
+… …
+
+𝑞𝑑
+
+Dec
+
+𝑞𝑡2 … 𝑞𝑡𝑖 C
+
+Dec
+
+𝑞𝑡𝑖+…1 𝑞𝑡𝑁 C
+
+Dec
+
+…
+
+𝑞𝑑
+
+…
+
+𝑞𝑑
+
+Detect query
+
+𝑇N
+
+Enc 𝑓1
+
+𝑓𝑖
+
+𝑓𝑁
+
+Track query
+
+…
+
+…
+
+Figure 3: The overall architecture of MOTR. Multi-frame video sequence is input to convolutional neural network (CNN)
+backbone and Transformer encoder (Enc) to extract multi-frame features f = {f1, f2, ..., fN }. For T1 frame, basic feature f1 and detect query qd (yellow box) are injected to Transformer decoder (Dec) to produce original track queries qo1t. qo1t is used to generate the prediction Y1 for T1 frame. For any Ti frame, track queries qti transferred from Ti−1 frame are concatenated with detect query qd and input to the Dec to produce the qoit. qoit is employed to produce the prediction Yi and input to the query interaction module (QIM) to update the representation for Ti+1 frame. Predictions of the video clip are aggregated together and used to calculate the collective average loss with the ground-truths.
+
+Eq. 1 and Eq. 2. All the predictions of the video clip are
+collected into a prediction bank {Y1, Y2, . . . , YN }, which are further supervised by the GTs bank {Yˆ1, Yˆ2, . . . , YˆN } through collective average loss (CAL) described in Sec. 3.6.
+
+3.5 Query Interaction Module
+
+In this section, we describe query interaction module (QIM)
+in detail. QIM mainly includes object entrance and exit
+mechanism and temporal aggregation network (TAN).
+Object Entrance and Exit As mentioned above, some ob-
+jects in video sequences may appear or disappear at inter-
+mediate frames. Here, we introduce how to deal with the
+new-born and dead objects in our method. For any Ti frame, track queries qti are concatenated with the detect queries qd and input to the Transformer decoder, producing the original track queries qoit. For clarity, we redrawn it on the left side of Fig. 4. The track queries qoit can be divided into two sets: qoit = {qtir, qdi et}. qdi et contains new-born objects while qtir includes both tracked and dead objects.
+During training (shown in Fig. 4(a)), track queries of dead objects (object “2”) in qtir are removed based on the comparison between ground-truth Yˆi and matching result ωtir deﬁned in Eq. 2. It means that the corresponding track queries
+will be ﬁltered if these objects disappear at current frame while the rest of track queries qitr are reserved. For those new-born objects (object “3”), track queries qidet are kept based on matching result ωdi et deﬁned in Eq. 1.
+For the inference (shown in Fig. 4(b)), we use classiﬁca-
+tion scores of prediction Yi to determine when a track appears and disappears. For new-born objects, track queries in qdiet, whose classiﬁcation scores are higher than the entrance threshold τen, are kept while the rest of queries are removed:
+
+qitr = {qk ∈ qtir|sk > τn}
+
+(3)
+
+where sk is the classiﬁcation score corresponding to the kth track query qk in qdi et. For dead objects (object “2”), track
+
+queries in qtir, whose classiﬁcation scores (0.23) lower than the exit threshold τex for consecutive M frames, are re-
+moved and the rest of track queries (object “1”) are kept:
+
+qitr = {qk ∈ qtir| max {sik, . . . , ski−M } > τex} (4)
+
+Temporal Aggregation Network In last section, we de-
+scribed the object entrance and exit mechanism to deal with
+the entrance and exit objects. Here, we introduce the tempo-
+ral aggregation network (TAN) to enhance the temporal re-
+lation and provide contextual priors for the tracked objects.
+As shown in Fig. 4(c), the inputs of TAN are the ﬁltered track queries qitr and qidet for tracked and new-born objects. We also collect the track queries of tracked objects qit−r 1 for temporal aggregation. The track queries qit−r 1 ﬁrst add with qitr. The resulting queries are input to the multi-head attention (MHA) module as both the query and key elements to generate the attention weights. qitr is treated as the value element of MHA and updated by dot production:
+
+tgt
+
+=
+
+σs( (qitr
+
++
+
+qti−r 1)√· (qitr d
+
++
+
+qti−r 1)T
+
+)
+
+·
+
+qitr
+
+(5)
+
+where T denotes the transpose operation. σs is the softmax function and d is the dimension of track queries. After that,
+the tgt is further reﬁned by a feed forward network (FFN) and the resulting track queries are concatenated with qidet to produce the track query set qti+1.
+
+3.6 Collective Average Loss
+Training samples are important for temporal modeling of track since MOTR learns temporal variances from data rather than hand-crafted heuristics like Kalman Filtering. Common training strategies, like training within only two frames, fail to generate training samples of long-range object motion, such as re-birth. Different with them, MOTR takes video clips as input. In this way, training samples of longrange object motion can be generated for temporal learning.
+
+12
+
+𝑞"#
+
+𝑞&
+
+𝑓# Dec
+
+12 𝑞'# "
+𝑌#
+
+scores
+
+1 𝑞*"#)
+
+𝑞*&# (" 3
+
+TAN
+
+𝜔"#) ↔ 𝑌0"#)
+split 2 1 𝑞"#)
+0.23 0.87
+
+𝜔&# (" ↔ 𝑌0&#(" (a) Training
+𝑞&# ("
+0.15 0.84 0.09
+
+𝑞"#$% 31
+
+𝑞*"#)+%
+
+𝑞*"#)
+
+𝑞*&# ("
+
++
+
+Q
+
+K
+
+V
+
+MHA
+
+Add & Norm
+
+FFN
+
+1 Tracked object 2 Dead object 3 New-born object
+
+filter 1 𝑞*"#)
+
+filter 𝑞*&# (" 3
+
+TAN
+
+(b) Inference
+
+𝑞"#$% 31
+QIM
+
+Add & Norm 𝑞"#$%
+C
+(c) Temporal Aggregation
+
+Figure 4: The process of query interaction module (QIM). For Ti frame, the inputs of QIM are the track queries qoit generated by Transformer decoder (Dec) and the prediction scores in Yi. qoit is divided into two parts {qtir, qdi et}. qtir includes the tracked and exit objects while qdiet includes the new-born objects. During training (shown in (a)), track queries are ﬁltered based on matching results in Eq. 2 and Eq. 1 while they are ﬁltered based on the conﬁdence scores predicted for inference (shown in (b)).
+Temporal aggregation network (TAN) is introduced to enhance the learning of long-range temporal motion, shown in (c).
+
+Instead of calculating the loss frame-by-frame, our col-
+lective average loss (CAL) collects the multiple predictions Y = {Yi}Ni=1. Then the loss within the whole video sequence is calculated by GTs Yˆ = {Yˆi}Ni=1 and the matching results ω = {ωi}Ni=1. CAL is the overall loss of the whole video sequence, normalized by the number of objects:
+
+N
+
+Lo(Y
+
+|ω ,
+
+Yˆ
+
+)
+
+=
+
+(L(Ytir
+n=1
+
+|ωtir
+
+,
+
+Yˆtir )+L(Ydiet |ωdi et
+N
+
+,
+
+Yˆdiet))
+
+(6)
+
+(Vi)
+
+n=1
+
+where Vi = Vtir +Vdiet denotes the total number of GTs at Ti frame. Vtir and Vdiet are the numbers of tracked objects and new-born objects at Ti frame, respectively. L is the loss of single frame, which is similar to the detection loss in DETR. The single-frame loss L can be formulated as:
+
+L(Yi|ωi , Yˆi) = λclsLcls + λl1 Ll1 + λgiouLgiou (7)
+where Lcls is the focal loss (Lin et al. 2017). Ll1 denotes the L1 loss and Lgiou is the generalized IoU loss (Rezatoﬁghi et al. 2019). λcls, λl1 and λgiou are the corresponding weight coefﬁcients.
+
+3.7 Discussion
+Based on DETR, our concurrent works, TransTrack (Sun et al. 2020) and TrackFormer (Meinhardt et al. 2021) also develop the Transformer-based frameworks for MOT. However, our method shows large differences compared to them. TransTrack models a full track as a combination of several independent short tracklets. Similar to the track-bydetection paradigm, TransTrack decouples MOT as two subtasks: 1) detect object pairs as short tracklets within two adjacent frames; 2) associate short tracklets as full tracks by IoU-matching. While for our MOTR, we models a full
+
+track in an end-to-end manner through the iterative update of track query, requiring no IoU/ReID-matching. TrackFormer shares the same track modeling with us. However, TrackFormer still learns within two adjacent frames. As discussed at Sec. 3.6, learning within short-range will result in relatively weak temporal learning. Therefore, TrackFormer employs heuristics, such as Track NMS and Re-ID features, to ﬁlter out duplicate tracks. Different with TrackFormer, our MOTR learns stronger temporal motion with CAL and TAN, removing the need of those heuristics. For direct comparison with TransTrack and TrackFormer, please refer to the Tab. 1.
+
+Method TransTrack (Sun et al. 2020) TrackFormer (Meinhardt et al. 2021)
+Ours
+
+D-DETR
+
+IoU-Match
+
+Track NMS
+
+Re-ID
+
+Table 1: Comparison with other Transformer-based MOT methods. D-DETR is Deformable DETR (Zhu et al. 2020).
+
+4 Experiments
+4.1 Datasets and Metrics
+Datasets: MOT16 and MOT17 (Milan et al. 2016) contain the same video sequences, including 7 training sequences and 7 test sequences. The main difference between them is the detection ground-truth labels. In public detection, detection inputs of MOT16 are obtained by the DPM (Felzenszwalb et al. 2009) detector while that of MOT17 are generated by DPM, Faster R-CNN (Ren et al. 2015) and SDP (Yang et al. 2016) object detectors. Evaluation Metrics: We follow standard evaluation protocols to evaluate our method. The common metrics include Multiple-Object Tracking Accuracy (MOTA), the percentage of Mostly Tracked Trajectories (MT), Mostly Lost Trajectories (ML), Identity Switches (IDS) and Identity F1 Score (IDF1). Among them, IDF1 is used to measure the
+
+Dataset MOT16
+MOT17
+
+Tracker CNN-based: FWT(Henschel et al. 2017) MOTDT(Chen et al. 2018) GCRA(Ma et al. 2018) EAMTT(Sanchez-Matilla et al. 2016) Tracktor++(Bergmann et al. 2019) SORTwHPD16(Bewley et al. 2016) smartSORT(Meneses et al. 2020) DeepSORT 2(Wojke et al. 2017) JDE(Wang et al. 2020) Transformer-based: MOTR (Ours)
+CNN-based: FWT(Henschel et al. 2017)
+SST(Sun et al. 2019) Tracktor++(Bergmann et al. 2019) Tracktor v2(Bergmann et al. 2019)
+CTracker(Peng et al. 2020) CenterTrack(Zhou et al. 2020) QuasiDense (Pang et al. 2021)
+TraDeS (Wu et al. 2021) Transformer-based:
+TrackFormer (Meinhardt et al. 2021) TransTrack(Sun et al. 2020) MOTR (Ours)
+
+IDF1↑
+44.3 50.9 48.6 53.3 52.5 53.8 56.1 62.2 55.8
+67.0
+47.6 49.5 52.3 55.1 57.4 64.7 66.3 63.9
+63.9 63.9 67.0
+
+MOTA↑
+47.8 47.6 48.2 52.5 54.4 59.8 60.4 61.4 64.4
+66.8
+51.3 52.4 53.5 56.5 66.6 67.8 68.7 69.1
+65.0 74.5 67.4
+
+MT (%) ↑
+19.1 15.2 12.9 19.0 19.0 25.4 28.9 32.8 35.4
+34.1
+21.4 21.4 19.5 21.1 32.2
+/ 40.6 36.4
+/ 46.8 34.6
+
+ML (%)↓
+38.2 38.3 41.1 34.9 36.9 22.7 21.2 18.2 20.0
+25.7
+35.2 30.7 36.6 35.3 24.2
+/ 21.9 21.5
+/ 11.3 24.5
+
+FP↓
+8886 9253 5104 4407 3280 8698 11183 12852
+/
+10364
+24101 25423 12201 8866 22284 18498 26589 20892
+70443 28323 32355
+
+FN↓
+85487 85431 88586 81223 79149 63245 59867 56668
+/
+49582
+247921 234592 248047 235449 160491 160332 146643 150060
+123552 112137 149400
+
+IDS↓
+852 792 821 910 682 1423 1135 781 1544
+586
+2648 8431 2072 3763 5529 3039 3378 3555
+3528 3663 1992
+
+Table 2: Performance comparison between MOTR and existing methods on MOT16 and MOT17 datasets under the private detection protocols. The number is marked in bold if it is the best in each column.
+
+trajectory identity accuracy. MOTA is the primary metric to measure the overall detection and tracking performance.
+4.2 Implementation Details
+Following the settings in CenterTrack (Zhou et al. 2020), several data augmentation methods, such as random ﬂip and random crop, are adopted. The shorter side of input images is resized to 800 and the maximum size is restricted within 1536. We randomly sample key frames from video sequences with interval to solve the problem of different frame rates. Besides, we erase the tracked queries with the probability pdrop to generate more samples for new-born objects and insert track queries of false positives with the probability pinsert to simulate the dead objects.
+All the experiments are conducted on PyTorch with 8 Tesla V100 GPUs. We built MOTR upon DeformableDETR (Zhu et al. 2020) with ResNet50 (He et al. 2016) for fast convergence. It is pretrained on COCO detection dataset (Lin et al. 2014). We train our model with the AdamW optimizer for total 200 epochs with the initial learning rate of 2.0 · 10−4. The learning rate decays to 2.0 · 10−5 at 150 epochs. The batch size is set to 1 and each batch contains a video clip of 5 frames. For state-of-the-art comparison, we train MOTR on the joint datasets (MOT17 training set and CrowdHuman (Shao et al. 2018) val set). For ∼5k static images in CrowdHuman val set, we apply random shift in (Zhou et al. 2020) to generate video clips with pseudo tracks. The initial length of video clip is 2 and we gradually increase it to 3,4,5 at 50th,90th,150th epochs, respectively. The progressive increment of video clip improves the training efﬁciency and stability. For ablation study, we ignore the dataset of CrowdHuman and train MOTR on MOT17 training set.
+
+4.3 State-of-the-art Comparison
+As shown in Tab. 2, we compare our approach with previous methods on MOT16 and MOT17 test datasets.
+In MOT16, we compare MOTR with JDE (Wang et al. 2020) and DeepSORT 2 (Wojke et al. 2017), which achieve state-of-the-art performance among previous methods in MOTA and IDF1 metrics, respectively. Our method surpasses JDE by 11.2% and DeepSORT 2 by 4.8% on IDF1. Also, MOTR gets fewer IDS than JDE (586 vs. 1544) and DeepSORT 2 (586 vs. 781). As for the MOTA metric, our method also achieves better performance than JDE (66.8 vs. 64.4) and DeepSORT 2 (66.8 vs. 61.4). In MOT17, we compare our MOTR with CNN-based trackers and our concurrent Transformer-based works, TrackFormer (Meinhardt et al. 2021) and TransTrack (Sun et al. 2020). Our method gets higher IDF1 scores, surpassing CenterTrack, TransTrack and TrackFormer by 2.3%, 3.1%, 3.1%, respectively. It is worthy noting that MOTR also produces much fewer IDS (1992 vs. 3039, 1992 vs. 3528 and 1992 vs. 3663 compared to CenterTrack, TrackFormer and TransTrack, respectively). For the MOTA metric, our method achieves better performance than TrackFormer (67.4 vs. 65.0). Interestingly, we ﬁnd that the performance of TransTrack is much better than our MOTR on MOTA metric. We suppose the decoupling of detection and tracking branches in TransTrack indeed improves the object detection performance. In MOTR, detect and track queries are learned through a shared Transformer decoder. Detect queries are suppressed on detecting tracked objects, limiting the detection performance on new-born objects.
+For comprehensive comparison with those state-of-the-
+
+Table 3: Ablation studies validated on the 2DMOT15 set. All experiments use the single feature level with C5 in ResNet50.
+
+(a) The affect of integrating our contributions into the baseline. (b) The impact of video sequence length on the overall
+
+TAN and CAL denote the temporal aggregation network and tracking performance in Collective Average Loss during
+
+collective average loss, respectively.
+
+training.
+
+Track Query TAN CAL MOTA↑ IDF1↑ IDS↓
+
+-
+
+1.2 33198
+
+37.1 49.8 562
+
+44.9 63.4 257
+
+47.5 56.1 417
+
+53.2 70.5 155
+
+Length 2 3 4 5
+
+MOTA↑ 44.9 51.6 50.6 53.2
+
+IDF1↑ 63.4 59.4 64.0 70.5
+
+FP↓ 16866 13347 13888 13549
+
+FN↓ 6649 7102 7104 6466
+
+IDS↓ 257 424 314 155
+
+(c) Analysis on random track query erasing probability pdrop during training phase.
+
+pdrop 5e-2 0.1 0.3 0.5
+
+MOTA↑ 49.0 53.2 51.1 48.5
+
+IDF1↑ 60.4 70.5 69.0 62.0
+
+FP↓ 11787 13549 14985 15579
+
+FN↓ 9810 6466 5926 6356
+
+IDS↓ 411 155 180 302
+
+(d) The effectiveness of random false positive inserting probability pinsert during training phase.
+
+pinsert 0.1 0.3 0.5 0.7
+
+MOTA↑ 51.2 53.2 52.1 50.7
+
+IDF1↑ 71.7 70.5 62.0 57.7
+
+FP↓ 17972 13549 13453 13073
+
+FN↓ 5935 6466 6854 7768
+
+IDS↓ 148 155 345 444
+
+(e) The exploration of different combinations of τex and τen in QIM network.
+
+τex
+
+0.6
+
+0.6
+
+0.6
+
+0.6
+
+0.5
+
+0.6
+
+0.7
+
+0.8
+
+τen
+
+0.6
+
+0.7
+
+0.8
+
+0.9
+
+0.8
+
+0.8
+
+0.8
+
+0.8
+
+MOTA↑ 52.7 52.7 53.2 53.1 53.5 53.2 52.8 52.7
+
+IDF1↑
+
+69.9 69.8 70.5 70.1 70.5 70.5 68.3 66.9
+
+IDS↓
+
+172
+
+181
+
+155
+
+142
+
+153
+
+155
+
+181
+
+225
+
+art approaches, we further conduct the measurements of our MOTR, JDE and CenterTrack on high-order metrics (Luiten et al. 2021). As shown in A.1, MOTR shows better performance on performing tracking association than JDE and CenterTrack under similar localization standard.
+4.4 Ablation Study
+Our ablation experiments are conducted using the single feature level with DC5 (Zhu et al. 2020) for fast training and validated on the 2DMOT15 dataset. MOTR Components: Tab. 3a shows the impact of integrating different components. Integrating our components to the baseline can gradually improve overall performance. Using only object query of as original leads to numerous IDS since that most objects are treated as entrance objects. With track query introduced, the baseline is able to handle tracking association and improve IDF1 from 1.2 to 49.8. Further, adding TAN to the baseline improves MOTA by 7.8% and IDF1 by 13.6%. When using CAL during training, there are extra 8.2% and 3.7% improvements in MOTA and IDF1, respectively. It demonstrates that TAN combined with CAL can enhance the learning of temporal motion. Collective Average Loss: Here, we explored the impact of video sequence length on the tracking performance in CAL. As shown in Tab. 3b, when the length of video clip gradually increases from 2 to 5, MOTA and IDF1 metrics are improved by 8.2% and 3.7%, respectively. Thus, multi-frame CAL can greatly boost the tracking performance. We explained that multiple frames CAL can help network to handle some hard cases such as occlusion scenes. We observed that duplicated boxes, ID switches and object missing in occluded scenes are signiﬁcantly reduced. To further verify it, we provide some visualizations in the A.2. Erasing and Inserting Track Query: In MOT datasets,
+
+there are few training samples for two cases: entrance objects and exit objects in video sequences. Therefore, we adopt track query erasing and inserting to simulate these two cases with probability pdrop and pinsert, respectively. Tab. 3c reports the performance using different value of pdrop during training. MOTR achieves the best performance when pdrop is set to 0.1. Similar to the entrance objects, track queries transferred from previous frame, whose predictions are false positives, are inserted into current frame to simulate the case of object exit. In Tab. 3d, we explore the impact on tracking performance of different pinsert. When progressively increasing the pinsert from 0.1 to 0.7, our MOTR achieves the highest score in MOTA metric when the pinsert is set to 0.3 while the IDF1 score is continuously decreasing. Object Entrance and Exit Threshold: Tab. 3e investigates the impact of different combination of object entrance threshold τen and object exit threshold τex in QIM. As we vary the object entrance threshold τen, we can see that the performance is not that sensitive to τen (within 0.5% on MOTA) and using entrance threshold of 0.8 produces relatively better performance. We also further conduct experiment by varying the object exit threshold τex. It is shown that using threshold of 0.5 results in slightly better performance than that of 0.6. In our practice, τen with 0.6 shows better performance on MOT17 test set.
+5 Conclusion
+We present MOTR, a truly end-to-end framework for multiple-object tracking. Track queries, served as hidden states, are introduced for iterative tracking prediction. Collective average loss and temporal aggregation network are further proposed to enhance the learning of temporal relation. The framework proposed achieves competitive performance on MOT datasets.
+
+Figure 5: Comprehensive comparison on high-order metrics between JDE, CenterTrack and MOTR. Here, “Alpha” in each ﬁgure refers various localization thresholds.
+
+duplicate
+
+duplicate
+
+duplicate
+
+Miss
+
+ID switch
+
+(a)
+
+(b)
+
+Figure 6: The effect of collective average loss on solving duplicated boxes (a) and ID switch problems (b). The top and bottom
+
+rows are the tracking results without and with CAL, respectively.
+
+A APPENDIX
+A.1 Comparison on High-order Metrics
+As shown in Fig. 5, we compared our MOTR with JDE(Wang et al. 2020) and CenterTrack(Zhou et al. 2020) on high-order metrics (Luiten et al. 2021). Our method shows better performance on tracking association than JDE and CenterTrack under similar localization standard.
+A.2 Qualitative Visualizations for CAL
+We visualize more qualitative results for CAL in Fig. 6. It indicates that CAL can alleviate the problem of ID switch and object missing in occluded scenes. We explain that CAL can equip our method with strong temporal relation and enhances the tracking and detection simultaneously.
+A.3 Ablation Study on Sampling Interval
+In Tab. 4, we evaluate the effect of random sampling interval on tracking performance during training. When the sampling interval increases from 2 to 10, the IDS decreases signiﬁcantly from 209 to 155. During training, the networks are more likely to fall into a local optimal solution because of the small difference in objects’ motion if the frames are sampled in a small interval. Appropriate increment on sampling interval can simulate real and complex scenes. When the random sampling interval is greater than 10, the tracking
+
+framework fails to capture such long-range dynamics, leading to relatively worse tracking performance.
+
+Intervals 2 3 5 10 12
+
+MOTA↑ 53.3 53.2 50.8 53.2 53.1
+
+IDF1↑ 66.2 64.8 62.8 70.5 69
+
+FP↓ 13038 12927 12781 13549 13868
+
+FN↓ 6886 7028 8107 6466 6208
+
+IDS↓ 209 218 324 155 158
+
+Table 4: The effect of random sampling interval on the tracking performance.
+
+References
+Bergmann, P.; Meinhardt, T.; and Leal-Taixe, L. 2019. Tracking without bells and whistles. In ICCV. 1, 2, 6
+Bewley, A.; Ge, Z.; Ott, L.; Ramos, F.; and Upcroft, B. 2016. Simple online and realtime tracking. In ICIP. 1, 2, 6
+Bochinski, E.; Eiselein, V.; and Sikora, T. 2017. High-speed tracking-by-detection without using image information. In AVSS. 1
+Camgoz, N. C.; Koller, O.; Hadﬁeld, S.; and Bowden, R. 2020. Sign language transformers: Joint end-to-end sign language recognition and translation. In CVPR. 2
+Carion, N.; Massa, F.; Synnaeve, G.; Usunier, N.; Kirillov, A.; and Zagoruyko, S. 2020. End-to-End Object Detection with Transformers. In ECCV. 1, 2, 3
+
+Chang, X.; Zhang, W.; Qian, Y.; Le Roux, J.; and Watanabe, S. 2020. End-to-end multi-speaker speech recognition with transformer. In ICASSP. 2
+Chen, L.; Ai, H.; Zhuang, Z.; and Shang, C. 2018. Real-time multiple people tracking with deeply learned candidate selection and person re-identiﬁcation. In ICME. 6
+Dosovitskiy, A.; Beyer, L.; Kolesnikov, A.; Weissenborn, D.; Zhai, X.; Unterthiner, T.; Dehghani, M.; Minderer, M.; Heigold, G.; Gelly, S.; Uszkoreit, J.; and Houlsby, N. 2021. An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale. In ICLR. 2
+Felzenszwalb, P. F.; Girshick, R. B.; McAllester, D.; and Ramanan, D. 2009. Object detection with discriminatively trained part-based models. TPAMI 32(9): 1627–1645. 5
+He, K.; Zhang, X.; Ren, S.; and Sun, J. 2016. Deep Residual Learning for Image Recognition. In CVPR. 3, 6
+Henschel, R.; Leal-Taixe´, L.; Cremers, D.; and Rosenhahn, B. 2017. Improvements to frank-wolfe optimization for multi-detector multi-object tracking. arXiv preprint arXiv:1705.08314 . 6
+Kuhn, H. W. 1955. The Hungarian method for the assignment problem. Naval research logistics quarterly 2(1-2): 83–97. 2
+Leal-Taixe´, L.; Canton-Ferrer, C.; and Schindler, K. 2016. Learning by tracking: Siamese CNN for robust target association. In CVPRW. 2
+Li, N.; Liu, S.; Liu, Y.; Zhao, S.; and Liu, M. 2019. Neural speech synthesis with transformer network. In AAAI. 2
+Lin, T.-Y.; Goyal, P.; Girshick, R.; He, K.; and Dolla´r, P. 2017. Focal loss for dense object detection. In ICCV. 5
+Lin, T.-Y.; Maire, M.; Belongie, S.; Hays, J.; Perona, P.; Ramanan, D.; Dolla´r, P.; and Zitnick, C. L. 2014. Microsoft COCO: Common Objects in Context. In ECCV. 6
+Liu, Z.; Lin, Y.; Cao, Y.; Hu, H.; Wei, Y.; Zhang, Z.; Lin, S.; and Guo, B. 2021. Swin transformer: Hierarchical vision transformer using shifted windows. arXiv preprint arXiv:2103.14030 . 2
+Luiten, J.; Osep, A.; Dendorfer, P.; Torr, P.; Geiger, A.; Leal-Taixe´, L.; and Leibe, B. 2021. Hota: A higher order metric for evaluating multi-object tracking. IJCV 129(2): 548–578. 7, 8
+Ma, C.; Yang, C.; Yang, F.; Zhuang, Y.; Zhang, Z.; Jia, H.; and Xie, X. 2018. Trajectory factory: Tracklet cleaving and re-connection by deep siamese bi-gru for multiple object tracking. In ICME. 6
+Meinhardt, T.; Kirillov, A.; Leal-Taixe, L.; and Feichtenhofer, C. 2021. TrackFormer: Multi-Object Tracking with Transformers. arXiv preprint arXiv:2101.02702 . 2, 5, 6
+Meneses, M.; Matos, L.; Prado, B.; de Carvalho, A.; and Macedo, H. 2020. Learning to associate detections for real-time multiple object tracking. arXiv preprint arXiv:2007.06041 . 6
+Milan, A.; Leal-Taixe´, L.; Reid, I.; Roth, S.; and Schindler, K. 2016. MOT16: A benchmark for multi-object tracking. arXiv preprint arXiv:1603.00831 . 5
+Pang, J.; Qiu, L.; Li, X.; Chen, H.; Li, Q.; Darrell, T.; and Yu, F. 2021. Quasi-dense similarity learning for multiple object tracking. In CVPR. 6
+Peng, J.; Wang, C.; Wan, F.; Wu, Y.; Wang, Y.; Tai, Y.; Wang, C.; Li, J.; Huang, F.; and Fu, Y. 2020. Chained-tracker: Chaining paired attentive regression results for end-to-end joint multipleobject detection and tracking. In ECCV. 6
+
+Ren, S.; He, K.; Girshick, R.; and Sun, J. 2015. Faster r-cnn: Towards real-time object detection with region proposal networks. In NeurlPS. 5
+Rezatoﬁghi, H.; Tsoi, N.; Gwak, J.; Sadeghian, A.; Reid, I.; and Savarese, S. 2019. Generalized intersection over union: A metric and a loss for bounding box regression. In CVPR. 5
+Sanchez-Matilla, R.; Poiesi, F.; and Cavallaro, A. 2016. Online multi-target tracking with strong and weak detections. In ECCV. 6
+Schulter, S.; Vernaza, P.; Choi, W.; and Chandraker, M. 2017. Deep network ﬂow for multi-object tracking. In CVPR. 2
+Shao, S.; Zhao, Z.; Li, B.; Xiao, T.; Yu, G.; Zhang, X.; and Sun, J. 2018. Crowdhuman: A benchmark for detecting human in a crowd. arXiv preprint arXiv:1805.00123 . 6
+Sharma, S.; Ansari, J. A.; Murthy, J. K.; and Krishna, K. M. 2018. Beyond pixels: Leveraging geometry and shape cues for online multi-object tracking. In ICRA. 2
+Shi, B.; Bai, X.; and Yao, C. 2016. An end-to-end trainable neural network for image-based sequence recognition and its application to scene text recognition. TPAMI 39(11): 2298–2304. 2
+Shuai, B.; Berneshawi, A. G.; Modolo, D.; and Tighe, J. 2020. Multi-Object Tracking with Siamese Track-RCNN. arXiv preprint arXiv:2004.07786 . 2
+Sun, P.; Jiang, Y.; Zhang, R.; Xie, E.; Cao, J.; Hu, X.; Kong, T.; Yuan, Z.; Wang, C.; and Luo, P. 2020. TransTrack: Multiple-Object Tracking with Transformer. arXiv preprint arXiv: 2012.15460 . 2, 5, 6
+Sun, S.; Akhtar, N.; Song, H.; Mian, A.; and Shah, M. 2019. Deep afﬁnity network for multiple object tracking. TPAMI 43(1): 104– 119. 6
+Sutskever, I.; Vinyals, O.; and Le, Q. V. 2014. Sequence to sequence learning with neural networks. In NeurlPS. 2
+Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.; Jones, L.; Gomez, A. N.; Kaiser, Ł.; and Polosukhin, I. 2017. Attention is all you need. In NeurlPS. 2
+Wang, X.; Girshick, R.; Gupta, A.; and He, K. 2018. Non-local neural networks. In CVPR. 2
+Wang, Z.; Zheng, L.; Liu, Y.; Li, Y.; and Wang, S. 2020. Towards real-time multi-object tracking. In ECCV. 1, 2, 6, 8
+Welch, G.; Bishop, G.; et al. 1995. An introduction to the Kalman ﬁlter. 2
+Wojke, N.; Bewley, A.; and Paulus, D. 2017. Simple online and realtime tracking with a deep association metric. In ICIP. 1, 2, 6
+Wu, J.; Cao, J.; Song, L.; Wang, Y.; Yang, M.; and Yuan, J. 2021. Track to Detect and Segment: An Online Multi-Object Tracker. In CVPR. 6
+Yang, F.; Choi, W.; and Lin, Y. 2016. Exploit all the layers: Fast and accurate cnn object detector with scale dependent pooling and cascaded rejection classiﬁers. In CVPR. 5
+Zhang, Y.; Wang, C.; Wang, X.; Zeng, W.; and Liu, W. 2021. Fairmot: On the fairness of detection and re-identiﬁcation in multiple object tracking. IJCV 1–19. 1, 2
+Zhou, X.; Koltun, V.; and Kra¨henbu¨hl, P. 2020. Tracking objects as points. In ECCV. 6, 8
+Zhu, X.; Su, W.; Lu, L.; Li, B.; Wang, X.; and Dai, J. 2020. Deformable DETR: Deformable Transformers for End-to-End Object Detection. In ICLR. 1, 2, 5, 6, 7
+

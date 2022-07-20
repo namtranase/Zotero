@@ -1,0 +1,1485 @@
+Observation-Centric SORT: Rethinking SORT for Robust Multi-Object Tracking
+Jinkun Cao1 Xinshuo Weng1 Rawal Khirodkar1 Jiangmiao Pang2,3 Kris Kitani1 1Carnegie Mellon University 2 The Chinese University of Hong Kong 3 Shanghai AI Laboratory
+
+arXiv:2203.14360v1 [cs.CV] 27 Mar 2022
+
+Abstract
+Multi-Object Tracking (MOT) has rapidly progressed with the development of object detection and reidentiﬁcation. However, motion modeling, which facilitates object association by forecasting short-term trajectories with past observations, has been relatively underexplored in recent years. Current motion models in MOT typically assume that the object motion is linear in a small time window and needs continuous observations, so these methods are sensitive to occlusions and non-linear motion and require high frame-rate videos. In this work, we show that a simple motion model can obtain state-of-theart tracking performance without other cues like appearance. We emphasize the role of “observation” when recovering tracks from being lost and reducing the error accumulated by linear motion models during the lost period. We thus name the proposed method as Observation-Centric SORT, OC-SORT for short. It remains simple, online, and real-time but improves robustness over occlusion and nonlinear motion. It achieves 63.2 and 62.1 HOTA on MOT17 and MOT20, respectively, surpassing all published methods. It also sets new states of the art on KITTI Pedestrian Tracking and DanceTrack where the object motion is highly non-linear. The code and model are available at https://github.com/noahcao/OC_SORT.
+1. Introduction
+We aim to develop a motion model-based multi-object tracking method robust to occlusion and non-linear object motion. We are motivated by the fact that most of the common errors during occlusion or non-linear motion, are caused by using models that assume linear motion. In contrast to object detection and re-identiﬁcation, motion models have been relatively under-explored in recent years. We believe that more work is needed to develop motion models. We recognize some limitations of the linear motion model in video multi-object tracking and ﬁnd that we can achieve more advanced performance by addressing these limitations and without using other cues such as visual appearance.
+
+(a) SORT
+(b) The proposed OC-SORT
+Figure 1. Samples from video dancetrack0088 at frame 558, 560, 562 and 565 respectively. SORT and OC-SORT use the same detection results. On the third frame, SORT encounters an ID switch for the backﬂip target while ours not.
+A widely used motion model-based MOT algorithm is SORT [5], which uses a Kalman ﬁlter (KF) to estimate object motion. As KF has a linear motion assumption, SORT is more applicable to high frame rate videos where the object motion between consecutive frames can be approximated as linear. However, some challenges may distort its estimation processes, such as occlusions and non-linear object motion. Prior work introduces other cues such as appearance features to tackle these challenges. In the contrast, we present a different perspective that, instead of being centric to estimations, being conditioned on observations can improve the robustness of KF when estimations are unreliable. Such an observation-centric design achieves state-ofthe-art performance on modern MOT benchmarks in a pure motion-based fashion.
+We begin with rethinking SORT and recognizing its three limitations: (1) although the object motion might be
+
+approximately linear, the use of high frame rate data can also amplify the sensitivity to state noise. Speciﬁcally, between consecutive frames of a high frame-rate video, the noise of displacement of object can be of the same magnitude as the actual object displacement, leading to the estimated object velocity by KF suffering from a large variance; (2) the object state noises can further be accumulated through the time when there is no new object observation (from detection) matched to existing tracklets due to occlusion or non-linear motion. We prove that the error accumulation of object position estimates by KF is of square-order with respect to time in such cases; (3) SORT is estimationcentric, meaning that it heavily relies on KF state estimation and uses observations only as auxiliary information. However, we believe that the development of modern object detectors has made observations more reliable than ever, so we should make our tracker focus more on the observations.
+To tackle these limitations, we argue that observations can provide strong evidence to estimate the momentum of a trajectory and to recover a track from being lost. To reach the goal, we propose three innovations: (1) we design an Observation-centric Online Smoothing (OOS) strategy to alleviate the error accumulation in KF due to lack of observations. In the frame that an inactive track is re-associated to an observation again, we ﬁrst build a virtual trajectory for this object, starting from its last observation before being un-tracked and ending at the newly matched observation. Along this virtual trajectory, we then smooth the KF parameters to obtain a better estimation of the object position; (2) we propose to incorporate the direction consistency of tracklets in the cost matrix for better matching between tracklets and observations. The design is motivated by the momentum of trajectories in the linear motion assumption so we call it Observation-Centric Momentum (OCM). We also provide analytical proof in the appendix that estimating the direction between two points with a large time window can reduce sensitivity to noises; (3) To deal with the case of objects being un-tracked due to occlusion in a short time window, we also propose to recover them by associating their last observations with the new observations, which we refer to as Observation-Centric Recovery (OCR).
+The proposed method, named as Observation-Centric SORT or OC-SORT in short, remains simple, online, realtime and signiﬁcantly improves robustness over occlusion and non-linear motion. Our contributions are summarized as the following: (1) we recognize, analytically and empirically, three limitations of SORT: sensitive to state noises, error accumulation over time, being estimation-centric; (2) we propose OC-SORT for robust tracking under occlusion and non-linear motion with three innovations: OOS, OCM, and OCR; (3) our OC-SORT achieves new state-of-the-art performance on modern MOT benchmarks.
+
+2. Related Works
+Motion Models. Many recent multi-object tracking algorithms [5, 11, 70, 78, 80] use motion models. Typically, these motion models use Bayesian estimation [37] to predict the next state by maximizing a posterior estimation. As one of the most classic motion models, the Kalman ﬁlter (KF) [32], is a recursive Bayes ﬁlter that follows a typical predict-update cycle. The true state is assumed to be an unobserved Markov process, and the measurements are observations of a hidden Markov model [46]. Given that the linear motion assumption limits KF, following works like Extended KF [55] and Unscented KF [30] were proposed to handle non-linear motion with ﬁrst-order and third-order Taylor approximation. However, these still rely on approximating the Gaussian prior assumed by KF. On the other hand, particle ﬁlters [23] deal with the non-linear motion by sampling-based posterior estimation but require exponential order of computation. In Bayesian Estimation, ﬁltering uses only past data while smoothing uses both past and future data for estimation. Fixed-lag smoother [1] and ﬁxed-interval smoother [6,17,48] are studied to improve sequential data ﬁtting after having built the whole trajectory.
+Multi-object Tracking is traditionally approached from probabilistic perspectives, such as joint probabilistic association [2]. On the other hand, modern video object tracking is usually driven by object detection [49, 51, 81]. SORT [5] adopts the Kalman ﬁlter for motion-based multiobject tracking given observations from deep detectors. Advances in deep visual representations [24, 54] led to DeepSORT [70], which introduces deep visual features into object association in the framework of SORT. Appearancebased object matching [44,70,79] has also become popular, but falls short in many cases, especially when scenes are crowded and objects are represented coarsely (e.g bounding boxes), or object appearance is not distinguishable. Recently, Transformers [63] have been used in MOT [41, 60, 77] to learn deep representations with both visual information and trajectory encoded. These methods show good results but still fall short in many cases, especially for online tracking and under occlusion, leaving signiﬁcant room for improvement in motion-based multi-object tracking.
+3. Rethinking SORT
+In this section, we provide the review of SORT [5] and Kalman ﬁlter that SORT uses for motion modeling. We recognize some limitations of them which become signiﬁcant with occlusion or non-linear object motion. These limitations motivate the improvement we propose in this work.
+3.1. Background
+Kalman ﬁlter (KF) [32] is a linear estimator for dynamical systems discretized in the time domain. KF only requires
+
+the estimated state on the previous time step and the current measurement for the state estimation for the new time step. The ﬁlter maintains two variables, the posterior state estimate x, and the posterior estimate covariance matrix P of the state. In the task of object tracking, where no active control is sent, we describe the process of KF with other parameters such as the state transition model F, the observation model H, the process noise Q and the observation noise R. At each step t, KF predicts the prior estimate of state x and the covariance state matrix P by
+
+xˆt|t−1 = Ftxˆt−1|t−1, (1)
+Pt|t−1 = FtPt−1|t−1Ft + Qt.
+If an observation zt is given on this step, KF calculate the posteriors with the following update rules:
+
+Kt = Pt|t−1Ht (HtPt|t−1Ht + Rt)−1,
+
+xˆt|t = xˆt|t−1 + Kt(zt − Htxˆt|t−1),
+
+(2)
+
+Pt|t = (I − KtHt)Pt|t−1.
+
+In practice, we often have no observation on some time steps, e.g. if the target object is occluded in multi-object tracking. In such cases, we cannot na¨ıvely use the KF update rules. To address this, a way is to simply re-use the current estimates for the next time step. The intuition here is to trust the motion model predictions when no observations are available to supervise them. However, we will see this mechanism can cause issues in MOT.
+
+SORT [5] is a multi-object tracker built on KF based motion model. The KF’s state x in SORT is a seven-tuple, x = [u, v, s, r, u˙ , v˙, s˙] , where (u, v) is the 2D coordinates of the object center in the image. s is the bounding box scale (area) and r is the bounding box aspect ratio. The aspect ratio r is assumed to be constant. The other three variables, u˙ , v˙ and s˙ are the associated time derivative. The observation is a bounding box z = [u, v, w, h, c] with object center position (u, v), object width w and height h and the detection conﬁdence c respectively. SORT assumes linear motion of the target object so the transition model is
+
+
+
+F
+
+=
+
+I4×4 
+
+I3×3  01×3  ,
+
+(3)
+
+03×4 I3×3
+
+making the position on consecutive steps as
+
+ut+1 = ut + u˙ t∆t, vt+1 = vt + v˙t∆t.
+
+(4)
+
+When the time difference between two steps ∆t is consistent over the transition, e.g. , constant frame rate, we can set ∆t = 1. In general, when the video frame rate is high, SORT also works well under tracking scenarios with nonlinear object motion (e.g. dancing, fencing, wrestling). This is because the motion of the target object can be well approximated as linear within short time intervals.
+
+3.2. Limitations of SORT
+In this section, we identify three main limitations of SORT which are connected. This analysis lays the foundation of our proposed method.
+
+3.2.1 Sensitive to State Noise
+
+We show that SORT is sensitive to the noise from KF’s
+states. To begin with, it is reasonable to assume that the estimated object center position follows u ∼ N (µu, σu2) and v ∼ N (µv, σv2). Then, if we assume the state noises are independent on different steps, following Eq. 3, the estimated
+object speed between two time-steps t and t + ∆t is
+
+u˙ = ut+∆t − ut ,
+
+v˙ = vt+∆t − vt ,
+
+(5)
+
+∆t
+
+∆t
+
+making the noise of estimated speed δu˙
+
+∼
+
+N
+
+(0,
+
+2σu2 (∆t)2
+
+),
+
+δv˙
+
+∼
+
+N
+
+(0,
+
+2σv2 (∆t)2
+
+).
+
+So estimating speed between consec-
+
+utive frames, i.e. ∆t = 1, maximizes the noise.
+
+Moreover, for most multi-object tracking scenarios, the
+
+target object displacement is only a few pixels between con-
+
+secutive frames. For instance, the average displacement is
+
+1.93 pixels and 0.65 pixels along image width and height
+
+for the MOT17 [43] training dataset. In such a case, even
+
+if the estimated position has a shift of only a few pixes, it
+
+causes signiﬁcant variance to the estimated speed. In gen-
+
+eral, the variance of speed estimation can be of the same
+
+magnitude as the speed itself or even bigger. In most cases,
+
+this will not make a massive impact as the shift is only of
+
+few pixels from the ground truth on the next time step and
+
+the supervision provided by the observation corrects the es-
+
+timates from KF motion model. However, we will see the
+
+sensitivity introduces signiﬁcant problems in practice be-
+
+cause of the error accumulation across multiple time-steps
+
+when no observation is available for KF update.
+
+3.2.2 Temporal Error Magniﬁcation
+For analysis above in Eq. 5, we assume the position estimation is independent on each time step. This is reasonable for object detections but not for KF estimates because the state estimates for later steps rely on the previous states. The effect is usually minor because KF can use observation to supervise state estimates in the update stage. However, when no observations are provided to KF, it recursively updates parameters only based on its own predictions. Consider a track is occluded between t and t+T and the noise of speed estimate follows δu˙ t ∼ N (0, 2σu2), δv˙t ∼ N (0, 2σv2) for SORT. Till the step t + T , the estimated position is
+ut+T = ut + T u˙ t, vt+T = vt + T v˙t, (6)
+
+Detections 𝑍!
+
+3
+
+2
+
+3
+
+2
+
+Detections 𝑍!"#
+3 2
+
+3 2
+
+Detections 𝑍!"$
+3
+2
+
+KF Predict OCR
+Ass. w/ OCM OOS
+3
+2
+
+1
+Tracks {𝜏!}
+frame t
+
+1
+Estimates 𝑋%!"#
+
+1
+Tracks {𝜏!"#}
+
+frame t+1
+
+1
+Estimates 𝑋%!"$
+
+1
+Tracks w/o OCR {𝜏!"$}
+frame t+2
+
+1
+Tracks w/ OCR {𝜏!"$}
+
+Figure 2. A visual illustration of our proposed method, OC-SORT. On each frame, red boxes are detections, orange boxes are active tracks, blue boxes are untracked tracks, dashed boxes are the estimates from KF. During association OCM is used to add the velocity consistency cost. The target #1 is lost on the frame t+1 because of occlusion. But on the next frame, it is recovered by referring to its observation of the frame t by OCR. It being re-tracked triggers OOS from t to t+2 for the parameters of its KF.
+
+whose noise follows δut+T ∼ N (0, 2T 2σu2) and δvt+T ∼ N (0, 2T 2σv2). So without the supervision from observation, the estimates from linear motion assumption of KF results in square-order error accumulation with respect to time. Given σv and σu is of the same magnitude as object displacement between consecutive frames, the noise of ﬁnal object position (ut+T , vt+T ) is of the same magnitude as the object size. For instance, the size of pedestrians close to camera on MOT17 is around 50 × 300 pixels. So even assuming the variance of position estimates to be around 1 pixel, 10-frame occlusion can accumulate a shift of ﬁnal position estimates as large a the object size. Such error magniﬁcation leads to major when the scenes are crowded.
+3.2.3 Estimation-Centric
+The aforementioned limitations are due to two fundamental drawbacks of the KF, i) the noise from state estimates, and ii) the error accumulation when using a hidden Markov process to construct a trajectory. They reveal a fundamental risk: that KF is designed to be estimation-centric. The external observations serve only to assist in the propagation of KF trajectory. A key difference between state estimates and observations is that we can assume that the observations by a object detector in each frame are affected by i.i.d. noise δz ∼ N (0, σ 2). Recent object detectors use object appearance in the image [51, 54], which is ignored by KF when making estimates. In practice, we can expect σ < σu and σ < σv. Additionally, the variance will not be accumulated
+
+with time. Therefore, a robust multi-object tracker under occlusion should give more importance to the observations than the KF’s state estimates.
+4. Observation-Centric SORT
+In this section, we introduce the proposed ObservationCentric Sort (OC-SORT). To address the limitations discussed above, we use the momentum of the object moving into the association stage and develop a pipeline with less noise and more robustness over occlusion and nonlinear motion. The key is to design a tracker which is observation-centric in contrast to the estimation-centric SORT. If a track is recovered from being untracked, we use an Observation-centric Online Smoothing (OOS) strategy to counter the accumulated error during the untracked period. OC-SORT also adds an Observation-Centric Momentum (OCM) term in the association cost. We additionally design Observation-Centric Recovery (OCR) to search for lost objects around its last observation. The three innovations come as a bundle instead of being one-to-one mapped to the three limitations of SORT discussed above. Please refer to Algorithm 1 in Appendix for the pseudo-code of OC-SORT. The pipeline is shown in Fig. 2.
+4.1. Observation-centric Online Smoothing (OOS)
+Once a track is associated to an observation again after a period of being untracked, we perform online smoothing over the parameters back to the period of being lost through
+
+Occluded
+
+1
+
+2
+
+1
+
+3
+
+2
+
+1
+
+3
+
+2
+
+1
+
+3
+
+4
+
+3
+
+4
+
+5
+
+Figure 3. Example of how Observation-centric Online Smoothing reduces the error accumulation when a track is broken. The target is occluded between the second and the third time step and the tracker ﬁnds it back at the third step. Yellow boxes are observations by the detector. White stars are the estimated centers without OOS. Yellow stars are the estimated centers ﬁxed by OOS. The gray star on the fourth step is the estimated center without OOS and fails to match to observations.
+
+a virtual trajectory of observations. This can ﬁx the accumulated error during the time interval. For example, we denote the last observation before being untracked as zt1 and the observation triggering the re-association as zt2 . Then the virtual trajectory can be generated with different hypotheses and denoted as
+
+zˆt = T rajvirtual(zt1 , zt2 , t), t1 < t < t2.
+
+(7)
+
+Along this virtual trajectory, we can start from the status at t1 to back check the ﬁlter parameters by alternating between the prediction (Eq 1) and update (Eq 2) stages. Given
+
+the supervision of the virtual observation trajectory, error
+
+raised in state estimation would not be accumulated any
+
+more. The refreshed state estimates follow
+
+xˆt = Ftxˆt−1 + Kt(zˆt − HtFtxˆt−1).
+
+(8)
+
+This operation is not Bayesian smoothing [6, 17, 48] as it only uses data up to the current time step and does not change previous tracking results. Furthermore, it performs on observation trajectory instead of ﬁlter parameter space or estimates. As they are different in both design and objectives, we call this process “online smoothing”.
+
+4.2. Observation-Centric Momentum (OCM)
+
+The linear motion model assumes a consistent velocity direction. However, this assumption often does not hold due to the non-linear motion of objects and state noise. In a reasonably short time, we can approximate the motion as linear but the noise still prevents us from leveraging the consistency of velocity direction. We propose a way to reduce the noise and add the velocity consistency (momentum) term into the cost matrix. Given N existing tracks and M detections, the association cost is
+C(Xˆ , Z) = CIoU(Xˆ , Z) + λCv(Xˆ , Z, V), (9)
+
+where Xˆ ∈ RN×7 and Z ∈ RM×5 are the sets of estimated object states and observations. V ∈ RN contains the directions of existing tracks calculated by two previous observations of time difference ∆t. CIoU(·, ·) calculates the negative pairwise IoU (Intersection over Union) and Cv(·, ·) calculates the consistency of i) track directions and ii) direction formed by a track’s historical observation and the new observations. λ is a weighting factor. We use observations associated to a track for direction calculation to avoid error accumulation in estimated states, but there is still a choice about which two observations we should choose. We reach a result that, under the linear-motion model, the noise scale is proportional to the time difference of the two observation points. The proof is analytical and provided in Appendix. But the trajectory is usually only linear by approximation within a short time interval, so the time difference should be held not too large to avoid the collapse of linear approximation. This requires a trade-off in practice.
+4.3. Observation-Centric Recovery (OCR)
+In general, a broken track usually stems from observation loss (unreliable detector or occlusion) or non-linear motion. In an observation-centric perspective, a conservative degradation of extending SORT to non-linear to recover lost targets is to check the location where it becomes untracked. From an intuitive standpoint, this is analogous to re-identifying an object with no trajectory prior, whose position can be thought of as following a Gaussian distribution with the position of its last-time presence as the mean and the variance growing with respect to the time of its being lost. For multi-object tracking in online fashion, we propose a conservative alternative rather. As the global optimum can be only achieved with an accurate non-linear hypothesis and global assignment. We name it Observation-Centric Recovery to trust the observation instead of the estimates
+
+Table 1. Results on MOT17 test set with the private detections. ByteTrack and Ours use the same detections.
+
+Tracker
+FairMOT [79] TransCt [74] TransTrk [60] Semi-TCL [38] CSTrack [39] GRTU [66] QDTrack [44] MAA [58] MOTR [77] ReMOT [75] PermaTr [62] TransMOT [12]
+ByteTrack [78] Ours
+
+HOTA↑
+59.3 54.5 54.1 59.8 59.3 62.0 53.9 62.0 57.2 59.7 55.5 61.7
+63.1 63.2
+
+MOTA↑
+73.7 73.2 75.2 73.3 74.9 74.9 68.7 79.4 71.9 77.0 73.8 76.7
+80.3 78.0
+
+IDF1↑
+72.3 62.2 63.5 73.2 72.6 75.0 66.3 75.9 68.4 72.0 68.9 75.1
+77.3 77.5
+
+FP(104)↓
+2.75 2.31 5.02 2.29 2.38 3.20 2.66 3.73 2.11 3.32 2.90 3.62
+2.55 1.51
+
+FN(104)↓
+11.7 12.4 8.64 12.5 11.4 10.8 14.66 7.77 13.6 9.36 11.5 9.32
+8.37 10.8
+
+IDs↓
+3,303 4,614 3,603 2,790 3,567 1,812 3,378 1,452 2,115 2,853 3,699 2,346
+2,196 1,950
+
+Frag↓
+8,073 9,519 4,872 8,010 7,668 1,824 8,091 2,202 3,897 5,304 6,132 7,719
+2,277 2,040
+
+AssA↑
+58.0 49.7 47.9 59.4 57.9 62.1 52.7 60.2 55.8 57.1 53.1 59.9
+62.0 63.2
+
+AssR↑
+63.6 54.2 57.1 64.7 63.2 65.8 57.2 67.3 59.2 61.7 59.8 66.5
+68.2 67.5
+
+Table 2. Results on MOT20 test set with the private detections. ByteTrack and Ours use the same detections.
+
+Tracker
+FairMOT [79] TransCt [74] TransTrk [60] Semi-TCL [38] CSTrack [39] GSDT [67] RelationT [76] MAA [58] ReMOT [75] TransMOT [12]
+ByteTrack [78] Ours
+
+HOTA↑
+54.6 43.5 48.5 55.3 54.0 53.6 56.5 57.3 61.2 61.9
+61.3 62.1
+
+MOTA↑
+61.8 58.5 65.0 65.2 66.6 67.1 67.2 73.9 77.4 77.5
+77.8 75.5
+
+IDF1↑
+67.3 49.6 59.4 70.1 68.6 67.5 70.5 71.2 73.1 75.2
+75.2 75.9
+
+FP(104)↓
+10.3 6.42 2.72 6.12 2.54 3.19 6.11 2.49 2.83 3.42
+2.62 1.80
+
+FN(104)↓
+8.89 14.6 15.0 11.5 14.4 13.5 10.5 10.9 8.67 8.08
+8.76 10.8
+
+IDs↓
+5,243 4,695 3,608 4,139 3,196 3,131 4,243 1,331 1,789 1,615
+1,223 913
+
+Frag↓
+7,874 9,581 11,352 8,508 7,632 9,875 8,236 1,450 2,121 2,421
+1,460 1,198
+
+AssA↑
+54.7 37.0 45.2 56.3 54.0 52.7 55.8 55.1 58.7 60.1
+59.6 62.0
+
+AssR↑
+60.7 45.1 51.9 60.9 57.6 58.5 66.1 61.1 63.1 66.3
+66.2 67.5
+
+distorted by propagation over time. Once a track is still untracked after the normal association stage, we try to associate the last observation of this track to the observations on the new-coming time step. We note this process is heuristic and local that can handle the case of object stopping or being occluded for a reasonable time interval.
+5. Experiments
+In this section, we provide experiments to demonstrate the efﬁciency of OC-SORT on multiple datasets, especially DanceTrack [59] where objects are in heavy occlusion, frequent crossover, and non-linear motion.
+5.1. Experimental Setup
+We introduce the setup of our experiments in this part, which is designed to prove the robustness of OC-SORT for tracking with occlusion and non-linear motion.
+
+Datasets. We evaluate our method on multiple multiobject tracking datasets like MOT17 [43], MOT20 [14], KITTI [21] and DanceTrack [59]. MOT17 [43] and MOT20 [14] are for pedestrian tracking, whose motions are nearly linear. But the scenes in MOT20 are more crowded in comparison to MOT17. KITTI [21] is for pedestrian and car tracking with a relatively low frame rate of 10FPS. DanceTrack [59] is a recently proposed dataset for human tracking which encourages multi-object tracking studies with better association instead of detection. In this dataset, object localization is easy but the object motion is highly nonlinear. Further, the objects have a close appearance, severe occlusion, and frequent crossovers. These present a big challenge to both motion-based and appearance-matchingbased tracking algorithms. Considering our goal is to improve tracking robustness in occlusion and non-linear object motion, we would like to emphasize the comparison
+
+Table 3. Results on MOT17 test set with the public detections.
+
+Tracker
+CenterTrack [80] QDTrack [44] Lif T [26] TransCt [74] ApLift [27] TMOH [56] MPTC [57] LPC MOT [13] TrackFormer [41]
+Ours Ours + Linear Interp
+
+HOTA↑
+51.3 51.4 51.1 50.4 51.7 51.5 -
+52.4 52.9
+
+MOTA↑
+61.5 64.6 60.5 68.8 60.5 62.1 62.6 59.0 62.5
+58.2 59.4
+
+IDF1↑
+59.6 65.1 65.6 61.4 65.6 62.8 65.8 66.8 60.7
+65.1 65.7
+
+FP(104)↓
+1.41 1.41 1.50 2.29 3.06 11.0 0.88 2.31 3.28
+0.44 0.66
+
+FN(104)↓
+20.1 18.3 20.7 14.9 19.1 20.1 19.8 20.7 17.5
+23.0 22.2
+
+IDs↓
+2,583 2,652 1,189 4,102 1,709 1,897 4,074 1,122 2,540
+784 801
+
+Frag↓
+3,476 8,468 2,672 4,622 5,534 1,943 -
+2,006 1,030
+
+AssA↑
+54.7 47.7 53.5 50.9 53.1 56.0 -
+57.6 57.5
+
+AssR↑
+59.0 52.8 59.6 54.8 57.6 62.7 -
+63.5 63.9
+
+Table 4. Results on MOT20 test set with the public detections.
+
+Tracker
+SORT20 [5] MPNTrack [7] TransCt [74] Sp Con [65] ApLift [27] TMOH [56] MPTC [57] LPC MOT [13]
+Ours Ours + Linear Interp
+
+HOTA↑
+36.1 46.8 43.5 42.5 46.6 48.9 48.5 49.0
+54.3 55.2
+
+MOTA↑
+42.7 57.6 61.0 54.6 58.9 60.1 60.6 56.3
+59.9 61.7
+
+IDF1↑
+45.1 59.1 49.8 53.4 56.5 61.2 59.7 62.5
+67.0 67.9
+
+FP(104)↓
+2.75 17.0 4.92 0.95 1.77 3.80 4.53 1.17
+0.44 0.57
+
+FN(104)↓
+26.5 20.1 14.8 22.4 19.3 16.6 15.4 21.3
+20.2 19.2
+
+IDs↓
+4,470 1,210 4,493 1,674 2,241 2,342 4,533 1,562
+554 508
+
+Frag↓
+17,798 1,420 8,950 2,455 2,112 4,320 5,163 1,865
+2,345 805
+
+AssA↑
+35.9 47.3 36.1 41.4 45.2 48.4 46.5 52.4
+59.5 59.8
+
+AssR↑
+39.4 52.7 44.5 48.2 48.1 52.9 51.6 54.7
+65.1 65.9
+
+between OC-SORT and previous methods on DanceTrack in the following experiments. Implementations. For a fair comparison, we directly apply the object detections from existing baselines. For MOT17, MOT20, and DanceTrack, we use the publicly available YOLOX [20] detector weights by ByteTrack [78]. For KITTI [21], we use the detections from PermaTrack [62] publicly available in the ofﬁcial release. The methods using the same object detections are placed at the bottom of each table. For OOS, we generate the virtual trajectory during occlusion using a constant velocity assumption. Therefore, Eq. 7 in Section 4 is adopted as
+
+zˆt
+
+=
+
+zt1
+
++
+
+t − t1 t2 − t1
+
+(zt2
+
+−
+
+zt1 ), t1
+
+<
+
+t
+
+<
+
+t2.
+
+(10)
+
+For OCM, the velocity direction is calculated using the observations three-time-steps apart, i.e. ∆t = 3. The direction difference is measured by the absolute difference of angles in radians. We set λ = 0.2 in Eq. 9. Further, similar to the common practice of SORT, we set the detection conﬁdence threshold at 0.4 for MOT20 and 0.6 for other datasets. The IoU threshold during association is 0.3. For results on
+
+MOT17 and MOT20 private settings, following ByteTrack, we use linear interpolation. For other datasets, “Ours” indicates online OC-SORT, and “Ours + Linear Interp” indicates boosting the online output by linear interpolation. Metrics. We use HOTA [40] as the main metric. In contrast to MOTA [43], HOTA maintains a balance between the accuracy of object detection and association. We also report association metrics, such as IDF1 and AssA, and the raw statistics such as ID switch (IDs) and Fragments (Frag.). If a method does not report some metrics in the paper, we use its results from benchmarks’ ofﬁcial leaderboards.
+5.2. Benchmark Results
+MOT17 and MOT20. We report OC-SORT’s performance on MOT17 and MOT20 in Table 1 and Table 2 using the private detections. As can be seen, OC-SORT achieves comparable performance to other state-of-the-art methods. Our gains are especially signiﬁcant on MOT20 under severe pedestrian occlusion, setting a state-of-the-art HOTA of 62.1. Note, our method is designed to be simple for better generalization so we do not use adaptive detection thresholds used in some baselines. However, we still inherit its linear interpolation for a fair comparison. Although
+
+Table 5. Results on DanceTrack test set. Methods in the bottom block use the same detections.
+
+Tracker
+CenterTrack [80] FairMOT [79] QDTrack [44] TransTrk [60] TraDes [71] MOTR [77]
+SORT [5] DeepSORT [70] ByteTrack [78] Ours Ours + Linaer Interp
+
+HOTA↑
+41.8 39.7 45.7 45.5 43.3 48.4
+47.9 45.6 47.3 55.1 55.7
+
+DetA↑
+78.1 66.7 72.1 75.9 74.5 71.8
+72.0 71.0 71.6 80.3 81.7
+
+AssA↑
+22.6 23.8 29.2 27.5 25.4 32.7
+31.2 29.7 31.4 38.0 38.3
+
+MOTA↑
+86.8 82.2 83.0 88.4 86.2 79.2
+91.8 87.8 89.5 89.4 92.0
+
+IDF1↑
+35.7 40.8 44.8 45.2 41.2 46.1
+50.8 47.9 52.5 54.2 54.6
+
+Table 6. Results on KITTI test set. HP indicates adding the lost detections during initializing tracks. Our method uses the same detections as PermaTr [62]
+
+Tracker
+IMMDP [72] AB3D [68] SMAT [22] TrackMPNN [47] MPNTrack [7] CenterTr [80] QD-3DT [28] QDTrack [44] LGM [64] Eager [33] TuSimple [11]
+PermaTr [62] Ours Ours + HP
+
+HOTA↑
+68.66 69.99 71.88 72.30 73.02 72.77 68.45 73.14 74.39 71.55
+77.42 74.64 76.54
+
+Car MOTA↑ AssA↑
+
+82.75 83.61 83.64 87.33 88.83 85.94 84.93 87.60 87.82 86.31
+
+69.76 69.33 72.13 70.63 71.20 72.19 65.49 72.31 74.16 71.11
+
+90.85 87.81 90.28
+
+77.66 74.52 76.39
+
+IDs↓
+211 113 198 481 254 206 313 448 239 292
+275 257 250
+
+Frag↓
+201 206 294 237 227 525 567 164 390 220
+271 320 280
+
+HOTA↑
+37.81 39.40 45.26 40.35 41.08 41.12 39.38 45.88
+47.43 52.95 54.69
+
+Pedestrian MOTA↑ AssA↑
+
+38.13 52.10 46.23 53.84 51.77 55.55 49.82 57.61
+
+44.33 35.45 47.28 36.93 38.82 38.10 38.72 47.62
+
+65.05 62.00 65.14
+
+43.66 57.81 59.08
+
+IDs↓
+181 626 397 425 717 487 496 246
+483 181 204
+
+Frag↓
+879 669 1,078 618 1,194 951 1,410 651
+703 598 609
+
+we use the same object detectors as baselines, there is still some variance in detections. Therefore, we also report with the public detections on MOT17/MOT20 in Table 3 and Table 4. In addition, we use the commonly adopted detection ﬁltering [4, 80]. Similar to private detections, OC-SORT outperforms the prior art using the public detections. Again, our HOTA gains are signiﬁcant on the crowded MOT20.
+DanceTrack. To evaluate OC-SORT under challenging non-linear object motion, we report results on the DanceTrack in Table 5. Following the same trend, OC-SORT sets a new state-of-the-art, outperforming the baselines by a great margin under non-linear object motions. Note, the detection metrics like MOTA and DetA of OC-SORT are also much higher than the results on previous datasets. On the other hand, though OC-SORT has signiﬁcantly better association performance, the association metrics such as HOTA,
+
+IDF1, and AssA are still lower than its results on previous datasets. This suggests that the difﬁculty of tracking objects on DanceTrack is majorly due to object association. We compare the tracking results of SORT and OC-SORT under extreme non-linear situations in Fig.1 and more samples are available in Fig. 5 in the Appendix. Further, we visualize output trajectories by OC-SORT and SORT on randomly selected DanceTrack videos clips in Fig. 6 in the appendix where we show the comparison of trajectories output by SORT and OC-SORT in a longer time segment (100 frames) in diverse situations. As we focus on improving multi-object tracking in occlusion and non-linear motion cases, the results on DanceTrack are strong evidence of the efﬁciency of OC-SORT.
+KITTI. In Table 6 we report results on the KITTI dataset. For fairness, we evaluate the weights released by Per-
+
+Table 7. Ablation study on MOT17 val set and DanceTrack-val set.
+
+OOS
+
+OCM
+
+OCR
+
+HOTA↑
+64.9 66.3 66.4 66.5
+
+MOT17-val
+
+AssA↑ MOTA↑
+
+66.8
+
+74.6
+
+68.0
+
+74.7
+
+69.0
+
+74.6
+
+68.9
+
+74.9
+
+IDF1↑
+76.9 77.2 77.8 77.7
+
+HOTA↑
+47.8 48.5 52.1 52.1
+
+DanceTrack-val
+
+AssA↑ MOTA↑
+
+31.0
+
+88.2
+
+32.2
+
+87.2
+
+35.0
+
+87.3
+
+35.3
+
+87.3
+
+IDF1↑
+48.3 49.8 50.6 51.6
+
+Table 8. Ablation study on the trajectory hypothesis used in OOS.
+
+Const. Speed GPR Linear Regression Const. Acceleration
+
+HOTA↑
+66.5 63.1 64.3 66.2
+
+MOT17-val
+
+AssA↑ MOTA↑
+
+68.9
+
+74.9
+
+65.2
+
+74.0
+
+66.5
+
+74.2
+
+67.9
+
+74.7
+
+IDF1↑
+77.7 75.7 76.0 77.4
+
+HOTA↑
+52.1 49.5 49.3 51.3
+
+DanceTrack-val
+
+AssA↑ MOTA↑
+
+35.3
+
+87.3
+
+33.7
+
+86.7
+
+33.4
+
+86.2
+
+34.8
+
+87.0
+
+IDF1↑
+51.6 49.6 49.2 50.9
+
+maTr [62] and report its performance in the table as well. Then, we run OC-SORT over its detections. As initializing SORT’s track requires continuous tracking across several frames (“minimum hits”), we observe that the results not recorded during the track initialization make a signiﬁcant difference. To address this, we design head padding (HP) post-processing by writing these entries back after ﬁnishing the online tracking stage. The results on KITTI show an essential shortcoming of OC-SORT that it highly relies on the IoU matching for the association. As a result, when the object velocity is high, or the frame rate is low, the IoU of object bounding boxes between consecutive frames can be very low or even zero. This phenomenon poses a signiﬁcant challenge to our method. Note, in contrast to the baseline car tracking performance, OC-SORT improves the pedestrian tracking performance to a new state-of-the-art.
+We believe the results shown on multiple benchmarks have demonstrated the efﬁciency of our proposed OCSORT. We note that we use a shared parameter stack for different datasets, carefully tuning the parameters might further boost the performance. For example, ∆t in OCM can be sensitive to different datasets and the adaptive detection threshold is also proved useful when adapting to a new dataset [78]. Other metrics such as GIoU [52] can also be potential for association.
+Besides the association performance discussed above, we also care about the inference speed of tracking algorithms. As different methods may have different detectors and running environments, it is hard to compare them directly. Therefore, we only report the inference speed of OC-SORT. On the KITTI dataset, given the detections, our method runs at 793 FPS on an Intel i9-9980XE CPU @ 3.00GHz. Further, adding linear interpolation post-
+
+processing makes the inference speed 709 FPS.
+
+5.3. Ablation Study
+
+Component Ablation. We ablate the contribution of each proposed module in OC-SORT on the validation sets of MOT17 and DanceTrack datasets in Table 7. The splitting of the MOT17 validation set follows the common practice following CenterTrack [80]. We use the ofﬁcial validation set of DanceTrack. The results prove the efﬁciency of each of the three OC-SORT modules on both datasets.
+
+Virtual Trajectory in OOS. We have multiple empir-
+
+ical hypotheses for choosing the virtual trajectory in
+
+Observation-centric Online Smoothing. For simplicity, we
+
+follow the naive hypothesis of constant speed in Eq 10.
+
+There are also other alternatives like constant acceleration,
+
+regression-based ﬁtting such as Linear Regression (LR)
+
+or Gaussian Process Regression (GPR), and Near Con-
+
+stant Acceleration Model (NCAM) [29]. As discussed pre-
+
+viously, GPR is expected to introduce non-linear robust-
+
+ness into OOS. For GPR, we use the RBF kernel [10]
+
+k(x, x ) = exp
+
+−
+
+||x−x 50
+
+||2
+
+.
+
+We provide more studies
+
+about the setting of the kernel in Appendix. The results
+
+in Table 8 show that the local hypotheses such as Con-
+
+stant Speed/Acceleration perform much better. On the other
+
+hand, both LR and GPR show poor performance. As the vir-
+
+tual trajectory generation happens in an online fashion, it is
+
+hard to get a reliable ﬁt using only limited historical data as
+
+the future trajectory is unavailable.
+
+∆t in OCM. As discussed in Section 4, there is a trade-off introduced by choosing an optimal time difference ∆t in OCM. A large ∆t has better robustness over the noise under the linear motion assumption. The proof of this statement
+
+Table 9. Inﬂuence of choice of ∆t for estimating direction in OCM.
+
+∆t = 1 ∆t = 2 ∆t = 3 ∆t = 6
+
+HOTA↑
+66.1 66.3 66.5 66.0
+
+MOT17-val
+
+AssA↑ MOTA↑
+
+67.5
+
+74.9
+
+68.0
+
+75.0
+
+68.9
+
+74.9
+
+67.5
+
+74.6
+
+IDF1↑
+76.9 77.3 77.7 76.9
+
+HOTA↑
+51.3 52.2 52.1 52.1
+
+DanceTrack-val
+
+AssA↑ MOTA↑
+
+34.3
+
+87.1
+
+35.4
+
+87.2
+
+35.3
+
+87.3
+
+35.4
+
+87.4
+
+IDF1↑
+51.3 51.4 51.6 51.8
+
+Table 10. Ablation study about the interpolation post-processing.
+
+w/o interpolation Linear Interpolation GPR Interpolation
+
+HOTA↑
+66.5 68.0 65.2
+
+MOT17-val
+
+AssA↑ MOTA↑
+
+68.9
+
+74.9
+
+69.9
+
+77.9
+
+67.0
+
+72.9
+
+IDF1↑
+77.7 79.3 75.9
+
+HOTA↑
+52.1 52.8 51.6
+
+DanceTrack-val
+
+AssA↑ MOTA↑
+
+35.3
+
+87.3
+
+35.6
+
+89.8
+
+35.0
+
+86.1
+
+IDF1↑
+51.6 52.1 51.2
+
+is provided in the appendix. However, in practice, a large ∆t is likely to discourage approximating object motion as linear. We, therefore, study the inﬂuence of varying ∆t in Table 9. Our results agree with our analysis that increasing ∆t from ∆t = 1 can boost the association performance until a bottleneck. It is believed from relieving the impact of noise in direction estimation. Keeping increasing ∆t higher than the bottleneck instead hurts the performance. It likely results from the challenge of maintaining approximation of linear motion in a longer time interval.
+Interpolation as post-processing. Although we focus on developing an online tracking algorithm, we are also interested in whether post-process can further optimize the tracking results in diverse conditions. Despite the failure of GPR in online tracking in Table 8, we continue to study if GPR is better suited for interpolation in Table 10. We compare GPR with the widely-used linear interpolation. The maximum gap for interpolation is set as 20 frames and we use the same kernel for GPR as mentioned above. The results suggest that the GPR’s non-linear interpolation is simply not efﬁcient. We think this is due to limited data points which results in an inaccurate ﬁt of the object trajectory. Further, the variance in regressor predictions introduces extra noise. Although GPR interpolation decreases the performance on MOT17-val signiﬁcantly, its negative inﬂuence on DanceTrack is relatively minor where the object motion is more non-linear. We believe how to ﬁt object trajectory with non-linear hypothesis still requires more study.
+5.4. Limitations
+Our experiments reveal some limitations of OC-SORT. For example, when the video is of low frame rate or the object motion is fast, as cars in KITTI, the proposed method
+
+falls short in matching objects by only using IoU and trajectory direction consistency. Nevertheless, SORT also has the same limitation. Adding other cues such as center distance [80] or appearance similarity has been demonstrated [70] efﬁcient to solve this. Besides, our method is still built upon the classic Kalman ﬁlters without a fundamental extension for non-linear object motion and the unsuccessful attempt of the Gaussian Process warns the difﬁculty of extending SORT fully to non-linear object motion.
+6. Conclusion
+We analyze the popular motion-based SORT tracker and point out its limitations from the use of Kalman ﬁlter. These limitations play even bigger roles when the tracker fails to gain observations for supervision - likely caused by unreliable detection, occlusion, or fast and non-linear target object motion. To address these issues, we propose Observation-Centric SORT (OC-SORT). OC-SORT is robust to occlusion and non-linear object motion while still being simple, online, and realtime. Our proposed method is motivated by both analytical and empirical ﬁndings and focuses on leveraging observations more conﬁdently in the interaction with Kalman ﬁlter. In our experiments on multiple popular tracking datasets, OC-SORT signiﬁcantly outperforms the state of the art. Our gains are especially significant for multi-object tracking under severe occlusion and on objects with dramatic non-linear motion.
+7. Acknowledgement
+We thank Yuda Song for his generous help to improve the mathematical analysis and the writing quality. We thank Yifu Zhang for providing the code of ByteTrack. We also appreciate Rohan Choudhury for proofreading.
+
+References
+[1] Brian DO Anderson and John B Moore. Optimal ﬁltering. Courier Corporation, 2012. 2
+[2] Yaakov Bar-Shalom, Fred Daum, and Jim Huang. The probabilistic data association ﬁlter. IEEE Control Systems Magazine, 29(6):82–100, 2009. 2
+[3] Sumit Basu, Irfan Essa, and Alex Pentland. Motion regularization for model-based head tracking. In Proceedings of 13th International Conference on Pattern Recognition, volume 3, pages 611–616. IEEE, 1996. 16
+[4] Philipp Bergmann, Tim Meinhardt, and Laura Leal-Taixe. Tracking without bells and whistles. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 941–951, 2019. 8
+[5] Alex Bewley, Zongyuan Ge, Lionel Ott, Fabio Ramos, and Ben Upcroft. Simple online and realtime tracking. In 2016 IEEE international conference on image processing (ICIP), pages 3464–3468. IEEE, 2016. 1, 2, 3, 7, 8
+[6] Gerald J Bierman. Factorization methods for discrete sequential estimation. Courier Corporation, 2006. 2, 5
+[7] Guillem Braso´ and Laura Leal-Taixe´. Learning a neural solver for multiple object tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 6247–6257, 2020. 7, 8
+[8] Jinkun Cao, Hongyang Tang, Hao-Shu Fang, Xiaoyong Shen, Cewu Lu, and Yu-Wing Tai. Cross-domain adaptation for animal pose estimation. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 9498– 9507, 2019. 16
+[9] Ming-Fang Chang, John Lambert, Patsorn Sangkloy, Jagjeet Singh, Slawomir Bak, Andrew Hartnett, De Wang, Peter Carr, Simon Lucey, Deva Ramanan, et al. Argoverse: 3d tracking and forecasting with rich maps. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 8748–8757, 2019. 16
+[10] Yin-Wen Chang, Cho-Jui Hsieh, Kai-Wei Chang, Michael Ringgaard, and Chih-Jen Lin. Training and testing lowdegree polynomial data mappings via linear svm. Journal of Machine Learning Research, 11(4), 2010. 9
+[11] Wongun Choi. Near-online multi-target tracking with aggregated local ﬂow descriptor. In Proceedings of the IEEE international conference on computer vision, pages 3029– 3037, 2015. 2, 8
+[12] Peng Chu, Jiang Wang, Quanzeng You, Haibin Ling, and Zicheng Liu. Transmot: Spatial-temporal graph transformer for multiple object tracking. arXiv preprint arXiv:2104.00194, 2021. 6
+[13] Peng Dai, Renliang Weng, Wongun Choi, Changshui Zhang, Zhangping He, and Wei Ding. Learning a proposal classiﬁer for multiple object tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 2443–2452, 2021. 7
+[14] Patrick Dendorfer, Hamid Rezatoﬁghi, Anton Milan, Javen Shi, Daniel Cremers, Ian Reid, Stefan Roth, Konrad Schindler, and Laura Leal-Taixe´. Mot20: A benchmark for multi object tracking in crowded scenes. arXiv preprint arXiv:2003.09003, 2020. 6
+
+[15] David Duvenaud. Automatic model construction with Gaussian processes. PhD thesis, University of Cambridge, 2014. 15
+[16] Hao-Shu Fang, Jinkun Cao, Yu-Wing Tai, and Cewu Lu. Pairwise body-part attention for recognizing human-object interactions. In Proceedings of the European conference on computer vision (ECCV), pages 51–67, 2018. 16
+[17] D Fraser and J Potter. The optimum linear smoother as a combination of two optimum linear ﬁlters. IEEE Transactions on automatic control, 14(4):387–390, 1969. 2, 5
+[18] Juergen Gall, Angela Yao, Nima Razavi, Luc Van Gool, and Victor Lempitsky. Hough forests for object detection, tracking, and action recognition. IEEE transactions on pattern analysis and machine intelligence, 33(11):2188–2202, 2011. 16
+[19] Damien Garreau, Wittawat Jitkrittum, and Motonobu Kanagawa. Large sample analysis of the median heuristic. arXiv preprint arXiv:1707.07269, 2017. 16
+[20] Zheng Ge, Songtao Liu, Feng Wang, Zeming Li, and Jian Sun. Yolox: Exceeding yolo series in 2021. arXiv preprint arXiv:2107.08430, 2021. 7, 16
+[21] Andreas Geiger, Philip Lenz, Christoph Stiller, and Raquel Urtasun. Vision meets robotics: The kitti dataset. The International Journal of Robotics Research, 32(11):1231–1237, 2013. 6, 7
+[22] Nicolas Franco Gonzalez, Andres Ospina, and Philippe Calvez. Smat: Smart multiple afﬁnity metrics for multiple object tracking. In International Conference on Image Analysis and Recognition, pages 48–62. Springer, 2020. 8
+[23] Fredrik Gustafsson, Fredrik Gunnarsson, Niclas Bergman, Urban Forssell, Jonas Jansson, Rickard Karlsson, and PJ Nordlund. Particle ﬁlters for positioning, navigation, and tracking. IEEE Transactions on signal processing, 50(2):425–437, 2002. 2
+[24] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 770–778, 2016. 2
+[25] David V Hinkley. On the ratio of two correlated normal random variables. Biometrika, 56(3):635–639, 1969. 14
+[26] Andrea Hornakova, Roberto Henschel, Bodo Rosenhahn, and Paul Swoboda. Lifted disjoint paths with application in multiple object tracking. In International Conference on Machine Learning, pages 4364–4375. PMLR, 2020. 7
+[27] Andrea Hornakova, Timo Kaiser, Paul Swoboda, Michal Rolinek, Bodo Rosenhahn, and Roberto Henschel. Making higher order mot scalable: An efﬁcient approximate solver for lifted disjoint paths. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 6330– 6340, 2021. 7
+[28] Hou-Ning Hu, Yung-Hsu Yang, Tobias Fischer, Trevor Darrell, Fisher Yu, and Min Sun. Monocular quasi-dense 3d object tracking. arXiv preprint arXiv:2103.07351, 2021. 8
+[29] Andrew H Jazwinski. Stochastic processes and ﬁltering theory. Courier Corporation, 2007. 9
+[30] Simon J Julier and Jeffrey K Uhlmann. New extension of the kalman ﬁlter to nonlinear systems. In Signal processing, sensor fusion, and target recognition VI, volume 3068,
+
+pages 182–193. International Society for Optics and Photonics, 1997. 2, 15 [31] Simon J Julier and Jeffrey K Uhlmann. Unscented ﬁltering and nonlinear estimation. Proceedings of the IEEE, 92(3):401–422, 2004. 15 [32] Rudolf Emil Kalman et al. Contributions to the theory of optimal control. Bol. soc. mat. mexicana, 5(2):102–119, 1960. 2, 15 [33] Aleksandr Kim, Aljosˇa Osˇep, and Laura Leal-Taixe´. Eagermot: 3d multi-object tracking via sensor fusion. In 2021 IEEE International Conference on Robotics and Automation (ICRA), pages 11315–11321. IEEE, 2021. 8 [34] Kris M Kitani, Brian D Ziebart, James Andrew Bagnell, and Martial Hebert. Activity forecasting. In European conference on computer vision, pages 201–214. Springer, 2012. 16 [35] Jonathan Ko and Dieter Fox. Gp-bayesﬁlters: Bayesian ﬁltering using gaussian process prediction and observation models. Autonomous Robots, 27(1):75–90, 2009. 15 [36] Parth Kothari, Sven Kreiss, and Alexandre Alahi. Human trajectory forecasting in crowds: A deep learning perspective. IEEE Transactions on Intelligent Transportation Systems, 2021. 16 [37] Erich L Lehmann and George Casella. Theory of point estimation. Springer Science & Business Media, 2006. 2 [38] Wei Li, Yuanjun Xiong, Shuo Yang, Mingze Xu, Yongxin Wang, and Wei Xia. Semi-tcl: Semi-supervised track contrastive representation learning. arXiv preprint arXiv:2107.02396, 2021. 6 [39] Chao Liang, Zhipeng Zhang, Yi Lu, Xue Zhou, Bing Li, Xiyong Ye, and Jianxiao Zou. Rethinking the competition between detection and reid in multi-object tracking. arXiv preprint arXiv:2010.12138, 2020. 6 [40] Jonathon Luiten, Aljosa Osep, Patrick Dendorfer, Philip Torr, Andreas Geiger, Laura Leal-Taixe´, and Bastian Leibe. Hota: A higher order metric for evaluating multiobject tracking. International journal of computer vision, 129(2):548–578, 2021. 7 [41] Tim Meinhardt, Alexander Kirillov, Laura Leal-Taixe, and Christoph Feichtenhofer. Trackformer: Multi-object tracking with transformers. arXiv preprint arXiv:2101.02702, 2021. 2, 7 [42] Stan Melax, Leonid Keselman, and Sterling Orsten. Dynamics based 3d skeletal hand tracking. In Proceedings of the ACM SIGGRAPH Symposium on Interactive 3D Graphics and Games, pages 184–184, 2013. 16 [43] Anton Milan, Laura Leal-Taixe´, Ian Reid, Stefan Roth, and Konrad Schindler. Mot16: A benchmark for multi-object tracking. arXiv preprint arXiv:1603.00831, 2016. 3, 6, 7 [44] Jiangmiao Pang, Linlu Qiu, Xia Li, Haofeng Chen, Qi Li, Trevor Darrell, and Fisher Yu. Quasi-dense similarity learning for multiple object tracking. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pages 164–173, 2021. 2, 6, 7, 8 [45] Dezhi Peng, Zikai Sun, Zirong Chen, Zirui Cai, Lele Xie, and Lianwen Jin. Detecting heads using feature reﬁne net and cascaded multi-scale architecture. arXiv preprint arXiv:1803.09256, 2018. 16
+
+[46] Lawrence Rabiner and Biinghwang Juang. An introduction to hidden markov models. ieee assp magazine, 3(1):4–16, 1986. 2
+[47] Akshay Rangesh, Pranav Maheshwari, Mez Gebre, Siddhesh Mhatre, Vahid Ramezani, and Mohan M Trivedi. Trackmpnn: A message passing graph neural architecture for multi-object tracking. arXiv preprint arXiv:2101.04206, 2021. 8
+[48] Herbert E Rauch, F Tung, and Charlotte T Striebel. Maximum likelihood estimates of linear dynamic systems. AIAA journal, 3(8):1445–1450, 1965. 2, 5
+[49] Joseph Redmon, Santosh Divvala, Ross Girshick, and Ali Farhadi. You only look once: Uniﬁed, real-time object detection. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 779–788, 2016. 2
+[50] Steven Reece and Stephen Roberts. An introduction to gaussian processes for the kalman ﬁlter expert. In 2010 13th International Conference on Information Fusion, pages 1–9. IEEE, 2010. 15
+[51] Shaoqing Ren, Kaiming He, Ross Girshick, and Jian Sun. Faster r-cnn: Towards real-time object detection with region proposal networks. Advances in neural information processing systems, 28, 2015. 2, 4
+[52] Hamid Rezatoﬁghi, Nathan Tsoi, JunYoung Gwak, Amir Sadeghian, Ian Reid, and Silvio Savarese. Generalized intersection over union: A metric and a loss for bounding box regression. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pages 658–666, 2019. 9
+[53] Toby Sharp, Cem Keskin, Duncan Robertson, Jonathan Taylor, Jamie Shotton, David Kim, Christoph Rhemann, Ido Leichter, Alon Vinnikov, Yichen Wei, et al. Accurate, robust, and ﬂexible real-time hand tracking. In Proceedings of the 33rd annual ACM conference on human factors in computing systems, pages 3633–3642, 2015. 16
+[54] Karen Simonyan and Andrew Zisserman. Very deep convolutional networks for large-scale image recognition. arXiv preprint arXiv:1409.1556, 2014. 2, 4
+[55] Gerald L Smith, Stanley F Schmidt, and Leonard A McGee. Application of statistical ﬁlter theory to the optimal estimation of position and velocity on board a circumlunar vehicle. National Aeronautics and Space Administration, 1962. 2, 15
+[56] Daniel Stadler and Jurgen Beyerer. Improving multiple pedestrian tracking by track management and occlusion handling. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 10958–10967, 2021. 7
+[57] Daniel Stadler and Ju¨rgen Beyerer. Multi-pedestrian tracking with clusters. In 2021 17th IEEE International Conference on Advanced Video and Signal Based Surveillance (AVSS), pages 1–10. IEEE, 2021. 7
+[58] Daniel Stadler and Ju¨rgen Beyerer. Modelling ambiguous assignments for multi-person tracking in crowds. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision, pages 133–142, 2022. 6
+[59] Peize Sun, Jinkun Cao, Yi Jiang, Zehuan Yuan, Song Bai, Kris Kitani, and Ping Luo. Dancetrack: Multi-object track-
+
+ing in uniform appearance and diverse motion. arXiv preprint arXiv:2111.14690, 2021. 6, 16 [60] Peize Sun, Jinkun Cao, Yi Jiang, Rufeng Zhang, Enze Xie, Zehuan Yuan, Changhu Wang, and Ping Luo. Transtrack: Multiple object tracking with transformer. arXiv preprint arXiv:2012.15460, 2020. 2, 6, 8 [61] Ramana Sundararaman, Cedric De Almeida Braga, Eric Marchand, and Julien Pettre. Tracking pedestrian heads in dense crowd. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 3865– 3875, 2021. 16 [62] Pavel Tokmakov, Jie Li, Wolfram Burgard, and Adrien Gaidon. Learning to track with object permanence. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 10860–10869, 2021. 6, 7, 8, 9 [63] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems, 30, 2017. 2 [64] Gaoang Wang, Renshu Gu, Zuozhu Liu, Weijie Hu, Mingli Song, and Jenq-Neng Hwang. Track without appearance: Learn box and tracklet embedding with local and global motion patterns for vehicle tracking. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 9876–9886, 2021. 8 [65] Gaoang Wang, Yizhou Wang, Renshu Gu, Weijie Hu, and Jeng-Neng Hwang. Split and connect: A universal tracklet booster for multi-object tracking. IEEE Transactions on Multimedia, 2022. 7 [66] Shuai Wang, Hao Sheng, Yang Zhang, Yubin Wu, and Zhang Xiong. A general recurrent tracking framework without real data. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 13219–13228, 2021. 6 [67] Yongxin Wang, Kris Kitani, and Xinshuo Weng. Joint object detection and multi-object tracking with graph neural networks. In 2021 IEEE International Conference on Robotics and Automation (ICRA), pages 13708–13715. IEEE, 2021. 6 [68] Xinshuo Weng, Jianren Wang, David Held, and Kris Kitani. 3d multi-object tracking: A baseline and new evaluation metrics. In 2020 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), pages 10359–10366. IEEE, 2020. 8 [69] Christopher Williams and Carl Rasmussen. Gaussian processes for regression. Advances in neural information processing systems, 8, 1995. 15 [70] Nicolai Wojke, Alex Bewley, and Dietrich Paulus. Simple online and realtime tracking with a deep association metric. In 2017 IEEE international conference on image processing (ICIP), pages 3645–3649. IEEE, 2017. 2, 8, 10 [71] Jialian Wu, Jiale Cao, Liangchen Song, Yu Wang, Ming Yang, and Junsong Yuan. Track to detect and segment: An online multi-object tracker. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pages 12352–12361, 2021. 8 [72] Yu Xiang, Alexandre Alahi, and Silvio Savarese. Learning to track: Online multi-object tracking by decision making. In Proceedings of the IEEE international conference on computer vision, pages 4705–4713, 2015. 8
+
+[73] Yuliang Xiu, Jiefeng Li, Haoyu Wang, Yinghong Fang, and Cewu Lu. Pose ﬂow: Efﬁcient online pose tracking. arXiv preprint arXiv:1802.00977, 2018. 16
+[74] Yihong Xu, Yutong Ban, Guillaume Delorme, Chuang Gan, Daniela Rus, and Xavier Alameda-Pineda. Transcenter: Transformers with dense queries for multiple-object tracking. arXiv preprint arXiv:2103.15145, 2021. 6, 7
+[75] Fan Yang, Xin Chang, Sakriani Sakti, Yang Wu, and Satoshi Nakamura. Remot: A model-agnostic reﬁnement for multiple object tracking. Image and Vision Computing, 106:104091, 2021. 6
+[76] En Yu, Zhuoling Li, Shoudong Han, and Hongwei Wang. Relationtrack: Relation-aware multiple object tracking with decoupled representation. arXiv preprint arXiv:2105.04322, 2021. 6
+[77] Fangao Zeng, Bin Dong, Tiancai Wang, Xiangyu Zhang, and Yichen Wei. Motr: End-to-end multiple-object tracking with transformer. arXiv preprint arXiv:2105.03247, 2021. 2, 6, 8
+[78] Yifu Zhang, Peize Sun, Yi Jiang, Dongdong Yu, Zehuan Yuan, Ping Luo, Wenyu Liu, and Xinggang Wang. Bytetrack: Multi-object tracking by associating every detection box. arXiv preprint arXiv:2110.06864, 2021. 2, 6, 7, 8, 9
+[79] Yifu Zhang, Chunyu Wang, Xinggang Wang, Wenjun Zeng, and Wenyu Liu. Fairmot: On the fairness of detection and re-identiﬁcation in multiple object tracking. International Journal of Computer Vision, 129(11):3069–3087, 2021. 2, 6, 8, 16
+[80] Xingyi Zhou, Vladlen Koltun, and Philipp Kra¨henbu¨hl. Tracking objects as points. In European Conference on Computer Vision, pages 474–490. Springer, 2020. 2, 7, 8, 9, 10
+[81] Xingyi Zhou, Dequan Wang, and Philipp Kra¨henbu¨hl. Objects as points. arXiv preprint arXiv:1904.07850, 2019. 2
+
+A. Velocity Direction Variance in OCM
+
+In this section, we work on the setting of linear motion
+
+with noisy states. We provide the proof that, the trajectory
+
+direction estimation has smaller variance if the two states
+
+we use for the estimation have a larger time difference. We
+
+assume the motion model is xt = f (t) + where is gaussian noise and the ground-truth center position of the target
+
+is (µut , µvt ) at time step t. Then, estimated on two steps t1
+
+and t2, the true motion direction between these two points
+
+is
+
+θ = arctan( µvt1 − µvt2 ),
+
+(11)
+
+µut1 − µut2
+
+which is a constant if our estimation incurs zero noise. And
+
+we have µvt1 − µvt2 ∝ t1 − t2, µut1 − µut2 ∝ t1 − t2. As the detection results do not suffer from the error ac-
+
+cumulation due to propagating along markov process as
+
+Kalman ﬁlter does, we can assume the states from obser-
+
+vation suffers some i.i.d. noise, i.e., ut ∼ N (µut , σu2) and
+
+vt ∼ N (µvt , σv2). We now analyze the noise of the esti-
+
+mated θ˜ =
+
+vt1 −vt2 ut1 −ut2
+
+by two observations on the trajectory.
+
+Because the function of arctan(·) is monotone over the
+
+whole real ﬁeld, we can study tanθ˜ instead which simpliﬁes
+
+the analysis. We denote w = ut1 − ut2 , y = vt1 − vt2 , and
+
+z
+
+=
+
+y w
+
+,
+
+ﬁrst
+
+we
+
+can see
+
+that
+
+y
+
+and
+
+w
+
+jointly
+
+form
+
+a
+
+Gaussian
+
+distribution:
+
+y w
+
+∼N
+
+µy µw
+
+,
+
+σy2 ρσy σw
+
+ρσy σw σw2
+
+,
+
+(12)
+
+√ where µy √= µvt1 − µvt2 , µw = µut1 − µut2 , σw = 2σu and σy = 2σv, and ρ is the correlation coefﬁcient between y and w. We can actually derive a closed-form solution of
+
+the probability density function [25] of z as
+
+g(z)2 −αr(z)2
+
+g(z)e 2β2r(z)2
+
+g(z)
+
+g(z)
+
+p(z) = √
+
+Φ
+
+−Φ −
+
+2πσw σy r(z )3
+
+βr(z)
+
+βr(z)
+
+βe−2α/β + πσwσyr(z)2
+(13)
+
+where
+
+z2 2ρz 1 r(z) = σy2 − σyσw + σw2 ,
+
+g(z)
+
+=
+
+µy z σy2
+
+−
+
+ρ(µy + µwz) σy σw
+
++
+
+µw σw2
+
+,
+
+α
+
+=
+
+µ2w + σy2
+
+µ2y
+
+−
+
+2ρµyµw , σw σy
+
+β=
+
+(14) 1 − ρ2,
+
+and Φ is the cumulative distribution function of the standard normal. Without loss of generality, we can assume µw > 0 and µy > 0 because negative ground-truth displacements
+
+(a) µz = 0.1
+
+(b) µz = 0.5
+
+(c) µz = 2
+
+(d) µz = 5
+
+Figure 4. The probability density of z = tanθ under dif-
+
+ferent true value of z, i.e.
+
+µz
+
+=
+
+µy µw
+
+.
+
+We set µy
+
+and z
+
+as
+
+two variables. It shows that under different settings of true
+
+velocity direction, when µy is smaller, the probability of es-
+
+timated value with signiﬁcant shift from the true value is
+
+higher. As µy is proportional to the time difference of the
+
+two selected observations under linear motion assumption,
+
+it relates to the case that the two steps for velocity direction
+
+estimation has shorter time difference.
+
+enjoy the same property. This solution has good property
+
+that larger µw or µy makes the probability density at the
+
+true value, i.e.
+
+µz
+
+=
+
+µy µw
+
+,
+
+higher,
+
+and the tails
+
+decay more
+
+rapidly. So the estimation of arctanθ, also θ, has smaller
+
+noise when µw or µy is larger. Under the assumption of linear motion, we thus should select two observations with
+
+large temporal difference to estimate the direction.
+
+It is reasonable to assume the noise of detection along
+
+u-axis and v-axis are independent so ρ = 0. And when rep-
+
+resenting the center position in pixel, it is also moderate to
+
+assume σw = σy = 1 (also for the ease of presentation).
+
+Then, with different true value of µz
+
+=
+
+µy µw
+
+,
+
+the visualiza-
+
+tions of p(z) over z and µy are shown in Figure 4. The
+
+visualization demonstrates our analysis above. Moreover, it
+
+shows that when the value of µy or µw is small, the cluster peak of the distribution at µz is not signiﬁcant anymore, as the noise σy and σw can be dominant. Considering the visualization shows that happens when µy is close to σy, this can actually happen when we estimate the speed by obser-
+
+vations from two consecutive frames because the variance
+
+of observation can be close to the absolute displacement of
+
+object motion. This makes another support to our analysis
+
+in the main paper about the sensitivity to state estimation
+
+noise.
+
+Table 11. Ablation study about using Gaussian Process Regression for object trajectory interpolation. LI indicates Linear Interpolation, which is used to interpolate the trajectory before smoothing the trajectory by GPR. MT indicates Median Trick for kernel choice in regression. Lτ is the length of trajectory.
+
+Interpolation Method
+w/o interpolation Linear Interpolation
+GPR Interp, l = 1 GPR Interp, l = 5 GPR Interp, l = Lτ GPR Interp, l = 1000/Lτ GPR Interp, l = MT(τ )
+LI + GPR Smoothing, l = 1 LI + GPR Smoothing, l = 5 LI + GPR Smoothing, l = Lτ LI + GPR Smoothing, l = 1000/Lτ LI + GPR Smoothing, l = MT(τ )
+
+HOTA
+66.5 69.6
+66.2 66.3 66.1 65.9 65.9
+69.5 69.5 69.6 69.5 69.5
+
+MOT17-val
+AssA MOTA
+68.9 74.9 69.9 77.9
+67.6 74.3 67.0 72.9 67.0 73.1 67.0 73.0 67.0 73.1
+69.6 77.8 69.7 77.8 69.5 77.8 69.9 77.8 69.6 77.8
+
+IDF1
+77.7 79.3
+76.6 75.9 77.8 77.8 77.8
+79.3 79.3 79.2 79.3 79.3
+
+HOTA
+52.1 52.8
+51.8 51.8 51.6 51.8 51.7
+52.8 52.9 52.9 53.0 52.8
+
+DanceTrack-val
+AssA MOTA
+35.3 87.3 35.6 89.8
+35.0 86.6 35.1 86.5 35.1 86.4 35.0 86.9 35.1 86.7
+35.6 89.9 34.9 89.7 35.6 89.9 35.6 89.9 35.6 89.8
+
+IDF1
+51.6 52.1
+50.8 51.1 50.7 51.0 50.9
+52.1 52.1 52.1 52.1 52.1
+
+B. Interpolation by Gaussian Progress Regression
+From the analysis in the main paper, the failure of SORT can mainly result from occlusion (lack of observations) or the non-linear motion of objects (the break of linear-motion assumption). So the question arises naturally whether we can extend SORT free of the linear-motion assumption or at least more robust when it breaks.
+One way is to extend from KF to non-linear ﬁlters, such as EKF [32, 55] and UKF [30]. However, for real-world online tracking, they can be hard to be adopted as they need knowledge about motion pattern or still rely on the techniques fragile to non-linear pattern, such as linearization [31]. Another choice is to gain the knowledge beyond linearality by regressing previous trajectory, such as combing Gaussian Process (GP) [35, 50, 69]: given a observation z and a kernel function k(·, ·), GP deﬁnes gaussian functions with mean µz and variance Σz as
+µz = k [K + σ2I]−1y, (15)
+Σz = k(z , z ) − k [K + σ2I]−1k ,
+where k is the kernel matrix between the input and training data and K is the kernel matrix over training data, y is the output of data. In the main paper, we show a primary study of using Gaussian Process Regression (GPR) in online generation of the virtual trajectory in OOS and in offline interpolation. But neither of them successfully boosts the tracking performance. In this section, We investigate in detail the chance of combining GPR and SORT for multiobject tracking for interpolation as some designs are worth more study.
+
+B.1. Choice of Kernel Function in Gaussian Process
+
+The kernel function is a key variable of GPR. There is not a generally efﬁcient guideline to choose the kernel for Gaussian Process Regression though some basic observations are available [15]. When there is no additional knowledge about the time sequential data to ﬁt, the RBF kernel is one of the most common choices:
+
+k(x, x ) = σ2exp
+
+||x − x||2 − 2l2
+
+,
+
+(16)
+
+where l is the lengthscale of the data to be ﬁt. It determines the length of the “wiggles” of the target function. σ2 is the output variance that determines the average distance of the function away from its mean. This is usually just a scale factor [15]. GPR is considered sensitive to l in some situations. So we conduct an ablation study over it in the ofﬂine interpolation to see if we can use GPR to outperform the linear interpolation widely used in multi-object tracking.
+
+B.2. GPR for Ofﬂine Interpolation
+In the main paper, we present the use of GPR in online virtual trajectory ﬁtting (Table 8) and ofﬂine interpolation (Table 10) where we use l2 = 25 and σ = 1 for the kernel in Eq. 16. Further, we make a more thorough study of the setting of GPR. We follow the settings of experiments in the main paper that only trajectories longer than 30 frames are put into interpolation. And the interpolation is only applied to the gap shorter than 20 frames. We conduct the experiments on the validation set of MOT17 and DanceTrack.
+For the value of l, we try ﬁxed values, i.e. l = 1 and l = 5 (2l2 = 50), value adaptive to trajectory length, i.e.
+
+Table 12. Results on CroHD Head Tracking dataset [61]. Our method uses the detections from HeadHunter [61] or FairMOT [79] to generate new tracks.
+
+Tracker
+HeadHunter [61] HeadHunter dets + OC-SORT
+FairMOT [79] FairMOT dets + OC-SORT
+
+HOTA↑
+36.8 39.0
+43.0 44.1
+
+MOTA↑
+57.8 60.0
+60.8 67.9
+
+IDF1↑
+53.9 56.8
+62.8 62.9
+
+FP(104)↓
+5.18 5.18
+11.8 10.2
+
+FN(104)↓
+30.0 28.1
+19.9 16.4
+
+IDs↓
+4,394 4,122
+12,781 4,243
+
+Frag↓
+15,146 10,483
+41,399 10,122
+
+Table 13. Results on DanceTrack test set. “Ours (MOT17)” uses the YOLOX detector trained on MOT17-training set.
+
+Tracker
+SORT Ours
+Ours (MOT17)
+
+HOTA↑ DetA↑ AssA↑ MOTA↑IDF1↑
+47.9 72.0 31.2 91.8 50.8 55.1 80.3 38.0 89.4 54.2
+48.6 71.0 33.3 84.2 51.5
+
+l = Lτ and l = 1000/Lτ , and the value output by Median Trick (MT) [19]. The training data is a series of quaternary [u, v, w, h], normalized to zero-mean before being fed into training. The results are shown in Table 11. Linear interpolation is simple but builds a strong baseline as it can stably improve the tracking performance concerning multiple metrics. Directly using GPR to interpolate the missing points hurts the performance and the results of GPR are not sensitive to the setting of l.
+There are two reasons preventing GPR from accurately interpolating missing segments. First, the trajectory is usually limited to at most hundreds of steps, providing very limited data points for GPR training to converge. Besides, the missing intermediate data points make the data series discontinuous, causing a huge challenge. We can ﬁx the second issue by interpolating the trajectory with Linear Interpolation (LI) ﬁrst and then smoothing the interpolated steps by GPR. This outperforms LI on DanceTrack but still regrades over LI on MOT17. This is likely promoted by the non-linear motion on DanceTrack. By ﬁxing the missing data issue of GPR, GPR can have more accurate trajectory ﬁtting over LI for the non-linear trajectory cases. But considering the outperforming from GPR is still minor compared with the Linear Interpolation-only version and GPR requires much heavier computation overhead, we do not recommend using such a practice in most multi-object tracking tasks. More careful and deeper study is still required on this problem.
+C. Results for Head Tracking
+When considering tracking in the crowd, focusing on only a part of the object can be beneﬁcial as it usually suffers less from occlusion than the full body. This line
+
+of study is conducted over hand tracking [42, 53], human pose [73] and head tracking [3, 45, 61] for a while. Moreover, with the knowledge of more ﬁne-grained part trajectory, it can be useful in downstream tasks, such as action recognition [16, 18] and forecasting [8, 9, 34, 36]. As we are interested in the multi-object tracking in the crowd, we also evaluate the proposed OC-SORT on a recently proposed human head tracking dataset CroHD [61].
+To make a fair comparison on only the association performance, we adopt OC-SORT by directing using the detections from existing tracking algorithms. The results are shown in Table 12. The detections of FairMOT [79] and HeadHunter [61] are extracted from their tracking results downloaded from the ofﬁcial leaderboard 1. We use the same parameters for OC-SORT as on the other datasets we evaluate on. The results suggest a signiﬁcant tracking performance improvement compared with the previous methods [61, 79] for human body part tracking. But considering the tracking performance is still relatively low (HOTA=4˜0) which is highly related to the tiny size of head targets.
+D. Pseudo-code of OC-SORT
+The pseudo-code of OC-SORT is provided in Algorithm. 1 for reference.
+E. More Results on DanceTrack
+To gain more intuition about the improvement of OCSORT over SORT, we provide more comparisons. In Figure 5, we show more samples where SORT suffers from ID switch or Fragmentation caused by non-linear motion or occlusion but OC-SORT survives. Furthermore, in Figure 6, we show more samples of trajectory visualizations from SORT and OC-SORT on DanceTrack-val set.
+As DanceTrack [59] is proposed to emphasize association algorithm so the object detection is relatively easy on it. We train to use the YOLOX [20] trained from the MOT17 training set to provide detections on DanceTrack and ﬁnd the tracking performance of OC-SORT is already higher than baselines. The results are shown in Table 13.
+1https://motchallenge.net/results/Head Tracking 21/
+
+Algorithm 1: Pseudo-code of OCSORT.
+Input: Detections Z = {zik|1 ≤ k ≤ T, 1 ≤ i ≤ Nk}; Kalman Filter KF; threshold to remove untracked tracks texpire Output: The set of tracks T = {τi} 1 Initialization: T ← ∅ and KF; 2 for timestep t ← 1 : T do
+/* Step 1: match track prediction with observations */ 3 Zt ← [z1t , ..., zNt t ] /* Obervations */ 4 Xˆ t ← [xˆ1t , ..., xˆ|tT |] from T /* Estimations by KF.predict */ 5 Vt ← estimated velocity direction from T 6 Ct ← CIoU(Xˆ t, Zt) + λCv(Xˆ t, Zt, Vt) /* Cost Matrix with OCM term */ 7 Linear assignment by Hungarians with cost Ct 8 Ttmatched ← tracks matched to an observation 9 Ttremain ← tracks not matched to any observation 10 Zrtemain ← observations not matched to any track
+
+/* Step 2: perform OCR to find lost tracks back */
+
+11
+
+ZTtremain ← last matched observations of tracks in Ttremain
+
+12
+
+Ctremain ← CIoU(ZTtremain , Zrtemain)
+
+13 Linear assignment by Hungarians with cost Ctremain
+
+14
+
+Ttrecovery ← tracks from Ttremain and matched to observations in ZTtremain
+
+15 Zutnmatched ← observations from ZTtremain that are still unmatched to tracks
+
+16 Ttunmatched ← tracks from Ttremain that are still unmatched to observations
+
+17
+
+Ttmatched ← {Ttmatched, Ttrecovery}
+
+/* Step 3: update status of matched tracks */
+
+18
+
+for τ in Ttmatched do
+
+19
+
+if τ.tracked = F alse then
+
+/* Perform OOS for track from untracked to tracked */
+
+20
+
+zτt , t ← The last observation matched to τ and the time step
+
+21
+
+Rollback KF parameters to t
+
+/* Generate virtual observation trajectory */
+
+22
+
+Zˆ τt ← [zˆτt +1, ..., zˆτt−1]
+
+23
+
+Online smooth KF parameters along Zˆ τt
+
+24
+
+end
+
+25
+
+τ.tracked = T rue
+
+26
+
+τ.untracked = 0
+
+27
+
+Append the new matched associated observation zτt to τ ’s observation history
+
+28
+
+Update KF parameters for τ by zτt
+
+29 end
+
+/* Step 4: initialize new tracks and remove expired tracks */
+
+30 Ttnew ← new tracks generated from Zutnmatched
+
+31
+
+for τ in Ttunmatched do
+
+32
+
+τ.tracked = F alse
+
+33
+
+τ.untracked = τ.untracked + 1
+
+34 end
+
+35 Ttreserved ← {τ | τ ∈ Ttunmatched and τ.untracked < texpire} /* remove expired tracks */
+
+36
+
+T ← {Ttnew, Ttmatched, Ttreserved} /* Conclude */
+
+37 end
+
+38 T ← Postprocess(T ) /* [Optional] offline post-processing */ 39 Return: T
+
+(a) SORT: dancetrack0036
+
+(b) OC-SORT: dancetrack0036
+
+(c) SORT: dancetrack0054
+
+(d) OC-SORT: dancetrack0054
+
+(e) SORT: dancetrack0064
+
+(f) OC-SORT: dancetrack0064
+
+(g) SORT: dancetrack0078
+
+(h) OC-SORT: dancetrack0078
+
+(i) SORT: dancetrack0089
+
+(j) OC-SORT: dancetrack0089
+
+(k) SORT: dancetrack0100
+
+(l) OC-SORT: dancetrack0100
+
+Figure 5. More samples where SORT suffers from the fragmentation and ID switch of tracks from occlusion or non-linear
+
+motion but OC-SORT survives. To be precise, the issue happens on the objects by SORT at: (a) #322 → #324; (c) ID
+
+switch between #672 and #673, later #673 being lost; (e) #760 → #761; (g) #871 → #872; (i) #1063 → #1090, then ID
+
+switch with #1081; (k) #1295 → #1309. We select samples from diverse scenes, including street dance, classic dance
+
+and gymnastics. Best viewed in color and zoom in. We also provide the corresponding video segments at the https:
+
+//github.com/noahcao/OC_SORT .
+
+dancetrack0005_GT#0
+
+dancetrack0007_GT#1
+
+dancetrack0004_GT#3 (a) GT #3 on video #0003
+dancetrack0010_GT#2
+
+(b) GT #0 on video #0005 dancetrack0018_GT#0
+
+(c) GT #1 on video #0007 dancetrack0025_GT#6
+
+(d) GT #2 on video #0010 dancetrack0034_GT#9
+
+(e) GT #0 on video #0018 dancetrack0035_GT#6
+
+(f) GT #6 on video #0025 dancetrack0041_GT#0
+
+(g) GT #9 on video #0034 dancetrack0047_GT#0
+
+(h) GT #6 on video #0035
+
+(i) GT #0 on video #0041
+
+(j) GT #0 on video #0047 dancetrack0079_GT#3
+
+dancetrack0065_GT#0 (k) GT #0 on video #0065
+
+dancetrack0077_GT#5 (l) GT #5 on video #0077 dancetrack0081_GT#11
+
+dancetrack0081_GT#0
+
+(m) GT #3 on video #0079
+
+(n) GT #0 on video #0081
+
+(o) GT #11 on video #0081
+
+Figure 6. Randomly selected object trajectories on the videos from Dance-val set. The black cross indicates the ground
+
+truth trajectory. The red dots indicate the trajectory output by OC-SORT and associated to the selected GT trajectory. The
+
+green triangles indicate the trajectory output by SORT and associated to the selected GT trajectory. SORT and OC-SORT
+
+use the same hyperparameters and detections. Trajectories are sampled at the ﬁrst 100 frames of each video sequence.
+

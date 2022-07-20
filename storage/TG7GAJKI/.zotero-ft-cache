@@ -1,0 +1,615 @@
+arXiv:2007.14557v1 [cs.CV] 29 Jul 2020
+
+Chained-Tracker: Chaining Paired Attentive Regression Results for End-to-End Joint Multiple-Object Detection and Tracking
+Jinlong Peng1 , Changan Wang1 , Fangbin Wan2, Yang Wu3 , Yabiao Wang1, Ying Tai1, Chengjie Wang1, Jilin Li1, Feiyue Huang1, and Yanwei Fu2
+1 Tencent Youtu Lab {jeromepeng, changanwang, caseywang, yingtai, jasoncjwang, jerolinli, garyhuang}@tencent.com
+2 Fudan University {fbwan18, yanweifu}@fudan.edu.cn 3 Nara Institute of Science and Technology yangwu@rsc.naist.jp
+Abstract. Existing Multiple-Object Tracking (MOT) methods either follow the tracking-by-detection paradigm to conduct object detection, feature extraction and data association separately, or have two of the three subtasks integrated to form a partially end-to-end solution. Going beyond these sub-optimal frameworks, we propose a simple online model named Chained-Tracker (CTracker), which naturally integrates all the three subtasks into an end-to-end solution (the ﬁrst as far as we know). It chains paired bounding boxes regression results estimated from overlapping nodes, of which each node covers two adjacent frames. The paired regression is made attentive by object-attention (brought by a detection module) and identity-attention (ensured by an ID veriﬁcation module). The two major novelties: chained structure and paired attentive regression, make CTracker simple, fast and eﬀective, setting new MOTA records on MOT16 and MOT17 challenge datasets (67.6 and 66.6, respectively), without relying on any extra training data. The source code of CTracker can be found at: github.com/pjl1995/CTracker.
+Keywords: Multiple-Object Tracking, Chained-Tracker, End-to-end solution, Joint detection and tracking
+1 Introduction
+Video-based scene understanding and human behavior analysis are important high-level tasks in computer vision with many valuable applications in real scene. They rely on many other tasks, within which Multiple-Object Tracking (MOT) is a signiﬁcant one. However, MOT remains challenging due to the existence of occlusions, object trajectory overlap, possibly challenging background, etc., especially for crowded scenes.
+Equal contribution. Corresponding author: Yang Wu (wuyang0321@gmail.com) This work was supported by a MSRA Collaborative Research 2019 Grant.
+
+2
+
+J. Peng et al.
+
+Fig. 1. Comparison of our CTracker (Bottom) with other typical MOT methods (Top), which are either isolated models or partially integrated models. Our CTracker signiﬁcantly diﬀers from other methods in two aspects: 1) It is a totally end-to-end model using adjacent frame pair as input and generating the box pair representing the same target. 2) We convert the challenging cross-frame association problem into pair-wise object detection problem.
+Despite the great eﬀorts and encouraging progress in the past years, there are two major problems of existing MOT solutions. One is that most methods are based on the tracking-by-detection paradigm [1], which is plausible but suboptimal due to the infeasibility of global (end-to-end) optimization. It usually contains three sequential subtasks: object detection, feature extraction and data association. However, splitting the whole task into isolated subtasks may lead to local optima and more computation cost than end-to-end solutions. Moreover, data association heavily relies on the quality of object detection, which by itself is hard to generate reliable and stable results across frames as it discards the temporal relationships of adjacent frames.
+The other problem is that recent MOT methods get more and more complex as they try to gain better performances. Re-identiﬁcation and attention are two major points found to be helpful for improving the performance of MOT. Re-identiﬁcation (or ID veriﬁcation) is used to extract more robust features for data association. Attention helps the model to be more focused, avoiding the distraction by irrelevant yet confusing information (e.g. the complex background). Despite their eﬀectiveness, the involvement of them in existing solutions greatly increases the model complexity and computational cost.
+In order to solve the above problems, we propose a novel online tracking method named Chained-Tracker (CTracker), which uniﬁes object detection, feature extraction and data association into a single end-to-end model. As can be
+
+Chained-Tracker
+
+3
+
+seen in Fig. 1, our novel CTracker model is cleaner and simpler than the classical tracking-by-detection or partially end-to-end MOT methods. It takes adjacent frame pairs as input to perform joint detection and tracking in a single regression model that simultaneously regress the paired bounding boxes for the targets that appear in both of the two adjacent frames.
+Furthermore, we introduce a joint attention module using predicted conﬁdence maps to further improve the performance of our CTracker. It guides the paired boxes regression branch to focus on informative spatial regions with two other branches. One is the object classiﬁcation branch, which predicts the conﬁdence scores for the ﬁrst box in the detected box pairs, and such scores are used to guide the regression branch to focus on the foreground regions. The other one is the ID veriﬁcation branch whose prediction facilitates the regression branch to focus on regions corresponding to the same target. Finally, the bounding box pairs are ﬁltered according to the classiﬁcation conﬁdence. Then, the generated box pairs belonging to the adjacent frame pairs could be associated using simple methods like IoU (Intersection over Union) matching [2] according to their boxes in the common frame. In this way, the tracking process could be achieved by chaining all the adjacent frame pairs (i.e. chain nodes) sequentially.
+Beneﬁting from the end-to-end optimization of joint detection and tracking network, our model shows signiﬁcant superiority over strong competitors while remaining simple. With the temporal information of the combined features from adjacent frames, the detector becomes more robust, which in turn makes data association easier, and ﬁnally results in better tracking performance.
+The contribution of this paper can be summarized into the following aspects: 1. We propose an end-to-end online Multiple-Object Tracking model, to optimize object detection, feature extraction and data association simultaneously. Our proposed CTracker is the ﬁrst method that converts the challenging data association problem to a pair-wise object detection problem. 2. We design a joint attention module to highlight informative regions for box pair regression and the performance of our CTracker is further improved. 3. Our online CTracker achieves state-of-the-art performance on the tracking result list with private detection of MOT16 and MOT17.
+
+2 Related Work
+2.1 Detection-based MOT Methods
+Yu et. al [3] proposed the POI algorithm, which conducted a high-performance detector based on Faster R-CNN [4] by adding several extra pedestrian detection datasets. Chen et. al [5] incorporated an enhanced detection model by simultaneously modeling the detection-scene relation and detection-detection relation, called EDMT. Furthermore, Henschel et. al [6] added a head detection model to support MOT in addition to original pedestrian detection, which also needed extra training data and annotations. Bergmann et. al [7] proposed the Tracktor by exploiting the bounding box regression to predict the position of the pedestrian
+
+4
+
+J. Peng et al.
+
+in the next frame, which was equal to modifying the detection box. However, the detection model and the tracking model in these detection-based methods are completely independent, which is complex and time-consuming. While our CTracker algorithm only needs one integrated model to perform detection and tracking, which is simple and eﬃcient.
+
+2.2 Partially End-to-end MOT Methods
+Lu et. al [8] proposed RetinaTrack, which combined detection and feature extraction in the network and used greedy bipartite matching for data association. Sun et. al [9] harnessed the power of deep learning for data association in tracking by jointly modeling object appearances and their aﬃnities between diﬀerent frames. Similarly, Chu et. al [10] designed the FAMNet to jointly optimize the feature extraction, aﬃnity estimation and multi-dimensional assignment. Li et. al [11] proposed TrackNet by using frame tubes as input to do joint detection and tracking, however the links among tubes are not modeled which limits the trajectory lengths. Moreover, the model is designed and tested only for rigid object (vehicle) tracking, leaving its generalization ability questionable. Despite their diﬀerences, all these methods are just partially end-to-end MOT methods, because they just integrated some parts of the whole model, i.e. [8] combined the detection and feature extraction module in a network, [9,10] combined the feature extraction and data association module. Diﬀerently, our CTracker is a totally end-to-end joint detection and tracking methods, unifying the object detection, feature extraction and data association in a single model.
+
+2.3 Attention-assistant MOT Methods
+Chu et. al [12] introduced a Spatial-Temporal Attention Mechanism (STAM) to handle the tracking drift caused by the occlusion and interaction among targets. Similarly, Zhu et. al [13] proposed a Dual Matching Attention Networks (DMAN) with both spatial and temporal attention mechanisms to perform the tracklet data association. Gao et. al [14] also utilized an attention-based appearance model to solve the inter-object occlusion. All these attention-assistant MOT methods used a complex attention model to optimize data association in the local bounding box level. While our CTracker can improve both the detection and tracking performance through the simple object-attention and identity-attention in the global image level, which is more eﬃcient.
+
+3 Methodology
+3.1 Problem Settings Given an image sequence {Ft}Nt=1 with totally N frames, Multiple-Object Tracking task aims to output all the bounding boxes {Gt}Nt=1 and identity labels {YtGT }Nt=1 for all the objects of interest in all the frames where they appear.
+
+Chained-Tracker
+
+5
+
+Fig. 2. Illustration of the node chaining. After generating bounding box pairs {Dt−1, Dˆt} by CTracker for two arbitrary adjacent nodes (Ft−1, Ft) and (Ft, Ft+1), we chain these two nodes by doing IoU matching on the shared common frame. Such a chaining is done sequentially over all adjacent nodes to generate long trajectories for the whole video sequence. More detailed can be found in the main text.
+Ft ∈ Rc×w×h indicates the t-th frame, Gt ⊂ R4 represents the ground-truth bounding boxes of the Kt number of targets in t-th frame and YtGT ⊂ Z denotes their identities. Most of the recent MOT algorithms divide the MOT task into three components, which are object detection, feature extraction and data association. However, many researches and experiments demonstrate that the association’s eﬀectiveness relies heavily on the performance of detection. Therefore, in order to better utilize their correlation, in this paper, we propose a novel Chained-Tracker (abbr. CTracker), which uses a single network to simultaneously achieve object detection, feature extraction and data association. We introduce the pipeline of our CTracker in the subsection 3.2. The details of the network and loss design are described separately in the subsection 3.3 and 3.4.
+3.2 Chained-Tracker Pipeline
+Framework. Diﬀerent from other MOT models that only takes a single frame as input, our CTracker model requires two adjacent frames as input, which is called a chain node. The ﬁrst chain node is (F1, F2) and the last (i.e., the N -th) is (FN , FN+1). Note that FN is the last frame, so we just take the copy version of FN as FN+1. Given the node (Ft−1, Ft) as input, CTracker can generate bounding box pairs {(Dti−1, Dˆ ti)}ni=t−11 of the same targets appearing in both frames, where nt−1 is the total pair number, Dti−1 ∈ Dt−1 ⊂ R4 and Dˆ ti ∈ Dt ⊂ R4 denote the
+
+6
+
+J. Peng et al.
+
+two bounding boxes of the same target. Similarly, we can also get the box pairs {(Dtj, Dˆ tj+1)}nj=t 1 in the next node (Ft, Ft+1). As can be seen in Fig. 2, assume that Dˆti and Dtj represent detected boxes of the same target located in the common frame of the adjacent nodes, there shall be only slight diﬀerence between
+the two boxes. We can further use an extremely simple matching strategy (as
+detailed below) to chain the two boxes, instead of using complicated appearance
+features as in canonical MOT methods. By chaining nodes sequentially over the
+given sequence, we can obtain long trajectories of all the detected targets. Node chaining. We use {Dt−1, Dˆt} to represent {(Dti−1, Dˆ ti)}ni=t−11 for convenience. The node chaining is done as follows. Firstly, in the node, every detected bounding box D1i ∈ D1 is initialized as a tracklet with a randomly assigned identity. Secondly, for any another node t, we chain the adjacent nodes (Ft−1, Ft) and (Ft, Ft+1) by calculating the IoU (Intersection over Union) between the boxes in Dˆt and Dt as shown in Fig. 2, where Dˆt is the last boxes set of {Dt−1, Dˆt} and Dt is the former boxes set of {Dt, Dˆt+1}. Getting the IoU aﬃnity, the detected boxes in Dˆt and Dt are matched by applying the Kuhn-Munkres (KM) algorithm [15]. For each matched box pair Dˆti and Dtj, the tracklet that Dˆti belongs to is updated by appending Dtj. Any unmatched box Dtk is initialized as a new tracklet with a new identity. The chaining is done sequentially over all adjacent
+nodes and it builds long trajectories for individual targets.
+Robustness enhancement (esp. against occlusions). To enhance the model’s
+robustness to serious occlusions (which can make detection fail in certain frames)
+and short-term disappearing (followed by quick reappearing), we retain the ter-
+minated tracklets and their identities for up to σ frames and continue ﬁnding
+matches for them in these frames, with the simple constant velocity prediction model [16,17] for motion estimation. In greater details, suppose target (Dtl−1, Dˆtl) cannot ﬁnd its match is node t, we apply the constant velocity model to predict its bounding box Ptl+τ in frame t + τ (1 <= τ <= σ) according to Dtl−1 (not the less reliable Dˆtl). When we chain node t + τ − 1 and node t + τ with {Dt+τ−1, Dˆt+τ } and {Dt+τ , Dˆt+τ+1}, the current set of all the predicted bounding boxes of retained targets denoted by Pt+τ , is appended to Dˆt+τ for matching with Dt+τ . If Pti+τ gets a match, its tracklet will be extended by linking to the new bounding boxes.
+Eﬀectiveness and limitations. Our model is eﬀective for handling the cases
+when targets appear or disappear (i.e., enter or leave camera view), which are
+quite common for MOT. When a target is not in frame t − 1 but appears in
+frame t, it is likely that no bounding box pair for it gets generated in the chain
+node (Ft−1, Ft). However, as long as this target continues to appear in frame t + 1, it will be detected in the next chain node (Ft, Ft+1) and get a new tracklet and identity there. Similarly, if a target is in the frame t − 1 but disappears from
+frame t, it will not be detected in node (Ft, Ft+1), resulting the termination of its tracklet in node t − 1 or even t − 2. Note that the chaining operation itself cannot
+be fully parameterized and therefore it cannot be optimized together with the
+regressions. Since the regression model (as detailed below) does the major work
+and there is no need to get feedback for it from the chaining operation, we still
+
+Chained-Tracker
+
+7
+
+Fig. 3. Network architecture of CTracker. Given two adjacent frames, we ﬁrstly use two backbone branches with tied weights to extract the features for each frame separately. Then we concatenate features of the two frames on channel level and the combined features are used to predict the paired boxes. To highlight local informative regions for paired boxes regression, the combined features are multiplied with the attention maps from the object classiﬁcation branch and the ID veriﬁcation branch.
+use the “end-to-end” property to describe CTracker. A pure end-to-end trainable model requires a diﬀerentiable replacement to the current IoU matching based chaining strategy.
+3.3 Network architecture
+Overview. Our proposed CTracker network uses two adjacent frames as input and regresses the bounding box pair of the same target. To do this, we adopt ResNet-50 [18] as the backbone to extract high-level semantic features. It then integrates Feature Pyramid Networks (FPN) to generate multi-scale feature representation for subsequent prediction. In order to associate targets in adjacent frames, the scale-level feature maps from individual frames are ﬁrstly concatenated together, and then fed into the prediction network to regress bounding box pairs. As can be seen in Fig. 3, the paired boxes regression branch generates a box pair for each target, and the object classiﬁcation branch predicts a score for each pair indicating the conﬁdence of being foreground. To help the paired boxes regression branch to avoid the distraction by irrelevant yet confusing information, the object classiﬁcation branch and the extra ID veriﬁcation branch are used for attention guidance. Paired Boxes Regression. Inspired by predicting the oﬀsets relative to predeﬁned (default) anchor boxes in object detection, we propose Chained-Anchors for the paired boxes regression branch to regress two boxes simultaneously. As a novel natural derivative of the anchors used in most object detection methods, Chained-Anchors are densely arranged on a spatial grid, each of them allows predicting two bounding boxes of the same object instance in two adjacent frames. In order to handle the large scale variation in real scenes, the K-means clustering as used in [19] is conducted on all ground-truth bounding boxes in the
+
+8
+
+J. Peng et al.
+
+Fig. 4. Memory sharing mechanism in our CTracker. The extracted features of each frame (except the ﬁrst one) are ﬁrstly used in the current chain node, and then can be saved and reused in the next chain node. Note that when making inference for the last node, the features of the last frame N is also reused as the features of the hypothetical frame N + 1 to avoid the repeated computation for frame N .
+dataset for getting the scales of chained-anchors. And each cluster is assigned to the corresponding level of FPN for later scale speciﬁc predictions. The detected bounding box pairs are ﬁrstly post-processed with soft-NMS [20] according to the IoU of the ﬁrst box in each pair, and then ﬁltered based on the conﬁdence scores from the classiﬁcation branch. Finally, the remaining box pairs are chained into the whole tracking trajectories using the method described in Sec. 3.2. To keep our model simple, both the paired boxes regression branch and the classiﬁcation branch only stack four consecutive 3×3 Conv layers interleaved with ReLU activations before the ﬁnal convolution layer.
+Joint Attention Module. We design an attention mechanism based component called Joint Attention Module (JAM) to highlight local informative regions in the combined features before the regression branch. As shown from the right of Fig. 3, the ID veriﬁcation branch is introduced to get conﬁdence scores, indicating whether the two boxes in the detected pair belong to the same target. Then both the predicted conﬁdence map of ID veriﬁcation branch and object classiﬁcation branch are used as attention maps. Note that the guidance from the two branches is complementary, the conﬁdence maps from the classiﬁcation branch focuses on foreground regions while the prediction from the ID veriﬁcation branch is used to highlight the features of the same target.
+Feature Reuse. Since the input of the network contains two adjacent frames, the common frame of two adjacent nodes has to be used twice in the tracking process. To avoid the nearly double cost of computation and memory in infer-
+
+Chained-Tracker
+
+9
+
+ence, we propose a Memory Sharing Mechanism (MSM) to temporarily save the extracted features of the current frame and reuse them until the next node is processed, as shown in Fig. 4. Besides, in order to make inference for the last node, we make a copy of frame N as the hypothetical frame N + 1. To further avoid the repeated computation for the frame N + 1, we also apply the trick of feature resue to frame N , and the feature of frame N is copied as the feature of the hypothetical frame N + 1. We demonstrate that the proposed MSM can reduce almost half of the overall computation and time cost.
+
+3.4 Label Assignment and Loss Design
+
+For an arbitrary chain node (Ft, Ft+1), let Ait = (xta,i, yat,i, wat,i, hta,i) denote its i-th chained-anchor (where xta,i and yat,i are the box center coordinates; wat,i and hta,i are the width and height, respectively), we adopt a ground-truth bounding
+box matching strategy similar to that of SSD [21]. We use a matrix M to denote the result of such a matching. If Gjt is the corresponding ground-truth bounding box in Ft for Ait, which is judged by the IoU ratio (higher than a threshold Tp),
+then we have Mij = 1. If the IoU ratio is lower than another smaller threshold Tn, then Mij = 0. Based on M , we can assign the ground-truth label cicls to CTracker’s classiﬁcation branch for Ait as:
+
+cicls =
+
+1, if ΣKj=t1Mij = 1, 0, if ΣKj=t1Mij = 0,
+
+(1)
+
+where Kt is the total number of ground-truth bounding boxes for frame Ft. With Ait, suppose the predicted pair of bounding boxes are (Dti, Dˆti+1) and
+the corresponding ground-truth bounding boxes are (Gjt , Gkt+1) when they exist,
+the ID veriﬁcation branch of CTracker shall get its ground-truth label as:
+
+ciid =
+
+1, if cicls = 1 and I[Gjt ] = I[Gkt+1],
+
+0,
+
+otherwise,
+
+(2)
+
+where I[·] represents the identity of the target in the bounding box. We follow Faster R-CNN [22] to regress oﬀsets of (Dti, Dˆti+1) w.r.t. Ait, where
+Dti = (xtd,i, ydt,i, wdt,i, htd,i). Let (∆td,i, ∆tdˆ+1,i) denote these oﬀsets and (∆tg,j , ∆tg+1,k) be the oﬀsets for the ground-truths, we list the details of ∆td,i = (∆td,,ix, ∆td,,iy, ∆td,,iw,
+∆td,,ih) as an example (the others are similar):
+
+∆td,,ix = (xtd,i − xta,i)/wat,i, ∆td,,iy = (ydt,i − yat,i)/hta,i,
+
+(3)
+
+∆td,,iw = log(wdt,i/wat,i), ∆td,,ih = log(htd,i/hta,i).
+
+The loss for the paired boxes regression branch is deﬁned as follows:
+
+Lreg(∆td,i, ∆dtˆ+1,i, ∆tg,j , ∆tg+1,k)
+
+=
+
+smoothL1 (∆td,,il − ∆tg,,jl) + smoothL1 (∆tdˆ+,l1,i − ∆tg+,l1,k) /8, (4)
+
+l∈{x,y,w,h}
+
+10
+
+J. Peng et al.
+
+where smoothL1 is the smooth L1 loss. The total loss of CTracker is
+
+Lall =
+
+Lreg(∆td,i, ∆tdˆ+1,i, ∆tg,j , ∆tg+1,k) + αF (picls, cicls) + βF (piid, ciid) , (5)
+
+t,i
+
+where F (picls, cicls) and F (piid, ciid) are the focal losses [23] for the classiﬁcation branch and the ID veriﬁcation branch (for mitigating the sample imbalance
+problem), respectively, with picls and piid denoting their predictions (conﬁdence scores); α and β are the weighting factors.
+
+4 Experiment
+4.1 Datasets and Evaluation Metrics
+We conduct the experiments on two public datasets: MOT16 [24] and MOT17. which contain the same image sequences including 7 training sequences and 7 test sequences. However, MOT16 and MOT17 contain diﬀerent detection input, and diﬀerent ground-truth labels (bounding boxes and identities), which would inﬂuence the training of CTracker. In public detection, MOT16 includes DPM [25] detector while MOT17 includes DPM, Faster R-CNN [4] and SDP [26] detectors. For a fair comparison with other methods, we trained two models separately using the training data from MOT16 and MOT17, and separately applied the two models on the MOT16 test set and MOT17 test set.
+In the MOTChallenge benchmark, tracking performance is measured by the widely used CLEAR MOT Metrics [27], including Multiple-Object Tracking Accuracy (MOTA), Multiple-Object Tracking Precision (MOTP), the total number of False Negatives (FN), False Positives (FP), Identity Switches (IDS), and the percentage of Mostly Tracked Trajectories (MT), Mostly Lost Trajectories (ML). ID F1 Score (IDF1) is also used to measure the trajectory identity accuracy. Among these metrics, MOTA is the primary metric to measure the overall detection and tracking performance. In addition, we use Tracker Speed in Frames Per Seconds (Hz) to measure the tracking speed of all methods.
+
+4.2 Implementation Details
+All the experiments are implemented on the PyTorch framework. During training, the ground-truth boxes with a visible score above 0.1 are selected to train the network. In order to avoid overﬁtting, we use several data augmentation strategies such as photometric distortions, random ﬂip and random crop. The same augmentation operation is guaranteed to apply for each image in the same training pair. Then the augmented image pair are resized or padded to the half of their original images’ shorter side. We also add a novel data augmentation strategy in the temporal dimension to form chain nodes: instead of always choosing two adjacent frames, we sample two frames close to each other with a random temporal gap (1 to 3 frames).
+
+Chained-Tracker
+
+11
+
+Table 1. Ablation study on MOT17 test dataset.
+
+Method
+
+MOTA↑ IDF1↑ MOTP↑ MT↑ ML↓ FP↓ FN↓ IDS↓
+
+Baseline
+
+64.4 51.6 78.2 28.5% 28.0% 16089 178704 6336
+
+Baseline+ObjAtten
+
+66.0 55.7 78.8 31.3% 24.5% 17724 168522 5595
+
+Baseline+ObjAtten+IDVer 65.6 55.2 78.3 32.6% 24.7% 25815 162489 5769
+
+Baseline+JointAtten 66.6 57.4 78.2 32.2% 24.2% 22284 160491 5529
+
+As a speed-accuracy trade-oﬀ, we use the Resnet50 [18] network as the backbone in all the following experiments. All trainable weights except the BN parameters in Resnet50 are trained end-to-end using the Adam optimizer. We initialize the parameters for all the newly added convolutional layers with the Kaiming initialization method in [28] and set the initial learning rate to 5 × e−5. The model training process takes 100 epochs with the batch size of 8 (4 training pairs). The weighting factors α and β in the loss function are both set to 1. In the anchor matching stage, we use 0.5 for the positive threshold and 0.4 for the negative threshold. For paired boxes post-processing, we use a threshold of 0.7 for the soft-nms, and then further ﬁlter remaining pairs with the conﬁdence threshold of 0.4. In the chaining stage, the IoU matching threshold is 0.5, and the retention threshold of σ is 10.
+4.3 Ablation Study
+Performance analysis. We compare the following models on MOT17 dataset to show the eﬀectiveness of CTracker’s parts: (1) Baseline. It only covers the classiﬁcation branch and the paired boxes regression branch, without guidance from any attention map. This is the simplest implementation of our CTracker. (2) Baseline+ObjAtten. In addition to the Baseline, the predicted conﬁdence map of the object classiﬁcation branch is used as an attention map, which is multiplied to the combined features before the paired boxes regression branch. (3) Baseline+ObjAtten+IDVer. Except for the object classiﬁcation branch with attention map and the paired boxes regression branch, we add the ID veriﬁcation branch but do not use it as attention guidance. (4) Baseline+JointAtten (CTracker). This is the full version of our approach.
+Results presented in Table 1 show that: (1) Baseline+ObjAtten performs signiﬁcantly better than Baseline, which proves the eﬀectiveness of the object attention operation. By applying the object classiﬁcation branch as the attention map of the paired boxes regression branch, we can get more accurate bounding boxes. There is a signiﬁcant improvement of MOTA, which increases from 64.4 to 66.0 and MOTP also increases from 78.2 to 78.8. The more accurate bounding boxes also result in better performance of data association, with IDF1 increasing from 51.6 to 55.7. (2) Baseline+ObjAtten+IDVer performs slightly worse than Baseline+ObjAtten. Simply adding the independent ID veriﬁcation branch is weak due to the lack of bounding boxes information. Reliable identiﬁcation needs good bounding boxes.
+
+12
+
+J. Peng et al.
+
+Fig. 5. Qualitative results of our CTracker on MOT17 test dataset. MOT1703 sequence is captured by a static camera and MOT17-07 sequence is captured by a moving camera. The detected bounding boxes and the tracking trajectory with the same identity are displayed by the same color.
+
+Table 2. Time cost analysis of CTracker.
+
+Methods
+
+Time cost (ms) Backbone Prediction Chaining Total
+
+CTracker-Det
+
+80.27
+
+38.78
+
+-
+
+119.05
+
+CTracker w/o MSM 154.53
+
+66.93
+
+2.10 223.56
+
+CTracker
+
+80.29
+
+65.71
+
+2.10 148.10
+
+(3) Baseline+JointAtten further outperforms Baseline+ObjAtten, indicating that the ID attention operation is also beneﬁcial. By adding the ID veriﬁcation branch and using it as another guidance of the paired boxes regression branch, the association of the regressed bounding boxes is more accurate. Though MOTA is only improved by 0.6, the IDF1 is improved by 1.7, and IDF1 can better reﬂect the accuracy of data association more clearly. On the other hand, by adding the ID attention, the model pays more attention to the data association and sacriﬁces slightly of the regression bounding box precision, thus the MOTP is decreased from 78.8 to 78.2. Qualitative results of CTracker are illustrated in Fig. 5. Time cost analysis. We analyze the inference speed for each module in CTracker, displayed in Table 2. The time cost is measured for 1080×1920 images using single Tesla P40 and cuDNN v7 with Intel Xeon E5-2699v4@2.20GHz. In Table 2, CTracker-Det only predicts boxes for a single frame, which is the initial detection network of CTracker. Since nearly 70% of the forward time is spent on the backbone network, our original CTracker costs about double-time to perform joint detection and tracking compared with the initial detection network, the time increasing from 119.05 ms to 223.56 ms. With the help of the proposed Memory Sharing Mechanism (MSM) in Sec. 3.3, we achieve a faster joint detection and tracking model with only 29.05 ms extra cost compared with the detection network. There is just a small increase of time from 119.05 ms to 148.10 ms. To
+
+Chained-Tracker
+
+13
+
+Table 3. Comparisons of tracking results on MOT16 test dataset.
+
+Process Oﬄine
+Online
+
+Method MHT-bLSTM [29]
+Quad-CNN [30] EDMT [5] LMP [31]
+CDA-DDAL [32] STAM [12] DMAN [13]
+MOTDT [33] Tracktor [7]
+
+Public Detection MOTA↑ IDF1↑ MOTP↑ MT↑ ML↓ FP↓ FN↓ IDS↓ Hz↑
+42.1 47.8 75.9 14.9% 44.4% 11637 93172 753 1.8 44.1 38.3 76.4 14.6% 44.9% 6388 94775 745 1.8 45.3 47.9 75.9 17.0% 39.9% 11122 87890 639 1.8 48.8 51.3 79.0 18.2% 40.1% 6654 86245 481 0.5 43.9 45.1 74.7 10.7% 44.4% 6450 95175 676 46.0 50.0 74.9 14.6% 43.6% 6895 91117 473 46.1 54.8 73.8 17.4% 42.7% 7909 89874 532 47.6 50.9 74.8 15.2% 38.3% 9253 85431 792 20.6 54.4 52.5 78.2 19.0% 36.9% 3280 79149 682 -
+
+Private Detection
+
+Process
+
+Method
+
+MOTA↑ IDF1↑ MOTP↑ MT↑ ML↓ FP↓ FN↓ IDS↓ Hz↑
+
+NOMT [34]
+
+62.2 62.6 79.6 32.5% 31.1% 5119 63352 406 11.5
+
+Oﬄine MCMOT-HDM [35] 62.4 51.6 78.3 31.5% 24.2% 9855 57257 1394 34.9
+
+KDNT [3]
+
+68.2 60.0 79.4 41.0% 19.0% 11479 45605 933 0.7
+
+EAMTT [36]
+
+52.5 53.3 78.8 19.0% 34.9% 4407 81223 910 12.0
+
+DeepSORT [16]
+
+61.4 62.2 79.1 32.8% 18.2% 12852 56668 781 20.0
+
+Online CNNMTT [37]
+
+65.2 62.2 78.4 32.4% 21.3% 6578 55896 946 11.2
+
+POI [3]
+
+66.1 65.1 79.5 34.0% 20.8% 5061 55914 805 9.9
+
+CTracker (Ours) 67.6 57.2 78.4 32.9% 23.1% 8934 48305 1897 34.4
+
+Table 4. Comparisons of tracking results on MOT17 test dataset.
+
+Process Oﬄine Online
+
+Method MHT-bLSTM [29]
+EDMT [5] JCC [38] FWT [6] DMAN [13] MOTDT [33] Tracktor [7]
+
+Public Detection MOTA↑ IDF1↑ MOTP↑ MT↑ ML↓ FP↓ FN↓ IDS↓ Hz↑
+47.5 51.9 77.5 18.2% 41.7% 25981 268042 2069 1.8 50.0 51.3 77.3 21.6% 36.3% 32279 247297 2264 1.8 51.2 54.5 75.9 20.9% 37.0% 25937 247822 1802 51.3 47.6 77.0 21.4% 35.2% 24101 247921 2648 48.2 55.7 75.9 19.3% 38.3% 26218 263608 2194 50.9 52.7 76.6 17.5% 35.7% 24069 250768 2474 20.6 53.5 52.3 78.0 19.5% 36.6% 12201 248047 2072 -
+
+Private Detection
+
+Process
+
+Method
+
+MOTA↑ IDF1↑ MOTP↑ MT↑ ML↓ FP↓ FN↓ IDS↓ Hz↑
+
+Tracktor+CTdet [7] 54.4 56.1 78.1 25.7% 29.8% 44109 210774 2574 -
+
+Online DeepSORT [16]
+
+60.3 61.2 79.1 31.5% 20.3% 36111 185301 2442 20.0
+
+CTracker (Ours) 66.6 57.4 78.2 32.2% 24.2% 22284 160491 5529 34.4
+
+some extent, 29.05 ms per frame means the tracking module runs at 34.4 FPS, demonstrating the eﬃciency of our online approach.
+4.4 Benchmark Evaluation
+We compare our CTracker approach with other MOT methods on both MOT16 and MOT17 test datasets. For comparison, we trained our model separately using the MOT16 training data and MOT17 training data. Table 3 and Table 4 compare the tracking results of all the methods separately on MOT16 and MOT17 test dataset. From Table 3 and Table 4 we can ﬁnd that:
+
+14
+
+J. Peng et al.
+
+(1) In the private detection part of both MOT16 and MOT17, our CTracker signiﬁcantly outperforms existing online MOT methods in terms of MOTA. In MOT16, the MOTA of our approach is only 0.6 lower than the best oﬄine method KDNT [3], while it is 1.5 higher than its online version POI [3]. In addition, KDNT and POI use many extra training data, including ETHZ pedestrian dataset [39], Caltech pedestrian dataset [40] and their own collected surveillance dataset [3]. While we only use the training data of MOT16. MOTA is the primary metric reﬂecting the overall detection and tracking performance, which proves the eﬀectiveness of our approach.
+(2) In the public detection part, Tracktor [7] performs the best in terms of MOTA. To have a comparison with Tracktor using the same detection result, we reproduce Tracktor using its code. Tracktor+CTdet in Table 4 is the tracking result of Tracktor using the detection result of our CTracker. Compared with the results of public detection, the MOTA of Tracktor+CTdet increases from 53.5 to 54.4 and IDF1 increases from 52.3 to 56.1, which indicates that the performance of our detection is better than the public detection. Besides, our CTracker outperforms Tracktor+CTdet in terms of all the metrics except IDS, which further proves the superior tracking performance of our CTracker.
+(3) On the other hand, to keep the simplicity and eﬃciency of our CTracker, we abandon using the patch-level ReID features of the detected boxes like other MOT methods to enhance cross-frame data association. Thus, the IDF1 and IDS of our CTracker approach are lower than several methods. We conduct an extra experiment by adding features, introduced in the supplementary. To further prove the eﬃciency of our approach, we compare the time cost of CTracker with other state-of-the-art MOT methods on the MOT16 and MOT17 benchmark, as shown in the Hz column of Tabel 3 and Tabel 4. From Tabel 3 and Tabel 4 we can ﬁnd that CTracker achieves the best tracking speed among all online MOT methods, although the fastest oﬄine method runs at a similar tracking speed as our CTracker, but has a much lower MOTA than our CTracker, demonstrating the eﬀectiveness and eﬃciency of our approach.
+
+5 Conclusion
+We designed a novel joint multiple-object detection and tracking framework named Chained-Tracker in this paper, which is the ﬁrst totally end-to-end solution as far as we are aware. Diﬀerent from existing methods, we use two adjacent frames as the input of our network, which is called a chain node. The network regresses a pair of bounding boxes for the same target in the two adjacent frames, guided by a simple yet novel joint attention module: an interplay of detectiondriven object attention and ID veriﬁcation-injected identity attention. Using the simple IoU information, two adjacent and overlapping nodes can be chained by their boxes in the common frame. The tracking trajectories can be generated by alternately applying the paired boxes regression and node chaining. Extensive experiments on widely used MOT benchmarks demonstrate the superiority of our approach in terms of both eﬀectiveness and eﬃciency.
+
+Chained-Tracker
+
+15
+
+References
+
+1. Breitenstein, M.D., Reichlin, F., Leibe, B., Koller-Meier, E., Gool, L.V.: Robust tracking-by-detection using a detector conﬁdence particle ﬁlter. In: ICCV. (2009)
+2. Bochinski, E., Eiselein, V., Sikora, T.: High-speed tracking-by-detection without using image information. In: AVSS. (2017)
+3. Yu, F., Li, W., Li, Q., Liu, Y., Shi, X., Yan, J.: Poi: multiple object tracking with high performance detection and appearance feature. In: ECCV. (2016)
+4. Ren, S., He, K., Girshick, R., Sun, J.: Faster r-cnn: Towards real-time object detection with region proposal networks. In: NIPS. (2015)
+5. Chen, J., Sheng, H., Zhang, Y., Xiong, Z.: Enhancing detection model for multiple hypothesis tracking. In: CVPRW. (2017)
+6. Henschel, R., Leal-Taix´e, L., Cremers, D., Rosenhahn, B.: Fusion of head and full-body detectors for multi-object tracking. In: CVPRW. (2018)
+7. Bergmann, P., Meinhardt, T., Leal-Taixe, L.: Tracking without bells and whistles. In: ICCV. (2019)
+8. Lu, Z., Rathod, V., Votel, R., Huang, J.: Retinatrack: Online single stage joint detection and tracking. In: CVPR. (2020)
+9. Sun, S., Akhtar, N., Song, H., Mian, A.S., Shah, M.: Deep aﬃnity network for multiple object tracking. TPAMI (2019)
+10. Chu, P., Ling, H.: Famnet: Joint learning of feature, aﬃnity and multi-dimensional assignment for online multiple object tracking. In: ICCV. (2019)
+11. Li, C., Dobler, G., Feng, X., Wang, Y.: Tracknet: Simultaneous object detection and tracking and its application in traﬃc video analysis. arXiv preprint arXiv:1902.01466 (2019)
+12. Chu, Q., Ouyang, W., Li, H., Wang, X., Liu, B., Yu, N.: Online multi-object tracking using cnn-based single object tracker with spatial-temporal attention mechanism. In: ICCV. (2017)
+13. Zhu, J., Yang, H., Liu, N., Kim, M., Zhang, W., Yang, M.H.: Online multi-object tracking with dual matching attention networks. In: ECCV. (2018)
+14. Gao, X., Jiang, T.: Osmo: Online speciﬁc models for occlusion in multiple object tracking under surveillance scene. In: ACMMM. (2018)
+15. Kuhn, H.W.: The hungarian method for the assignment problem. NRL (1955) 16. Wojke, N., Bewley, A., Paulus, D.: Simple online and realtime tracking with a
+deep association metric. In: ICIP. (2017) 17. Peng, J., Wang, T., Lin, W., Wang, J., See, J., Wen, S., Ding, E.: Tpm: Multiple
+object tracking with tracklet-plane matching. PR (2020) 18. He, K., Zhang, X., Ren, S., Sun, J.: Deep residual learning for image recognition.
+In: CVPR. (2016) 19. Redmon, J., Farhadi, A.: Yolo9000: better, faster, stronger. In: CVPR. (2017) 20. Bodla, N., Singh, B., Chellappa, R., Davis, L.S.: Soft-nms – improving object
+detection with one line of code. In: ICCV. (2017) 21. Liu, W., Anguelov, D., Erhan, D., Szegedy, C., Reed, S., Fu, C.Y., Berg, A.C.:
+Ssd: Single shot multibox detector. In: ECCV. (2016) 22. Ren, S., He, K., Girshick, R., Sun, J.: Faster r-cnn: Towards real-time object
+detection with region proposal networks. In: NIPS. (2015) 23. Lin, T.Y., Goyal, P., Girshick, R., He, K., Dolla´r, P.: Focal loss for dense object
+detection. In: CVPR. (2017) 24. Milan, A., Leal-Taix´e, L., Reid, I., Roth, S., Schindler, K.: Mot16: A benchmark
+for multi-object tracking. arXiv preprint arXiv:1603.00831 (2016)
+
+16
+
+J. Peng et al.
+
+25. Felzenszwalb, P.F., Girshick, R.B., McAllester, D., Ramanan, D.: Object detection with discriminatively trained part-based models. TPAMI (2010)
+26. Yang, F., Choi, W., Lin, Y.: Exploit all the layers: Fast and accurate cnn object detector with scale dependent pooling and cascaded rejection classiﬁers. In: CVPR. (2016)
+27. Bernardin, K., Stiefelhagen, R.: Evaluating multiple object tracking performance: the clear mot metrics. JIVP (2008)
+28. He, K., Zhang, X., Ren, S., Sun, J.: Delving deep into rectiﬁers: Surpassing humanlevel performance on imagenet classiﬁcation. In: ICCV. (2015)
+29. Kim, C., Li, F., Rehg, J.M.: Multi-object tracking with neural gating using bilinear lstm. In: ECCV. (2018)
+30. Son, J., Baek, M., Cho, M., Han, B.: Multi-object tracking with quadruplet convolutional neural networks. In: CVPR. (2017)
+31. Tang, S., Andriluka, M., Andres, B., Schiele, B.: Multiple people tracking by lifted multicut and person re-identiﬁcation. In: CVPR. (2017)
+32. Bae, S.H., Yoon, K.J.: Conﬁdence-based data association and discriminative deep appearance learning for robust online multi-object tracking. TPAMI (2018)
+33. Chen, L., Ai, H., Zhuang, Z., Shang, C.: Real-time multiple people tracking with deeply learned candidate selection and person re-identiﬁcation. In: ICME. (2018)
+34. Choi, W.: Near-online multi-target tracking with aggregated local ﬂow descriptor. In: ICCV. (2015)
+35. Lee, B., Erdenee, E., Jin, S., Nam, M.Y., Jung, Y.G., Rhee, P.K.: Multi-class multi-object tracking using changing point detection. In: ECCV. (2016)
+36. Sanchez-Matilla, R., Poiesi, F., Cavallaro, A.: Online multi-target tracking with strong and weak detections. In: ECCV. (2016)
+37. Mahmoudi, N., Ahadi, S.M., Rahmati, M.: Multi-target tracking using cnn-based features: Cnnmtt. MTAP (2019)
+38. Keuper, M., Tang, S., Andres, B., Brox, T., Schiele, B.: Motion segmentation & multiple object tracking by correlation co-clustering. TPAMI (2018)
+39. Ess, A., Leibe, B., Schindler, K., Van Gool, L.: A mobile vision system for robust multi-person tracking. In: CVPR. (2008)
+40. Doll´ar, P., Wojek, C., Schiele, B., Perona, P.: Pedestrian detection: A benchmark. In: CVPR. (2009)
+41. Lin, T.Y., Doll´ar, P., Girshick, R., He, K., Hariharan, B., Belongie, S.: Feature pyramid networks for object detection. In: CVPR. (2017)
+
+Chained-Tracker: Chaining Paired Attentive Regression Results for End-to-End Joint Multiple-Object Detection and Tracking (Supplementary Material)
+Jinlong Peng1 , Changan Wang1 , Fangbin Wan2, Yang Wu3 , Yabiao Wang1, Ying Tai1, Chengjie Wang1, Jilin Li1, Feiyue Huang1, and Yanwei Fu2
+1 Tencent Youtu Lab {jeromepeng, changanwang, caseywang, yingtai, jasoncjwang, jerolinli, garyhuang}@tencent.com
+2 Fudan University {fbwan18, yanweifu}@fudan.edu.cn 3 Nara Institute of Science and Technology yangwu@rsc.naist.jp
+1 Overview
+This supplementary material includes: (1) The detailed design of the CTracker network architecture. (Sec. 2) (2) The details of data augmentation in training. (Sec. 3.1) (3) The details of Chained-Anchors setting. (Sec. 3.2) (4) The detailed experiment results of CTracker and the qualitative comparison with other SOTA methods, including POI [3] and Tracktor [7]. (Sec. 4) (5) The experiment of adding the appearance feature to CTracker. (Sec. 5)
+2 Details of Network Architecture
+As in Fig. 1, we refer to Resnet50 [18] and FPN [41] to build multi-scale feature representations at ﬁve scale levels, we denote them as {P2, P3, P4, P5, P6}.
+Fig. 1. The detailed architecture of backbone in CTracker network. Equal contribution. Corresponding author: Yang Wu (wuyang0321@gmail.com)
+
+2
+
+J. Peng et al.
+
+Then we combine the features from two adjacent frames at each scale for subsequent prediction, as in Fig. 2,. With the combined features, we apply two parallel branches to perform object classiﬁcation and ID veriﬁcation. The two branches consist of four consecutive 3×3 conv layers interleaved with ReLU activations to perform feature learning for speciﬁc tasks, above which a 3×3 conv with Sigmoid activation is appended to predict the conﬁdence.
+
+Fig. 2. The detailed architecture of prediction head in CTracker network. Pti and Pti+1 are the multi-scale feautres of two adjacent frames, where i ∈ {2, 3, 4, 5, 6}.
+Finally, we gather the above two predictions by multiplication to get the joint attention map. Since the attention map has the same spatial size as the combined features but with only single channel, we ﬁrst apply broadcasting on the attention map so that they have compatible shapes, then we perform the attention guidance using element-wise product. With the attention-assistant features, we use the paired boxes regression branch with four conv layers to generate paired boxes for objects of interest. All the box pairs generated from the ﬁve scales are post-processed with soft-nms [20] together.
+3 Details of Implementation
+3.1 Data Augmentation
+In order to construct a robust model for objects with diﬀerent motion speed, we randomly sample two frames with a temporal interval of no more than 3 frames, then we reverse the order of the two frames with 50% probability to form a training pair (i.e., 1 <= |δ| <= 3 in Sec. 3.4 of the main text). To further prevent over-ﬁtting, each frame in the pair will be applied with the same data augmentations as follows: (1) Randomly apply some photometric distortions introduced in SSD [21]. (2) Randomly crop a patch of the size determined by multiplying a random factor in the interval [0.3, 0.8] with the image’s shorter side. Note that we only keep those ground truths whose IoMs (Intersection over Min-area) with the cropped
+
+Supplementary Material for “Chained-Tracker”
+
+3
+
+Table 1. Detailed tracking results of CTracker on MOT16 test dataset.
+
+Sequence MOTA↑ IDF1↑ MOTP↑ MT↑ ML↓ FP↓ FN↓ IDS↓
+
+MOT16-01
+
+42.0
+
+39.3
+
+79.9
+
+30.4% 30.4% 713 2918
+
+77
+
+MOT16-03
+
+83.6
+
+65.5
+
+78.3
+
+81.1% 0.7% 5600 11024 520
+
+MOT16-06
+
+54.7
+
+52.8
+
+77.1
+
+27.6% 24.0% 795 4158 273
+
+MOT16-07
+
+52.7
+
+41.4
+
+78.6
+
+22.2% 13.0% 587 6884 249
+
+MOT16-08
+
+37.2
+
+35.2
+
+81.8
+
+19.0% 33.3% 499 9824 190
+
+MOT16-12
+
+46.7
+
+53.5
+
+78.5
+
+19.8% 37.2% 112 4250
+
+59
+
+MOT16-14
+
+43.7
+
+43.0
+
+77.1
+
+12.8% 32.9% 628 9247 529
+
+Total
+
+67.6
+
+57.2
+
+78.4
+
+32.9% 23.1% 8934 48305 1897
+
+Table 2. Detailed tracking results of CTracker on MOT17 test dataset.
+
+Sequence MOTA↑ IDF1↑ MOTP↑ MT↑ ML↓ FP↓ FN↓ IDS↓
+
+MOT17-01
+
+51.2
+
+44.4
+
+78.7
+
+25.0% 29.2% 202 2891
+
+54
+
+MOT17-03
+
+84.9
+
+66.5
+
+77.9
+
+83.1% 0.7% 5133 10211 479
+
+MOT17-06
+
+56.1
+
+55.2
+
+78.2
+
+29.7% 24.3% 516 4398 261
+
+MOT17-07
+
+50.2
+
+41.0
+
+79.3
+
+21.7% 23.3% 424 7761 228
+
+MOT17-08
+
+31.6
+
+29.6
+
+81.2
+
+14.5% 42.1% 405 13828 212
+
+MOT17-12
+
+47.0
+
+55.7
+
+79.2
+
+18.7% 35.2% 91
+
+4432
+
+69
+
+MOT17-14
+
+39.5
+
+42.7
+
+77.4
+
+10.4% 30.5% 657 9976 540
+
+Total
+
+66.6
+
+57.4
+
+78.2
+
+32.2% 24.2% 7428 53497 1843
+
+patch are greater than 0.2. (3) With 20% probability, expand the cropped patch using a random factor ranging in [1, 3] by padding with the mean pixel value from ImageNet. (4) Flip the expanded patch randomly and resize it to a square patch with the size equivalent to the half of the original image’s shorter side.
+3.2 Chained-Anchors Setting
+To determine the scales of Chained-Anchors, we run k-means clustering [19] on all ground truth bounding boxes in the dataset, then we pick ﬁve cluster centroids as the scales for Chained-Anchors in diﬀerent levels of FPN. In our experiments, we use Chained-Anchors of scales {38, 86, 112, 156, 328} for {P2, P3, P4, P5, P6} respectively, and the same ratio of 2.9 is taken for Chained-Anchors of all scales.
+4 Detailed Experiment Results
+The detailed experiment results of CTracker on MOT16 [24] test dataset and MOT17 test dataset are displayed in Table 1 and Tabel 2.
+Moreover, we select two representative qualitative cases to compare our CTracker with the private detection online SOTA method POI [3] and the public detection online SOTA method Tracktor [7]. Fig. 3 displays the tracking results of POI and our CTracker in sequence MOT16-03. In Fig. 3(a), using the POI method, long-term cross-frame tracking drift occurs in several trajectories, which are marked with yellow dotted circles. While in Fig. 3(b), using our CTracker method, there is no long-term cross-frame tracking drift in all the trajectories. For simplicity and eﬃciency, we focus on the short-term tracking based on the
+
+4
+
+J. Peng et al.
+
+Fig. 3. Qualitative comparison of POI (a) and our CTracker(b).
+
+Fig. 4. Qualitative comparison of Tracktor (a) and our CTracker(b).
+Chained-Anchors and abandon using the patch-level ReID features of the detected boxes like POI to enhance long-term cross-frame tracking, which may reduce some trajectory integrity to a certain degree while improve the trajectory accuracy greatly. In Fig. 4(a), using the Tracktor method with the same detection of our CTracker, there is a ID switch of trajectory 2 and trajectory 17 due to the occlusion, which is marked with a yellow dotted circle. While in Fig. 4(b), using our CTracker method, the two trajectories representing the same pedestrians are generated correctly due to the accurate box pair association in the CTracker network, which demonstrates the eﬀectiveness of our CTracker in the hard occlusion scene. More complete and clear visualization tracking comparison is displayed in the video attachments.
+
+Supplementary Material for “Chained-Tracker”
+
+5
+
+5 Appearance Feature Experiment
+
+In the main text, to keep the simplicity and eﬃciency of our CTracker, we abandon using the patch-level ReID features of the detected boxes like other MOT methods to enhance cross-frame data association. In fact, we conduct a appearance feature experiment though we think that it is not related to our main innovations. In the node chaining module, expect for the IoU aﬃnity, we calculate the appearance similarity by adding in the appearance features (256-dim vector from the feature map before the output convolution in the ID veriﬁcation branch). On MOT16, MOTA increases from 67.6 to 68.5, IDF1 increases from 57.2 to 61.8, IDS decreases from 1897 to 983. While the tracking speed decreases from 34.4fps to 29.2fps. Therefore, We can get better tracking performance when speed loss is acceptable, demonstrating the good expandability of CTracker.
+

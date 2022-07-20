@@ -1,0 +1,227 @@
+MULTI-OBJECT TRACKING WITH A HIERARCHICAL SINGLE-BRANCH NETWORK
+Fan Wang, En Zhu, Lei Luo, Siwei Wang, Jun Long
+School of Computer, National University of Defense Technology, Changsha, China. wangfan10@nudt.edu.cn
+
+arXiv:2101.01984v1 [cs.CV] 6 Jan 2021
+
+ABSTRACT
+Recent Multiple Object Tracking (MOT) methods have gradually attempted to integrate object detection and instance reidentiﬁcation (Re-ID) into a united network to form a onestage solution. Typically, these methods use two separated branches within a single network to accomplish detection and Re-ID respectively without studying the inter-relationship between them, which inevitably impedes the tracking performance. In this paper, we propose an online multi-object tracking framework based on a hierarchical single-branch network to solve this problem. Speciﬁcally, the proposed singlebranch network utilizes an improved Hierarchical Online Instance Matching (iHOIM) loss to explicitly model the interrelationship between object detection and Re-ID. Our novel iHOIM loss function uniﬁes the objectives of the two subtasks and encourages better detection performance and feature learning even in extremely crowded scenes. Moreover, we propose to introduce the object positions, predicted by a motion model, as region proposals for subsequent object detection, where the intuition is that detection results and motion predictions can complement each other in different scenarios. Experimental results on MOT16 and MOT20 datasets show that we can achieve state-of-the-art tracking performance, and the ablation study veriﬁes the effectiveness of each proposed component.
+Index Terms— Multi-object tracking, hierarchical network, joint detection and tracking
+1. INTRODUCTION
+Multi-object tracking (MOT) is the basis of high-level scene understanding from video, which underpins signiﬁcance application from video surveillance to autonomous driving. Recently, a few works have been proposed since the release of MOTChallenge 1 which is the most commonly used benchmark for MOT. Generally, these works can be clustered into two categories: 1) two-stage methods, namely tracking-bydetection methods, that solve the problem of tracking multiple objects as two separate steps: object detection and data association; and 2) one-stage methods that try to solve object detection, instance re-identiﬁcation (Re-ID) and even data asso-
+1https://motchallenge.net/
+
+Fig. 1. Overview of our online multi-object tracking framework. The input video frames are fed into a hierarchical network to get object detection results and Re-ID features simultaneouly, in which motion information is integrated to complement the detection proposal process. Then, a data association operation is applied to get ﬁnal object trajectories.
+ciation in an end-to-end model. Commonly, two-stage methods [1, 2, 3, 4, 5] utilize a trained model to localize all instances in each video frame in the object detection step, and then, link detection results together to form object trajectories in the data association step. It means the MOT system requires at least two compute-intensive components: an object detector and a Re-ID model, which is intolerable for timecritical applications. One-stage methods [6, 7, 8, 9, 10, 11] view MOT as a multi-task learning problem which avoid recomputation by sharing low-level features among different subtasks. In other words, how to effectively integrate different subtasks, such as object detection and Re-ID, into a single network is the key to ensure MOT performance.
+As another important task in computer vision, person search aims to retrieve a person’s image and corresponding position from an image dataset. Therefore, when the tracking object is a person, the tasks of MOT and person search share many similarities. The only difference is that MOT localizes and tracks objects on time-series video frames, while person search is based on a cluttered image dataset. In recent years, the research on person search has also undergone a progress from two-stage methods to one-stage methods. One-stage methods [12, 13, 14] greatly improve the speed of network inference while ensuring accuracy, but they suffer from contradictory objectives of detection and Re-ID. As disscussed in
+
+[13], simple concatenation of a detector and a linear embedding layer without harmonizing the two subtasks only leads to conﬂicting focusing points. In order to solve this problem, [15] proposes a hierarchical structure which explicitly models the relationship between pedestrain detection and Re-ID, and further exploits it as a prior to guide the one-stage model learning. The state-of-the-art performance in [15] shows that such a structure effectively integrates the commonness and uniqueness of pedestrain features and alleviates the contradictory objectives of detection and re-ID.
+Inspired by the work above, we propose a hierarchical network combining motion information for multi-object tracking. As shown in Figure 1, each frame of a video is fed into a hierarchical network to get object detection results and ReID features simultaneouly. Then, data association utilizing spatial information and Re-ID features is applied to get ﬁnal object trajectories. Speciﬁcally, the proposed single-branch deep network contains a hierarchical structure with two special layers, which are designed for detection and Re-ID respectively. The ﬁrst layer captures the human commonness and distinguish person from background, the second layer aims to classify persons’ identities according to their uniqueness. We improve the Hierarchical Online Instance Matching (HOIM) loss from [15] to explicitly formulate the interrelationship between pedestrain detection and Re-ID. Moreover, we fuse the object motion predictions and region proposed network (RPN) outputs together as object region proposals. In this way, the hierarchical network not only uses the object appearance features, but also integrates the time-series information.
+In summary, our contribution is three-fold. First, a hierarchical single-branch network is proposed to explicitly model the inter-relationship between pedestrain detection and ReID. Second, we introduce object time-series information (object motion model) into the hierarchical single-branch network to better localize objects. Third, we propose a one-shot framework for multi-object tracking and achieve state-of-theart performance.
+2. RELATED WORK
+2.1. Joint Detection and Tracking
+A recent trend in multi-object tracking is to combine detection and tracking into a single framework, namely one-stage methods. Speciﬁcally, there are two ways: one is to combine detection and Re-ID into a single network to localize objects and extract appearance features simultaneouly; the other is to convert a object detector into a tracker directly.
+One-stage methods with Re-ID. Wang et al. [8] formulate MOT as a multi-task learning problem with multiple objectives, such as anchor classiﬁcation, bounding box regression and embedding learning, and reports the ﬁrst near realtime MOT system. Zhang et al. [9] study the essential reasons
+
+of the degraded results when attempting to accomplish detection and Re-ID in a single network, and presents a simple baseline to addresses this problem. Shuai et al. [11] propose a detect-and-track framework, namely Siamese TrackRCNN, which consists of three functional branches: the detection branch, the Siamese-based track branch and the object re-identiﬁcation branch. Peng et al. [16] propose a simple online model named Chained-Tracker, which naturally integrates object detection, object embedding and data association into an end-to-end solution. Although these methods try to use a single-shot deep network to accomplish detection and Re-ID, they do not essentially study the conﬂict between the two tasks. Instead, our proposed hierarchical structure explicitly formulates the relationship between detection and Re-ID, which is simple and efﬁcient.
+One-stage methods without Re-ID. Bergmann et al. [6] directly propagate identities of region proposals using bounding box regression to realize data association. Zhou et al. [7] propose a simple online model named CenterTrack which only associates objects in adjacent frames, without reinitializing lost long-range tracks. Zhang et al. [10] design an end-to-end DNN tracking approach with two efﬁcient trackers: FlowTracker and FuseTracker. The FlowTracker explores complex object-wise motion patterns and the FuseTracker reﬁnes and fuses objects from FlowTracker and detectors. These methods achieve a compromise between tracking speed and accuracy without using Re-ID features.
+2.2. Fusion of Detection and Motion Prediction Results
+How to effectively fuse results from motion model and detectors is also the key to improving the tracking accuracy. Zhang et al. [17] integrate the detection and tracking more tightly by conditioning the object detection in the current frame on tracklets computed in prior frames. In this way, the object detection results not only have high detection response, but also beneﬁt a lot from existing tracklets. Feichtenhofer et al. [18] link the frame level detections based on the acrossframe tracklets to produce high accuracy detections at the video level. Chen et al. [5] present a novel scoring function based on a fully convolutional neural network to select a considerable amount of candidates from detection and motion model results. The major motivation for this is that detection and tracks can complement each other in different scenarios. Shuai et al. [11] integrate a Siamese-based single object tracker into their proposed Track-RCNN which is robust to appearance changes and fast motion. Although these methods can fuse detections and tracks to a certain extent, they are usually complex and high computation. In our MOT framework, the motion model produces another kind of object region proposals which can be naturally merged into the proposed hierarchical network.
+
+be obtained at RPN layer. Simultaneously, a motion model is applied to predict object positions Mt = {m1t , m2t , ..., mst } in current frame based on the existing trajectories Tt. Secondly,
+we fuse the boxes Rt and Mt as object region proposals Pt = {rt1, ..., rtl, m1t , ..., mst } which will be fed into the head network. Finally, we can get object detection results Bt = {b1t , b2t , ..., bnt } and Re-ID features Ft = {ft1, ft2, ..., ftn} corresponding to the input video frame It at the last two layers
+of the network.
+
+Fig. 2. Overview of our hierarchical single-branch network. Our network is based on Faster R-CNN [19] with a ResNet50 [20] backbone. In order to further improve the accuracy of object detection, we put the predictions of motion model as prior knowledge into the hierarchical network during inference, and fuse the PRN outputs and predictions together as object region proposals for subsequent box regression and feature extraction.
+3. PROPOSED METHOD
+In this work, we propose an online multi-object tracking framework with a hierarchical single-branch network which is shown in Figure 1. When a video frame is fed into the hierarchical single-branch network, we can get all object detection results and corresponding Re-ID features. Then, we obtain the object trajectories using a DeepSort [2] framework. In this section, we ﬁrst present an overview of the novel hierarchical single-branch network in Section 3.1. Then, we describe the improved Hierarchical Online Instance Matching (iHOIM) loss in Section 3.2 which explicitly formulates the relationship between detection and Re-ID.
+3.1. Hierarchical Single-branch Network
+As shown in Figure 2, the proposed hierarchical single-branch network is based on Faster R-CNN [19] with a ResNet-50 [20] backbone which is composed of a stem network for sharing feature learning, a region proposal network (RPN) for generating object proposals, a motion model for object position prediction, and a head network (R-CNN) for box regression. At the end of the network, an extra L2-normalized linear layer is added upon the top of the head network to extract object Re-ID feature.
+During training, we remove the motion model from the hierarchical single-branch network. Following the conﬁgurations in [15], we train the whole network jointly using Stochastic Gradient Descent (SGD) together with RPN loss (including proposal classiﬁcation and regression loss), RCNN box regression loss and the proposed iHOIM loss.
+During inference, we ﬁrstly feed the input video frame denoted as It ∈ R3×w×h into the hierarchical single-branch network, a series of regions of interest Rt = {rt1, rt2, ..., rtl} can
+
+3.2. Improved Hierarchical Online Instance Matching Loss
+
+At present, the one-stage networks [8, 11, 16] commonly use two separated branches to accomplish detection and ReID based on the extracted sharing feature maps. These two branches methods do not study the competition of the two subtasks which inevitably impedes the tracking performance. In order to solve this problem, Chen et al. [15] propose the HOIM loss which is meant to integrate the hierarchical structure of person detection and Re-ID into the OIM [12] loss explicitly. HOIM loss constructs three different queues to store labeled person, unlabeled person and background embeddings. However, it is not appicable in MOT scenario.
+In order to train more effectively on the MOT dataset, we propose an improved Hierarchical Online Instance Matching loss. Suppose there are N different identities in the training data, iHOIM constructs a look-up table with size N × d to memorize the labeled person embeddings and a circular quene with size B × d to store a number of background embeddings. Together the look-up table and circular queue forms a projection matrix W ∈ R(N+B)×d. Given a proposal embedding x ∈ Rd, we can get the cosine distance between x and the stored embeddings by calculating a linear projection as follows:
+
+s = Wx ∈ RN+B, where s = [s1, s2, . . . , sN , sN+1, . . . , sN+B] ,
+
+(1)
+
+then the probability of x belonging to an arbitrary person or background can be calculated by a softmax fuction:
+
+esi/τ
+
+pi =
+
+N +B j=1
+
+esj /τ
+
+,
+
+(2)
+
+where τ is the temperature factor to control the softness of the probability distribution. Then the hierarchical structure that describes the inter-relationship between object detection and Re-ID can be formulated on the law of total probability, which is shown in Figure 3.
+For the ﬁrst level of iHOIM loss for detection, we ﬁrstly consider the probability of an arbitrary embedding x that represents a person (denoted as Λ):
+
+N
+
+p(Λ) = pi.
+
+(3)
+
+i=1
+
+4. EXPERIMENTS
+
+Fig. 3. The hierarchical structure that describes the interrelationship between object detection and Re-ID. All the training losses are formulated on the law of total softmax probability (black for detection loss and blue for Re-ID loss).
+
+Then, the probability of x represents background (denoted as Φ) could be formulated in the same manner:
+
+N +B
+
+p(Φ) =
+
+pi.
+
+(4)
+
+i=N +1
+
+Combining these two probabilities, we formulate the object detection loss as a binary cross entropy loss:
+
+Ldet = −y log(p(Λ)) − (1 − y) log(p(Φ)),
+
+(5)
+
+where y is a binary label which equals 1 if x is a person, otherwise equals 0.
+For the second level, we follow [12] to formulate the OIM loss for Re-ID. Given an embedding x, the probability of x being a person and belonging to identity k (denoted as id = k) can be produced by a softmax function:
+
+esk /τ
+
+p( id = k, Λ) =
+
+N j=1
+
+esj /τ
+
+.
+
+(6)
+
+Then, the objective of instance re-identiﬁcation is to maximize the expexted log-likelihood:
+
+LOIM = Ex[log p(id = k, Λ)], k = 1, 2, . . . , N. (7)
+
+Finally, our proposed iHOIM loss is the linear combination of the two-level losses:
+
+LiHOIM = Ldet + λLOIM, where λ = 2p(Λ)2,
+
+(8)
+
+where λ is the loss weight for LOIM. It dynamically weighs the importance of the two tasks based on detection conﬁdence p(Λ). The model focuses on identifying the detected person when the detection score is high, or focuses on detection task. By removing the circular quene for unlabeled person in HOIM [15] loss, our iHOIM loss is simpler and occupies less memory. It is not only able to identify different persons, but also classiﬁes person from cluttered background. Thus, the embeddings are more robust and the detections are more accurate.
+During training, the look-up table is update with a momentum of η:
+
+wk ← ηwk + (1 − η)x, if x belongs to identity k, (9)
+
+and the circular quene replaces old embeddings with the new ones to preserve a ﬁxed size.
+
+4.1. Experiment Setup
+Datasets and Metrics. To evaluate the performance of our proposed tracking method, we conduct sufﬁcient experiments on MOT16 [21] and MOT20 [22] datasets, which are different in tracking scenes. Speciﬁcally, MOT16 dataset contains 7 training video sequences and 7 testing video sequences which are ﬁlmed in unconstrained environments. MOT20 dataset contains 4 training video sequences and 4 testing video sequences. All sequences in MOT20 dataset are ﬁlmed in very crowded scenes in which the density can reach values of 246 pedestrains per frame. We adopt multiple metrics used in the MOTChallenge benchmark to evaluate the proposed method, including multiple tracking accuracy (MOTA) [23], identiﬁcation F1 score (IDF1) [24], identity switches (IDSw), false positives (FP) and false negatives (FN).
+Implementation Details. During training, we use Stochastic Gradient Descent (SGD) optimizer with the target learning rate of 0.003 which is gradually warmed-up at the ﬁrst epoch and decayed by a factor of 0.1 at the 16 epoch, to train our hierarchical network on the training set of MOT16 and MOT20 respectively. The whole training process converges at epoch 22 with the batch size of 3 when we train it on a single GeForce TITAN Xp GPU. The momentum η and softmax temperature τ of iHOIM are set to 0.5 and 1/30. Sizes of the embedding buffers, i.e.N and B, are set individually according to the trajectories in different training datasets. For MOT16, they are 517, 500; for MOT20, N is set to 2332, and B is set to 2000 to balance the probability distribution. Also, we employ the Selective Memory Refreshment (SMR) method from [15] to update the look up table for labeled person embeddings and circular quene for background embeddings.
+During inference and tracking, we introduce the DeepSORT [2] framework to tracking multiple objects based on the extracted detection results and corresponding embeddings. We choose the Kalman Filter as motion model to predict object positions based on the existing trajectories, which will be fed into the hierarchical network and work as region proposals for subsequent object detection.
+4.2. Experimental Results and Analysis
+Evaluation on Test Set. Experimental results in Table 1 show that our proposed method achieves state-of-the-art performance compared with other advanced two-stage methods. Even in an extremely crowded scene like MOT20 dataset, our method still performs excellent. It shows that the proposed hierarchical structure effectively uniﬁes the two tasks of object detection and Re-ID. We beat the previous best tracker by 1.6%/2.6% MOTA on MOT16/MOT20 respectively, which owes to the efﬁcacy of our hierarchical network. Moreover, our one-stage MOT framework have much lower computa-
+
+Table 1. Results on the MOT Challenge test set benchmark. Up/down arrows indicate higher/lower is better.
+
+Mode Batch Online Online
+
+Method
+GCRA [25] LMP [3] HCC [26] MPN [27] RAR16 [28] MOTDT [5] STRN [4] KCF [29] Ours
+SORT [1] MLT [30] Ours
+
+One-stage
+× × × × × × × ×
+× ×
+
+MOTA(%)↑
+MOT16
+48.2 48.8 49.3 55.9
+45.9 47.6 48.5 48.8 50.4
+MOT20
+42.7 48.9 51.5
+
+IDF1(%)↑
+48.6 51.3 50.7 59.9 48.8 50.9 53.9 47.2 47.5
+45.1 54.6 44.5
+
+IDSw↓
+821 481 391 431 648 792 747 906 1826
+4470 2187 4055
+
+FP↓
+5104 6654 5333 7086 6871 9253 9083 5875 18730
+27521 45660 38223
+
+FN↓
+88586 86245 86795 72902 91173 85431 84178 86567 69800
+264694 216803 208616
+
+tional complexity and is about 5 times faster than the listed two-stage methods. The reason for the high IDSw and FP is that our model focuses on improving the quality of detection and Re-ID, while pays less attention to optimize tracking. It may be a future research direction of this work.
+
+Table 2. Ablation study results on MOT20 test set. MM: Motion Model, ∆: Value Increment.
+
+Method
+OIM-MM iHOIM-MM iHOIM+MM
+
+MOTA(%)↑
+49.2 51.2 51.5
+
+IDF1(%)↑
+41.4 43.0 44.5
+
+∆
+(+2.0, +1.6) (+0.3, +1.5)
+
+5. CONCLUSION
+In this paper, we propose an online multi-object tracking framework based on a hierarchical single-branch network. Concretely, we introduce an improved Hierarchical Online Instance Matching loss which explicitly models the interrelationship between object detection and Re-ID. Moreover, a motion model is integrated into the proposed hierarchical single-branch network to complement the detection proposal process which improves tracking performance a lot. Compared with the two-stage methods on MOT16 and MOT20 datasets, our model achieves a new state-of-the-art performance even in crowded tracking scenes.
+6. REFERENCES
+
+Ablation Studies. In order to demonstrate the effectiveness of different components of our tracking framework, we ablate the two main components: iHOIM loss and motion model on the MOT20 test set. We ﬁrst realize a OIM [12] loss based tracking framework without using motion model. It shares the same network structure with our proposed model except that it separates detection and Re-ID supervisions into two independent losses, namely R-CNN classiﬁcation loss and OIM loss. Then we add the proposed iHOIM loss into the hierarchical network without using motion model as well. As shown in Table 2, the iHOIM loss helps to improve MOTA/IDF1 by 2.0%/1.6%. After adding motion model into the whole framework, we can get another 0.3%/1.5% increment on MOTA/IDF1. The exceptional performance substantially veriﬁes the effectiveness of all the components.
+
+[1] Alex Bewley, Zongyuan Ge, Lionel Ott, Fabio Ramos, and Ben Upcroft, “Simple online and realtime tracking,” in 2016 IEEE International Conference on Image Processing (ICIP). IEEE, 2016, pp. 3464–3468.
+[2] Nicolai Wojke, Alex Bewley, and Dietrich Paulus, “Simple online and realtime tracking with a deep association metric,” in 2017 IEEE international conference on image processing (ICIP). IEEE, 2017, pp. 3645–3649.
+[3] Siyu Tang, Mykhaylo Andriluka, Bjoern Andres, and Bernt Schiele, “Multiple people tracking by lifted multicut and person re-identiﬁcation,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2017, pp. 3539–3548.
+[4] Jiarui Xu, Yue Cao, Zheng Zhang, and Han Hu, “Spatial-temporal relation networks for multi-object tracking,” in Proceedings of the IEEE International Conference on Computer Vision, 2019, pp. 3988–3998.
+
+[5] Chen Long, Ai Haizhou, Zhuang Zijie, and Shang Chong, “Real-time multiple people tracking with deeply learned candidate selection and person reidentiﬁcation,” in ICME, 2018.
+[6] Philipp Bergmann, Tim Meinhardt, and Laura LealTaixe, “Tracking without bells and whistles,” in Proceedings of the IEEE international conference on computer vision, 2019, pp. 941–951.
+[7] Xingyi Zhou, Vladlen Koltun, and Philipp Kra¨henbu¨hl, “Tracking objects as points,” arXiv:2004.01177, 2020.
+[8] Zhongdao Wang, Liang Zheng, Yixuan Liu, and Shengjin Wang, “Towards real-time multi-object tracking,” arXiv preprint arXiv:1909.12605, 2019.
+[9] Yifu Zhang, Chunyu Wang, Xinggang Wang, Wenjun Zeng, and Wenyu Liu, “A simple baseline for multiobject tracking,” arXiv preprint arXiv:2004.01888, 2020.
+[10] Jimuyang Zhang, Sanping Zhou, Xin Chang, Fangbin Wan, Jinjun Wang, Yang Wu, and Dong Huang, “Multiple object tracking by ﬂowing and fusing,” arXiv preprint arXiv:2001.11180, 2020.
+[11] Bing Shuai, Andrew G Berneshawi, Davide Modolo, and Joseph Tighe, “Multi-object tracking with siamese track-rcnn,” arXiv preprint arXiv:2004.07786, 2020.
+[12] Tong Xiao, Shuang Li, Bochao Wang, Liang Lin, and Xiaogang Wang, “Joint detection and identiﬁcation feature learning for person search,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2017, pp. 3415–3424.
+[13] Di Chen, Shanshan Zhang, Wanli Ouyang, Jian Yang, and Ying Tai, “Person search via a mask-guided twostream cnn model,” in Proceedings of the European Conference on Computer Vision (ECCV), 2018, pp. 734–750.
+[14] Di Chen, Shanshan Zhang, Jian Yang, and Bernt Schiele, “Norm-aware embedding for efﬁcient person search,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2020, pp. 12615–12624.
+[15] Di Chen, Shanshan Zhang, Wanli Ouyang, Jian Yang, and Bernt Schiele, “Hierarchical online instance matching for person search,” 2020.
+[16] Ying Tai, Chengjie Wang, Jilin Li, Feiyue Huang, and Yanwei Fu, “Chained-tracker: Chaining paired attentive regression results for end-to-end joint multiple-object detection and tracking,” 2020.
+[17] Zheng Zhang, Dazhi Cheng, Xizhou Zhu, Stephen Lin, and Jifeng Dai, “Integrated object detection and tracking with tracklet-conditioned detection,” arXiv preprint arXiv:1811.11167, 2018.
+[18] Christoph Feichtenhofer, Axel Pinz, and Andrew Zisserman, “Detect to track and track to detect,” in Proceedings of the IEEE International Conference on Computer Vision, 2017, pp. 3038–3046.
+
+[19] Shaoqing Ren, Kaiming He, Ross Girshick, and Jian Sun, “Faster r-cnn: Towards real-time object detection with region proposal networks,” in Advances in neural information processing systems, 2015, pp. 91–99.
+[20] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, “Deep residual learning for image recognition,” in Proceedings of the IEEE conference on computer vision and pattern recognition, 2016, pp. 770–778.
+[21] Anton Milan, Laura Leal-Taixe´, Ian Reid, Stefan Roth, and Konrad Schindler, “Mot16: A benchmark for multiobject tracking,” arXiv preprint arXiv:1603.00831, 2016.
+[22] Patrick Dendorfer, Hamid Rezatoﬁghi, Anton Milan, Javen Shi, Daniel Cremers, Ian Reid, Stefan Roth, Konrad Schindler, and Laura Leal-Taixe´, “Mot20: A benchmark for multi object tracking in crowded scenes,” arXiv preprint arXiv:2003.09003, 2020.
+[23] Keni Bernardin and Rainer Stiefelhagen, “Evaluating multiple object tracking performance: the clear mot metrics,” EURASIP Journal on Image and Video Processing, pp. 1–10, 2008.
+[24] Ergys Ristani, Francesco Solera, Roger Zou, Rita Cucchiara, and Carlo Tomasi, “Performance measures and a data set for multi-target, multi-camera tracking,” in European Conference on Computer Vision. Springer, 2016, pp. 17–35.
+[25] Cong Ma, Changshui Yang, Fan Yang, Yueqing Zhuang, Ziwei Zhang, Huizhu Jia, and Xiaodong Xie, “Trajectory factory: Tracklet cleaving and re-connection by deep siamese bi-gru for multiple object tracking,” in 2018 IEEE International Conference on Multimedia and Expo (ICME). IEEE, 2018, pp. 1–6.
+[26] Liqian Ma, Siyu Tang, Michael J Black, and Luc Van Gool, “Customized multi-person tracker,” in Asian Conference on Computer Vision. Springer, 2018, pp. 612–628.
+[27] Guillem Braso´ and Laura Leal-Taixe´, “Learning a neural solver for multiple object tracking,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2020, pp. 6247–6257.
+[28] Kuan Fang, Yu Xiang, Xiaocheng Li, and Silvio Savarese, “Recurrent autoregressive networks for online multi-object tracking,” in 2018 IEEE Winter Conference on Applications of Computer Vision (WACV). IEEE, 2018, pp. 466–475.
+[29] Peng Chu, Heng Fan, Chiu C Tan, and Haibin Ling, “Online multi-object tracking with instance-aware tracker and dynamic model refreshment,” in 2019 IEEE Winter Conference on Applications of Computer Vision (WACV). IEEE, 2019, pp. 161–170.
+[30] Yang Zhang, Hao Sheng, Yubin Wu, Shuai Wang, Wei Ke, and Zhang Xiong, “Multiplex labeling graph for near-online tracking in crowded scenes,” IEEE Internet of Things Journal, vol. 7, no. 9, pp. 7892–7902, 2020.
+

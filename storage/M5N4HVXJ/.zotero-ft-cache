@@ -1,0 +1,76 @@
+
+Skip to main content
+Cornell University
+We gratefully acknowledge support from
+the Simons Foundation and member institutions.
+arXiv.org > cs > arXiv:2111.07239
+
+Help | Advanced Search
+Search
+Computer Science > Computer Vision and Pattern Recognition
+(cs)
+[Submitted on 14 Nov 2021]
+Title: Robust and Accurate Object Detection via Self-Knowledge Distillation
+Authors: Weipeng Xu , Pengzhi Chu , Renhao Xie , Xiongziyan Xiao , Hongcheng Huang
+Download PDF
+
+    Abstract: Object detection has achieved promising performance on clean datasets, but how to achieve better tradeoff between the adversarial robustness and clean precision is still under-explored. Adversarial training is the mainstream method to improve robustness, but most of the works will sacrifice clean precision to gain robustness than standard training. In this paper, we propose Unified Decoupled Feature Alignment (UDFA), a novel fine-tuning paradigm which achieves better performance than existing methods, by fully exploring the combination between self-knowledge distillation and adversarial training for object detection. We first use decoupled fore/back-ground features to construct self-knowledge distillation branch between clean feature representation from pretrained detector (served as teacher) and adversarial feature representation from student detector. Then we explore the self-knowledge distillation from a new angle by decoupling original branch into a self-supervised learning branch and a new self-knowledge distillation branch. With extensive experiments on the PASCAL-VOC and MS-COCO benchmarks, the evaluation results show that UDFA can surpass the standard training and state-of-the-art adversarial training methods for object detection. For example, compared with teacher detector, our approach on GFLV2 with ResNet-50 improves clean precision by 2.2 AP on PASCAL-VOC; compared with SOTA adversarial training methods, our approach improves clean precision by 1.6 AP, while improving adversarial robustness by 0.5 AP. Our code will be available at this https URL . 
+
+Subjects: 	Computer Vision and Pattern Recognition (cs.CV)
+Cite as: 	arXiv:2111.07239 [cs.CV]
+  	(or arXiv:2111.07239v1 [cs.CV] for this version)
+Submission history
+From: Weipeng Xu [ view email ]
+[v1] Sun, 14 Nov 2021 04:40:15 UTC (4,232 KB)
+Full-text links:
+Download:
+
+    PDF
+    Other formats 
+
+( license )
+Current browse context:
+cs.CV
+< prev   |   next >
+new | recent | 2111
+Change to browse by:
+cs
+References & Citations
+
+    NASA ADS
+    Google Scholar
+    Semantic Scholar
+
+DBLP - CS Bibliography
+listing | bibtex
+Weipeng Xu
+a export bibtex citation Loading...
+Bookmark
+BibSonomy logo Mendeley logo Reddit logo ScienceWISE logo
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer ( What is the Explorer? )
+Litmaps Toggle
+Litmaps ( What is Litmaps? )
+scite.ai Toggle
+scite Smart Citations ( What are Smart Citations? )
+Code & Data
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax ( What is MathJax? )
+
+    About
+    Help
+
+    contact arXiv Click here to contact arXiv Contact
+    subscribe to arXiv mailings Click here to subscribe Subscribe
+
+    Copyright
+    Privacy Policy
+
+    Web Accessibility Assistance
+
+    arXiv Operational Status
+    Get status notifications via email or slack
+
